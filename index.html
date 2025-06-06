@@ -1,0 +1,1308 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Emoji Catcher Adrenaline</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+        xintegrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoVBL5rLesQhGZORGK1WHIZTYZchRhQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <style>
+        html,
+        body {
+            height: 100vh;
+            width: 100vw;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Press Start 2P', cursive;
+            background-color: #000000;
+            color: #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #gameWrapper {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #000000;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+
+        #gameContainer {
+            background-color: #1a202c;
+            border: 2px solid #4a5568;
+            border-radius: 0.75rem;
+            box-shadow: 0 0 25px rgba(74, 85, 104, 0.5), 0 0 10px rgba(0, 0, 0, 0.3) inset;
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: 1400px;
+            box-sizing: border-box;
+        }
+
+        #topControlsAndStats {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            margin-bottom: 0.5rem;
+            flex-shrink: 0;
+        }
+
+        #topStatsContainer {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .top-stat-block {
+            background-color: #2d3748;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            text-align: center;
+            min-width: 80px;
+        }
+
+        #stageDisplay {
+            font-size: 0.8rem;
+            color: #a0aec0;
+            padding: 0.25rem 0.5rem;
+            background-color: #2d3748;
+            border-radius: 0.25rem;
+        }
+
+        #mainGameArea {
+            display: flex;
+            width: 100%;
+            flex-grow: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        canvas {
+            background-color: #2d3748;
+            border-radius: 0.375rem;
+            display: block;
+            transition: background-color 0.5s ease-in-out;
+            image-rendering: pixelated;
+        }
+
+        .side-bar {
+            width: 30px;
+            display: flex;
+            flex-direction: column-reverse;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 0.25rem;
+            margin: 0 5px;
+            position: relative;
+            flex-shrink: 0;
+            padding-top: 15px;
+            box-sizing: border-box;
+        }
+
+        .bar-fill {
+            width: 100%;
+            background-color: lightblue;
+            border-radius: 0.25rem;
+            transition: height 0.2s ease-out;
+        }
+
+        #waterBarFill {
+            background-color: #3b82f6;
+        }
+
+        #hpBarFill {
+            background-color: #ef4444;
+        }
+
+        .bar-label {
+            position: absolute;
+            top: 0px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.6rem;
+            color: #e2e8f0;
+            white-space: nowrap;
+            z-index: 1;
+        }
+
+        .bar-icon {
+            position: absolute;
+            bottom: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.7rem;
+        }
+
+
+        .stat-label {
+            font-size: 0.65rem;
+            color: #a0aec0;
+        }
+
+        .stat-value {
+            font-size: 0.9rem;
+            color: #f7fafc;
+            min-width: 35px;
+            text-align: right;
+        }
+
+        .game-controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.3rem;
+            margin-top: 0.5rem;
+            width: 100%;
+            flex-shrink: 0;
+        }
+
+        .control-button,
+        .volume-control-container>label {
+            background-image: linear-gradient(to bottom, #5a67d8, #4c51bf);
+            color: white;
+            padding: 0.35rem 0.6rem;
+            font-size: 0.6rem;
+            border-radius: 0.375rem;
+            border: none;
+            cursor: pointer;
+            font-family: 'Press Start 2P', cursive;
+            text-transform: uppercase;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .control-button:hover,
+        .volume-control-container>label:hover {
+            background-image: linear-gradient(to bottom, #4c51bf, #434190);
+            transform: scale(1.05);
+        }
+
+        .control-button:active,
+        .volume-control-container>label:active {
+            transform: scale(0.98);
+        }
+
+        .volume-control-container {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            background-color: #2d3748;
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+        }
+
+        .volume-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 60px;
+            height: 8px;
+            background: #4a5568;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .15s ease-in-out;
+            border-radius: 4px;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            background: #a0aec0;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+
+        .volume-slider::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            background: #a0aec0;
+            cursor: pointer;
+            border-radius: 50%;
+            border: none;
+        }
+
+
+        .modal-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(10, 20, 30, 0.95);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            text-align: center;
+            z-index: 1000;
+            box-shadow: 0 0 30px rgba(0, 150, 255, 0.5);
+            border: 1px solid rgba(0, 150, 255, 0.7);
+            width: 90%;
+            max-width: 450px;
+        }
+
+        .button {
+            background-image: linear-gradient(to bottom, #4299e1, #3182ce);
+            color: white;
+            padding: 0.7rem 1.5rem;
+            border-radius: 0.5rem;
+            border: none;
+            cursor: pointer;
+            font-family: 'Press Start 2P', cursive;
+            text-transform: uppercase;
+            margin-top: 1rem;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.3);
+        }
+
+        .button:hover {
+            background-image: linear-gradient(to bottom, #3182ce, #2b6cb0);
+            transform: scale(1.05) translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .button:active {
+            transform: scale(0.98) translateY(0);
+        }
+
+        #controlsInfo {
+            margin-top: 0.3rem;
+            font-size: 0.5rem;
+            color: #718096;
+            text-align: center;
+            padding-bottom: 5px;
+            flex-shrink: 0;
+        }
+
+        @keyframes screenShake {
+
+            0%,
+            100% {
+                transform: translate(0, 0);
+            }
+
+            10%,
+            30%,
+            50%,
+            70%,
+            90% {
+                transform: translate(-3px, -3px);
+            }
+
+            20%,
+            40%,
+            60%,
+            80% {
+                transform: translate(3px, 3px);
+            }
+        }
+
+        .shake-hard {
+            animation: screenShake 0.3s cubic-bezier(.36, .07, .19, .97) both;
+        }
+
+        .shake-harder {
+            animation: screenShake 0.4s cubic-bezier(.36, .07, .19, .97) both;
+            transform-origin: 50% 50%;
+            animation-iteration-count: 2;
+        }
+
+        #screenFlashOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 150, 0.5);
+            z-index: 900;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.1s ease-out;
+        }
+
+        #screenFlashOverlay.active {
+            opacity: 1;
+        }
+
+        #damageFlashOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 0, 0, 0.3);
+            z-index: 890;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.05s ease-out;
+        }
+
+        #damageFlashOverlay.active {
+            opacity: 1;
+        }
+
+        #toastNotification {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #2d3748;
+            color: #e2e8f0;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.375rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 2000;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+            pointer-events: none;
+        }
+
+        #toastNotification.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        @keyframes pulseInvincibleText {
+            0% {
+                transform: translateX(-50%) scale(1);
+                opacity: 0.8;
+            }
+
+            100% {
+                transform: translateX(-50%) scale(1.1);
+                opacity: 1;
+            }
+        }
+
+        .particle {
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            pointer-events: none;
+            opacity: 0;
+        }
+
+        .boss-tell {
+            position: absolute;
+            border-radius: 50%;
+            border: 3px solid yellow;
+            opacity: 0;
+            animation: bossTellPulse 0.7s ease-out;
+            pointer-events: none;
+            z-index: 600;
+        }
+
+        @keyframes bossTellPulse {
+            0% {
+                transform: scale(0.5);
+                opacity: 0.8;
+            }
+
+            70% {
+                transform: scale(1.5);
+                opacity: 0.4;
+            }
+
+            100% {
+                transform: scale(2);
+                opacity: 0;
+            }
+        }
+
+        #fadeOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: black;
+            opacity: 0;
+            z-index: 9999;
+            pointer-events: none;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        #fadeOverlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #pauseOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 998;
+            color: white;
+            font-size: 2rem;
+        }
+
+        #stageIntroOverlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(10, 20, 30, 0.95);
+            color: white;
+            padding: 2rem;
+            border-radius: 0.75rem;
+            text-align: center;
+            z-index: 1001;
+            box-shadow: 0 0 30px rgba(0, 200, 255, 0.5);
+            border: 1px solid rgba(0, 200, 255, 0.7);
+            width: 90%;
+            max-width: 500px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="gameWrapper">
+        <div id="gameContainer">
+            <div id="screenFlashOverlay"></div>
+            <div id="damageFlashOverlay"></div>
+            <div id="topControlsAndStats">
+                <div id="topStatsContainer">
+                    <div class="top-stat-block">
+                        <div class="stat-label">Score</div>
+                        <div id="score" class="stat-value">0</div>
+                    </div>
+                    <div id="stageDisplay" class="top-stat-block">Stage: 1</div>
+                    <div class="top-stat-block">
+                        <div class="stat-label">Chances</div>
+                        <div id="chances" class="stat-value">3</div>
+                    </div>
+                </div>
+                <button id="pauseButton" class="control-button" style="margin-left: auto;">❚❚ Pause</button>
+            </div>
+            <div id="mainGameArea">
+                <div id="waterBar" class="side-bar">
+                    <div id="waterBarFill" class="bar-fill" style="height: 100%;"></div>
+                    <div id="waterBarLabel" class="bar-label">50</div>
+                    <div class="bar-icon">💧</div>
+                </div>
+                <canvas id="gameCanvas"></canvas>
+                <div id="hpBar" class="side-bar">
+                    <div id="hpBarFill" class="bar-fill" style="height: 100%;"></div>
+                    <div id="hpBarLabel" class="bar-label">5</div>
+                    <div class="bar-icon">❤️</div>
+                </div>
+                <div id="pauseOverlay" class="hidden">PAUSED</div>
+            </div>
+            <div class="game-controls">
+                <div class="volume-control-container">
+                    <label for="bgmVolumeSlider" class="control-button">🎵 BGM</label>
+                    <input type="range" id="bgmVolumeSlider" class="volume-slider" min="0" max="1" step="0.01"
+                        value="0.2">
+                </div>
+                <div class="volume-control-container">
+                    <label for="sfxVolumeSlider" class="control-button">🔊 SFX</label>
+                    <input type="range" id="sfxVolumeSlider" class="volume-slider" min="0" max="1" step="0.01"
+                        value="0.3">
+                </div>
+                <button id="restartGeneralButton" class="control-button">Restart</button>
+                <button id="shareButton" class="control-button">Share URL</button>
+                <button id="screenshotButton" class="control-button">Screenshot</button>
+            </div>
+            <div id="controlsInfo" class="mt-1">Move: Arrow Keys/WASD/Mouse/Touch | Shoot: Space/Click/Tap</div>
+        </div>
+    </div>
+
+    <div id="messageOverlay" class="hidden modal-overlay">
+        <h2 id="messageText" class="text-2xl mb-4">Game Over!</h2>
+        <button id="restartModalButton" class="button">Restart Game</button>
+        <button id="retryStageButton" class="button" style="display: none;">Retry Stage</button>
+    </div>
+    <div id="startOverlay" class="modal-overlay ">
+        <h2 class="text-2xl mb-4">Emoji Catcher Adrenaline!</h2>
+        <p class="mb-1">Mission: Catch <span id="startGoodEmoji">😊</span>! Missed ones 😥 are lost!</p>
+        <p class="mb-1">Shoot <span id="startEnemyEmojis">😈😡👾👻</span> & their 💩💣💀! Don't shoot <span
+                id="startGoodEmojiPenalty">😊</span> (-15 😠)!</p>
+        <p class="mb-4">Power-ups: ⭐🌶️👯🍀💧🌊 | Face the BOSSES <span id="startBossEmojis">👹👺</span>!</p>
+        <button id="startButton" class="button">Start Game</button>
+    </div>
+    <div id="stageIntroOverlay" class="hidden modal-overlay">
+        <h2 id="stageIntroTitle" class="text-3xl mb-2">Stage Title</h2>
+        <p id="stageIntroGoodEmoji" class="text-xl mb-4">Collect these: 😊</p>
+        <button id="startNextStageButton" class="button">Start Stage</button>
+    </div>
+    <div id="stageClearOverlay" class="hidden modal-overlay">
+        <h2 id="stageClearText" class="text-2xl mb-4">Stage Clear!</h2>
+        <div id="celebrationContainer" style="position:relative; height: 50px;"></div>
+    </div>
+    <div id="toastNotification">Copied to clipboard!</div>
+    <div id="fadeOverlay"></div>
+
+
+    <script>
+        const canvas = document.getElementById('gameCanvas')
+        const ctx = canvas.getContext('2d')
+        const gameContainer = document.getElementById('gameContainer')
+        const screenFlashOverlay = document.getElementById('screenFlashOverlay')
+        const damageFlashOverlay = document.getElementById('damageFlashOverlay')
+        const toastNotification = document.getElementById('toastNotification')
+        let celebrationContainer = document.getElementById('celebrationContainer')
+        const stageDisplayEl = document.getElementById('stageDisplay')
+        const fadeOverlay = document.getElementById('fadeOverlay')
+        const pauseOverlay = document.getElementById('pauseOverlay')
+        const pauseButton = document.getElementById('pauseButton')
+        const stageIntroOverlay = document.getElementById('stageIntroOverlay')
+        const stageIntroTitle = document.getElementById('stageIntroTitle')
+        const stageIntroGoodEmoji = document.getElementById('stageIntroGoodEmoji')
+        const startNextStageButton = document.getElementById('startNextStageButton')
+
+
+        const scoreEl = document.getElementById('score'), chancesEl = document.getElementById('chances'),
+            messageOverlay = document.getElementById('messageOverlay'), messageText = document.getElementById('messageText'),
+            restartModalButton = document.getElementById('restartModalButton'), retryStageButton = document.getElementById('retryStageButton'),
+            startOverlay = document.getElementById('startOverlay'),
+            startButton = document.getElementById('startButton'), stageClearOverlay = document.getElementById('stageClearOverlay'),
+            stageClearText = document.getElementById('stageClearText'),
+            bgmVolumeSlider = document.getElementById('bgmVolumeSlider'), sfxVolumeSlider = document.getElementById('sfxVolumeSlider'),
+            restartGeneralButton = document.getElementById('restartGeneralButton'),
+            shareButton = document.getElementById('shareButton'), screenshotButton = document.getElementById('screenshotButton')
+
+        const waterBarFill = document.getElementById('waterBarFill')
+        const hpBarFill = document.getElementById('hpBarFill')
+        const waterBarLabel = document.getElementById('waterBarLabel')
+        const hpBarLabel = document.getElementById('hpBarLabel')
+
+
+        let score, waterLevel, lives, chances, currentStage
+        let gameRunning = false, gameOverState = false, stageTransitioning = false, isPaused = false
+        let difficultyMultiplier = 1
+        let justStartedGame = false
+
+        const playerSize = 30, playerSpeed = 7
+        let playerX, playerY, playerEmoji = '🤠', playerHitFlashTimer = 0, playerExplosionTimer = 0
+        const playerExplosionDuration = 300
+        const MAX_LIVES = 5; const MAX_WATER = 50
+
+        let isInvincible = false, invincibilityTimer = 0, invincibilityDuration = 5000
+        let isBulletStrong = false, strongBulletTimer = 0, strongBulletDuration = 7000
+        let isTwinActive = false, twinPowerTimer = 0, twinPowerDuration = 8000
+        let isTripletActive = false, tripletPowerTimer = 0, tripletPowerDuration = 5000
+
+        const starEmoji = '⭐', foodEmoji = '🍔', waterBulletEmoji = '💧',
+            explosionEmoji = '💥', missedGoodGuyEmoji = '😥', shotGoodGuyEmoji = '😠',
+            strongBulletPowerUpEmoji = '🌶️', twinPowerUpEmoji = '👯', tripletPowerUpEmoji = '🍀', largeWaterRefillEmoji = '🌊'
+
+        const stageThemes = [
+            {
+                stage: 1, name: "Classic Plains", goodEmoji: '😊', targetEmoji: '🏆', bossEmoji: '👹', scoreForBoss: 150, bgColor: '#2d3748', starColor: '#f0f8ff', bgPattern: null,
+                bgmPattern: ["C4", "E4", "G4", "C5", "A4", "G4", "E4", "D4"], bossBgmPattern: ["C2", "G2", "C3", "G2", "D#2", "A#2", "D#3", "A#2"],
+                bossMaxHealth: 20, bossSpeedXBase: 0.6, bossShootCooldownBase: 2800, bossTimeBetweenActionsBase: 3200, bossDropIntervalBase: 6000, starSpeedBase: 0.2, starSpeedVariation: 0.5, starSizeMultiplier: 1, bossAttackConfig: { '360BaseCount': 3, 'targetedBaseCount': 1 }
+            },
+            {
+                stage: 2, name: "Underwater Kingdom", goodEmoji: '🐠', targetEmoji: '🔱', bossEmoji: '🐙', scoreForBoss: 350, bgColor: '#1e3a8a', starColor: '#93c5fd', bgPattern: 'wave',
+                bgmPattern: ["F4", "A4", "C5", "E5", "C5", "A4", "F4", "D4"], bossBgmPattern: ["D2", "A2", "D3", "A2", "F2", "C3", "F3", "C3"],
+                bossMaxHealth: 40, bossSpeedXBase: 0.8, bossShootCooldownBase: 1900, bossTimeBetweenActionsBase: 2300, bossDropIntervalBase: 4800, starSpeedBase: 0.3, starSpeedVariation: 0.6, starSizeMultiplier: 1.1, bossAttackConfig: { '360BaseCount': 4, 'targetedBaseCount': 2, 'special': 'waveShot', 'specialChance': 0.3 }
+            },
+            {
+                stage: 3, name: "Green Mountains", goodEmoji: '🐑', targetEmoji: '⛰️', bossEmoji: '🦅', scoreForBoss: 600, bgColor: '#166534', starColor: '#a7f3d0', bgPattern: 'peak',
+                bgmPattern: ["E4", "G#4", "B4", "E5", "C#5", "B4", "G#4", "F#4"], bossBgmPattern: ["E2", "B2", "E3", "B2", "G2", "D3", "G3", "D3"],
+                bossMaxHealth: 65, bossSpeedXBase: 1.1, bossShootCooldownBase: 1500, bossTimeBetweenActionsBase: 1900, bossDropIntervalBase: 4300, starSpeedBase: 0.25, starSpeedVariation: 0.7, starSizeMultiplier: 1.2, bossAttackConfig: { '360BaseCount': 6, 'targetedBaseCount': 2, 'special': 'swoop', 'specialChance': 0.35 }
+            },
+            {
+                stage: 4, name: "Cyber City", goodEmoji: '🚕', targetEmoji: '🏙️', bossEmoji: '🤖', scoreForBoss: 750, bgColor: '#4b5563', starColor: '#e5e7eb', bgPattern: 'grid_lines',
+                bgmPattern: ["G4", "B4", "D5", "G5", "F#5", "D5", "B4", "A4"], bossBgmPattern: ["A2", "E3", "A3", "E3", "C#3", "G#3", "C#4", "G#3"],
+                bossMaxHealth: 90, bossSpeedXBase: 1.2, bossShootCooldownBase: 1300, bossTimeBetweenActionsBase: 1700, bossDropIntervalBase: 4000, starSpeedBase: 0.35, starSpeedVariation: 0.5, starSizeMultiplier: 0.9, bossAttackConfig: { '360BaseCount': 8, 'targetedBaseCount': 3, 'special': 'laserBeam' }
+            },
+            {
+                stage: 5, name: "Outer Space", goodEmoji: '🪐', targetEmoji: '🚀', bossEmoji: '👽', scoreForBoss: 1000, bgColor: '#1f2937', starColor: '#f0f8ff', bgPattern: 'dense_stars',
+                bgmPattern: ["D4", "F#4", "A4", "D5", "C#5", "A4", "F#4", "E4"], bossBgmPattern: ["B1", "F#2", "B2", "F#2", "D#2", "A#2", "D#3", "A#2"],
+                bossMaxHealth: 110, bossSpeedXBase: 1.3, bossShootCooldownBase: 1200, bossTimeBetweenActionsBase: 1600, bossDropIntervalBase: 3800, starSpeedBase: 0.4, starSpeedVariation: 0.8, starSizeMultiplier: 1.3, bossAttackConfig: { '360BaseCount': 9, 'targetedBaseCount': 3, 'special': 'teleportShot' }
+            },
+            {
+                stage: 6, name: "Body Voyage", goodEmoji: '❤️', targetEmoji: '🧬', bossEmoji: '🦠', scoreForBoss: 1300, bgColor: '#7f1d1d', starColor: '#fecaca', bgPattern: 'cells',
+                bgmPattern: ["E4", "G4", "B4", "D5", "B4", "G4", "E4", "C4"], bossBgmPattern: ["G1", "D2", "G2", "D2", "A#1", "F2", "A#2", "F2"],
+                bossMaxHealth: 130, bossSpeedXBase: 1.0, bossShootCooldownBase: 1100, bossTimeBetweenActionsBase: 1500, bossDropIntervalBase: 3600, starSpeedBase: 0.2, starSpeedVariation: 0.6, starSizeMultiplier: 1.0, bossAttackConfig: { '360BaseCount': 10, 'targetedBaseCount': 4, 'special': 'virusSpread' }
+            },
+            {
+                stage: 7, name: "Digital Realm", goodEmoji: '💾', targetEmoji: '💻', bossEmoji: '⚠️', scoreForBoss: 1600, bgColor: '#0369a1', starColor: '#7dd3fc', bgPattern: 'circuit',
+                bgmPattern: ["A#3", "D#4", "G4", "A#4", "G#4", "G4", "D#4", "C4"], bossBgmPattern: ["F#1", "C#2", "F#2", "C#2", "A#1", "E#2", "A#2", "E#2"],
+                bossMaxHealth: 150, bossSpeedXBase: 1.4, bossShootCooldownBase: 1000, bossTimeBetweenActionsBase: 1400, bossDropIntervalBase: 3500, starSpeedBase: 0.3, starSpeedVariation: 0.7, starSizeMultiplier: 1.1, bossAttackConfig: { '360BaseCount': 12, 'targetedBaseCount': 4, 'special': 'glitchBurst' }
+            }
+        ]
+        let currentTheme = stageThemes[0]
+        let currentGoodGuyEmoji = currentTheme.goodEmoji
+
+
+        const enemyTypes = [
+            { emoji: '😈', type: 'standardDemon', shootCooldownBase: 2800, health: 1, points: 5, speedMultiplier: 1.05 },
+            { emoji: '😡', type: 'angryGrump', shoot: false, health: 1, points: 7, speedMultiplier: 1.20, amplitudeMultiplier: 1.4, waveSpeedMultiplier: 1.25 },
+            { emoji: '👾', type: 'pixelInvader', shootCooldownBase: 2200, projectileType: 'pixelBullet', health: 1, points: 8, speedMultiplier: 0.95 },
+            { emoji: '👻', type: 'wilyGhost', shoot: false, health: 1, points: 6, speedMultiplier: 0.85, amplitudeMultiplier: 1.9, waveSpeedMultiplier: 1.6 }
+        ]
+        const enemyProjectileEmojis = ['💩', '💣', '💀']
+        const pixelBulletEmoji = '•'
+
+        const itemSize = 25, enemyProjectileSize = itemSize * 0.7, pixelBulletSize = itemSize * 0.4, bossSize = 60, strongBulletSize = itemSize * 1.2
+        let goodGuys, badGuys, stars, foods, bullets, enemyProjectiles, floatingTexts, powerUps, stageTargetItem = null
+
+        const baseSpawnInterval = 1600
+        let currentSpawnInterval = baseSpawnInterval
+        let lastSpawnTime = 0, lastPowerUpSpawnTime = 0
+        const powerUpSpawnInterval = 7500
+
+        const maxGoodGuys = 4, maxBadGuys = 3, maxStars = 1, maxFoods = 2, maxPowerUps = 1
+        let bgStars = [], numBgStars = 70
+        let boss = null, isBossFight = false, waitingForTargetGrab = false
+
+        let isBgmOn = true, isSfxOn = true
+        let sfxSynth, collectSynth, hitSynth, explosionSynth, bossHitSynth, mistakeSynth, powerUpSynth, enemyHitSynth, bgmSynth, bgmLoop
+        let sfxGainNode
+        let lastMistakeSoundTime = 0
+        const mistakeSoundCooldown = 100
+        let lastEnemyHitSoundTime = 0
+        const enemyHitSoundCooldown = 50
+        let lastBossHitSoundTime = 0
+        const bossHitSoundCooldown = 100
+
+        function initializeAudio() {
+            if (!Tone || Tone.context.state !== 'running') { console.warn("Tone not ready for audio init."); return }
+
+            sfxGainNode = new Tone.Gain(parseFloat(sfxVolumeSlider.value)).toDestination()
+
+            const createSynthWithGain = (synthConstructor, options, volume) => {
+                const synth = new synthConstructor(options)
+                synth.volume.value = volume
+                synth.connect(sfxGainNode)
+                return synth
+            }
+
+            sfxSynth = createSynthWithGain(Tone.Synth, { oscillator: { type: "triangle" }, envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 } }, -10)
+            collectSynth = createSynthWithGain(Tone.Synth, { oscillator: { type: "sine" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 } }, -8)
+            hitSynth = createSynthWithGain(Tone.NoiseSynth, { noise: { type: "pink" }, envelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.08 } }, -8)
+            enemyHitSynth = createSynthWithGain(Tone.NoiseSynth, { noise: { type: "white" }, envelope: { attack: 0.005, decay: 0.05, sustain: 0, release: 0.05 }, filter: { type: "bandpass", Q: 5, frequency: 1500 } }, -12)
+            explosionSynth = createSynthWithGain(Tone.NoiseSynth, { noise: { type: "white" }, envelope: { attack: 0.01, decay: 0.4, sustain: 0, release: 0.3 }, filter: { type: "lowpass", frequency: 1500 } }, -4)
+            bossHitSynth = createSynthWithGain(Tone.MembraneSynth, { pitchDecay: 0.02, octaves: 5, envelope: { attack: 0.001, decay: 0.2, sustain: 0 } }, -7)
+            mistakeSynth = createSynthWithGain(Tone.Synth, { oscillator: { type: "square" }, envelope: { attack: 0.01, decay: 0.15, sustain: 0, release: 0.1 } }, -9)
+            powerUpSynth = createSynthWithGain(Tone.Synth, { oscillator: { type: "fatsawtooth", count: 3, spread: 20 }, envelope: { attack: 0.05, decay: 0.3, sustain: 0.1, release: 0.3 } }, -6)
+
+            bgmSynth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "fatsawtooth", spread: 40, count: 2 }, envelope: { attack: 0.01, decay: 0.4, sustain: 0.2, release: 0.6 }, filter: { type: "lowpass", Q: 3, frequency: 2500 } }).toDestination()
+            bgmSynth.volume.value = Tone.dbToGain(parseFloat(bgmVolumeSlider.value) * 40 - 30)
+
+
+            if (bgmLoop) { bgmLoop.stop(0); bgmLoop.dispose() }
+            let patternToUse = isBossFight ? currentTheme.bossBgmPattern : currentTheme.bgmPattern
+
+            bgmLoop = new Tone.Pattern((time, note) => {
+                if (isBgmOn && bgmSynth) bgmSynth.triggerAttackRelease(note, "8n", time)
+            }, patternToUse, "randomWalk").start(0)
+            bgmLoop.interval = "8n"
+            bgmLoop.humanize = "16n"
+
+            Tone.Transport.bpm.value = isBossFight ? 160 : (currentStage > 1 ? 180 + (currentStage - 2) * 10 : 170)
+        }
+
+        function playSound(type, note = "C4") {
+            if (!isSfxOn || !Tone || Tone.context.state !== 'running' || !sfxSynth) return
+            const nowTime = performance.now()
+
+            try {
+                if (type === "collect" && collectSynth) collectSynth.triggerAttackRelease(note, "8n")
+                else if (type === "hit" && hitSynth) hitSynth.triggerAttackRelease("8n")
+                else if (type === "enemyHit" && enemyHitSynth) {
+                    if (nowTime - lastEnemyHitSoundTime > enemyHitSoundCooldown) {
+                        enemyHitSynth.triggerAttackRelease("8n")
+                        lastEnemyHitSoundTime = nowTime
+                    }
+                }
+                else if (type === "explosion" && explosionSynth) explosionSynth.triggerAttackRelease("4n")
+                else if (type === "shoot" && sfxSynth) sfxSynth.triggerAttackRelease("C5", "16n")
+                else if (type === "bossHit" && bossHitSynth) {
+                    if (nowTime - lastBossHitSoundTime > bossHitSoundCooldown) {
+                        bossHitSynth.triggerAttackRelease("C3", "8n")
+                        lastBossHitSoundTime = nowTime
+                    }
+                }
+                else if ((type === "star" || type === "powerUp") && powerUpSynth) powerUpSynth.triggerAttackRelease(note, "4n")
+                else if (type === "mistake" && mistakeSynth) {
+                    if (nowTime - lastMistakeSoundTime > mistakeSoundCooldown) {
+                        mistakeSynth.triggerAttackRelease("A2", "4n")
+                        lastMistakeSoundTime = nowTime
+                    }
+                }
+            } catch (e) { console.error("Error playing sound:", type, e) }
+        }
+
+        function startBGM() { if (!isBgmOn) { if (bgmLoop) bgmLoop.mute = true; return } if (bgmLoop) bgmLoop.mute = false; if (!Tone || Tone.context.state !== 'running') { Tone.start().then(() => { initializeAudio(); Tone.Transport.start() }).catch(console.error) } else { initializeAudio(); Tone.Transport.start() } }
+        function stopBGM() { if (bgmLoop) bgmLoop.stop(0).mute = true; if (bgmSynth) bgmSynth.releaseAll(); if (Tone.Transport.state === 'started' && !isBgmOn && !isSfxOn) Tone.Transport.stop() }
+        function updateBGMForStage() { stopBGM(); if (gameRunning && !gameOverState && isBgmOn) startBGM() }
+
+        let lastTime = 0
+        function gameLoop(timestamp) {
+            if (isPaused || !gameRunning || stageTransitioning) {
+                if (!gameOverState && gameRunning && !isPaused) requestAnimationFrame(gameLoop)
+                return
+            }
+            const deltaTime = timestamp - lastTime; lastTime = timestamp; if (isNaN(deltaTime) || deltaTime <= 0 || deltaTime > 500) { requestAnimationFrame(gameLoop); return } update(deltaTime); draw(); if (!gameOverState) requestAnimationFrame(gameLoop)
+        }
+
+        function updateFallingItems(itemsArray, deltaTime, itemType = null) { for (let i = itemsArray.length - 1; i >= 0; i--) { const item = itemsArray[i]; if (item.isRadial) { item.x += item.speedX * (deltaTime / 16.67); item.y += item.speedY * (deltaTime / 16.67) } else { if (item.type === 'goodGuy' || item.enemyData || item.type === 'powerUp' || item.type === 'star' || item.type === 'food' || item.type === 'stageTarget') { item.angle += item.waveSpeed * (deltaTime / 16.67); item.x = item.initialX + Math.sin(item.angle) * item.amplitude } item.y += item.speed * (deltaTime / 16.67) } if (item.y > canvas.height + (item.size || itemSize) * 2 || item.y < -(item.size || itemSize) * 2 || item.x < -(item.size || itemSize) * 2 || item.x > canvas.width + (item.size || itemSize) * 2) { if (itemType === 'goodGuy' && item.y > canvas.height) { addFloatingText(missedGoodGuyEmoji, item.x, canvas.height - 30, "200,200,200", 24); playSound("mistake", "F3"); item.displayEmoji = missedGoodGuyEmoji; setTimeout(() => itemsArray.splice(i, 1), 500); continue } itemsArray.splice(i, 1) } } }
+        function updateFloatingTexts(deltaTime) { floatingTexts.forEach((ft, i) => { ft.y -= ft.speed * (deltaTime / 16.67); ft.opacity -= 0.02 * (deltaTime / 16.67); if (ft.opacity <= 0) floatingTexts.splice(i, 1) }) }
+        function updatePowerUpTimers(deltaTime) { if (isBulletStrong) { strongBulletTimer -= deltaTime; if (strongBulletTimer <= 0) isBulletStrong = false } if (isTwinActive) { twinPowerTimer -= deltaTime; if (twinPowerTimer <= 0) isTwinActive = false } if (isTripletActive) { tripletPowerTimer -= deltaTime; if (tripletPowerTimer <= 0) isTripletActive = false } }
+
+        function update(deltaTime) {
+            if (playerExplosionTimer > 0) { playerExplosionTimer -= deltaTime; if (playerExplosionTimer <= 0) { playerEmoji = '🤠'; handleChanceLossLogic() } return }
+            handlePlayerMovement(deltaTime)
+            if (playerHitFlashTimer > 0) playerHitFlashTimer -= deltaTime
+            if (isInvincible) { invincibilityTimer -= deltaTime; if (invincibilityTimer <= 0) { isInvincible = false; playerEmoji = '🤠' } }
+            updatePowerUpTimers(deltaTime)
+
+            updateFallingItems(bullets, deltaTime); updateFallingItems(goodGuys, deltaTime, 'goodGuy'); updateFallingItems(badGuys, deltaTime)
+            updateFallingItems(stars, deltaTime); updateFallingItems(foods, deltaTime); updateFallingItems(enemyProjectiles, deltaTime)
+            updateFallingItems(powerUps, deltaTime)
+            if (stageTargetItem) updateFallingItems([stageTargetItem], deltaTime, 'stageTarget')
+            updateFloatingTexts(deltaTime)
+
+            difficultyMultiplier = 1 + (score / 400) + (currentStage - 1) * 0.3
+            currentSpawnInterval = Math.max(350, baseSpawnInterval / difficultyMultiplier)
+
+            if (isBossFight && boss) updateBoss(deltaTime)
+            else if (!waitingForTargetGrab) {
+                badGuys.forEach(bg => { if (bg.enemyData && bg.enemyData.shootCooldownBase && Date.now() - bg.lastShotTime > bg.shootCooldown) spawnEnemyProjectile(bg) })
+            }
+
+
+            if (!isBossFight && !waitingForTargetGrab && Date.now() - lastSpawnTime > currentSpawnInterval) {
+                lastSpawnTime = Date.now()
+                if (goodGuys.length < maxGoodGuys && Math.random() < 0.6) spawnGoodGuy()
+                if (badGuys.length < (isBossFight ? 1 : maxBadGuys) && Math.random() < 0.5) spawnNewBadGuy()
+                if (stars.length < maxStars && Math.random() < 0.05) spawnStar()
+                if (foods.length < maxFoods && Math.random() < 0.08) spawnFood()
+                if (waterLevel <= MAX_WATER * 0.2 && Math.random() < 0.30) spawnPowerUp('water')
+            }
+            if (!isBossFight && !waitingForTargetGrab && Date.now() - lastPowerUpSpawnTime > powerUpSpawnInterval && powerUps.length < maxPowerUps) {
+                lastPowerUpSpawnTime = Date.now(); const rand = Math.random()
+                if (rand < 0.25) spawnPowerUp('strongBullet'); else if (rand < 0.50) spawnPowerUp('twin')
+                else if (rand < 0.55) spawnPowerUp('triplet'); else if (rand < 0.75) spawnPowerUp('largeWater')
+                else spawnPowerUp('water')
+            }
+
+            bgStars.forEach(s => { s.y += s.speed * (deltaTime / 16.67) * (currentStage === 2 ? 1.7 : (currentStage === 3 ? 2.0 : 1.2)); if (s.y > canvas.height) { s.y = 0; s.x = Math.random() * canvas.width } })
+            checkCollisions()
+
+            let scoreForCurrentBoss = currentTheme.scoreForBoss
+            if (currentStage > 0 && !isBossFight && !waitingForTargetGrab && score >= scoreForCurrentBoss && !boss) spawnBoss()
+
+            updateUI()
+        }
+
+        function updateUI() { scoreEl.textContent = score; chancesEl.textContent = chances; stageDisplayEl.textContent = `Stage: ${currentStage}`; const waterPercent = Math.max(0, Math.min(100, (waterLevel / MAX_WATER) * 100)); waterBarFill.style.height = `${waterPercent}%`; waterBarLabel.textContent = waterLevel; const hpPercent = Math.max(0, Math.min(100, (lives / MAX_LIVES) * 100)); hpBarFill.style.height = `${hpPercent}%`; hpBarLabel.textContent = lives }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+            if (currentTheme.bgPattern === 'diagonal') {
+                ctx.fillStyle = currentTheme.starColor || '#b0c4de'
+                ctx.strokeStyle = 'rgba(255,255,255,0.03)'; for (let i = -canvas.height; i < canvas.width; i += 20) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + canvas.height, canvas.height); ctx.stroke() }
+            } else if (currentTheme.bgPattern === 'grid') {
+                ctx.fillStyle = currentTheme.starColor || '#98fb98'
+                ctx.strokeStyle = 'rgba(0,0,0,0.04)'; for (let i = 0; i < canvas.width + canvas.height; i += 25) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(i, 0); ctx.stroke() }
+            } else if (currentTheme.bgPattern === 'wave') {
+                ctx.fillStyle = currentTheme.starColor || '#93c5fd'
+                ctx.strokeStyle = 'rgba(255,255,255,0.05)'
+                for (let y = 0; y < canvas.height; y += 30) {
+                    ctx.beginPath()
+                    for (let x = 0; x < canvas.width; x++) {
+                        ctx.lineTo(x, y + Math.sin(x * 0.02 + Date.now() * 0.001) * 5)
+                    }
+                    ctx.stroke()
+                }
+            } else if (currentTheme.bgPattern === 'peak') {
+                ctx.fillStyle = currentTheme.starColor || '#a7f3d0'
+                ctx.strokeStyle = 'rgba(0,0,0,0.03)'
+                for (let x = 0; x < canvas.width; x += 60) {
+                    ctx.beginPath()
+                    ctx.moveTo(x, canvas.height)
+                    ctx.lineTo(x + 30, canvas.height - 50 - Math.random() * 20)
+                    ctx.lineTo(x + 60, canvas.height)
+                    ctx.stroke()
+                }
+            }
+            else {
+                ctx.fillStyle = currentTheme.starColor || '#f0f8ff'
+            }
+            bgStars.forEach(s => ctx.fillRect(s.x, s.y, s.size, s.size))
+
+            if (playerExplosionTimer > 0) { ctx.font = `${playerSize * 1.5}px Arial`; ctx.fillText(explosionEmoji, playerX, playerY + playerSize) }
+            else {
+                ctx.font = `${playerSize}px Arial`; let currentPEmoji = playerEmoji
+                if (isTwinActive || isTripletActive) currentPEmoji = twinPowerUpEmoji
+                if (isInvincible) {
+                    const gCs = ['#FFD700A0', '#FF8C00A0', '#ADFF2FA0', '#00FA9AA0', '#1E90FFA0', '#BA55D3A0', '#FF69B4A0']
+                    ctx.fillStyle = gCs[Math.floor(Date.now() / 80) % gCs.length]
+                    ctx.fillText(currentPEmoji, playerX, playerY + playerSize)
+                    ctx.fillStyle = 'black'; ctx.fillText(currentPEmoji, playerX, playerY + playerSize)
+                    ctx.fillStyle = "gold"
+                    ctx.textAlign = "center"
+                    ctx.font = "bold 12px 'Press Start 2P'"
+                    ctx.fillText("INVINCIBLE!", playerX + playerSize / 2, playerY - 5)
+                    ctx.textAlign = "left"
+                } else if (playerHitFlashTimer > 0) {
+                    ctx.save(); ctx.globalAlpha = 0.5 + Math.abs(Math.sin(playerHitFlashTimer * 0.1)) * 0.5; ctx.fillStyle = 'rgba(255,0,0,0.7)'; ctx.fillText(currentPEmoji, playerX, playerY + playerSize); ctx.restore()
+                }
+                else { ctx.fillStyle = 'black'; ctx.fillText(currentPEmoji, playerX, playerY + playerSize) }
+            }
+            ctx.fillStyle = 'black'
+            const dI = (item, emoji, size = itemSize) => { ctx.font = `${size}px Arial`; ctx.fillText(emoji, item.x, item.y + size) }
+            goodGuys.forEach(g => dI(g, g.displayEmoji || currentGoodGuyEmoji)); badGuys.forEach(b => dI(b, b.enemyData.emoji)); stars.forEach(s => dI(s, starEmoji)); foods.forEach(f => dI(f, foodEmoji)); powerUps.forEach(p => dI(p, p.emoji))
+            bullets.forEach(b => dI(b, waterBulletEmoji, b.isStrong ? strongBulletSize : itemSize)); enemyProjectiles.forEach(p => dI(p, p.emoji, p.size))
+            if (stageTargetItem) dI(stageTargetItem, stageTargetItem.emoji, stageTargetItem.size)
+
+            if (isBossFight && boss) { let bossDispEmoji = boss.emoji; if (boss.isAngry) bossDispEmoji = '😡'; ctx.font = `${boss.size}px Arial`; ctx.fillText(bossDispEmoji, boss.x, boss.y + boss.size); const bW = 100, bH = 10; ctx.fillStyle = boss.isAngry ? '#ff6347' : 'red'; ctx.fillRect(boss.x + boss.size / 2 - bW / 2, boss.y - bH - 5, bW, bH); ctx.fillStyle = 'lime'; ctx.fillRect(boss.x + boss.size / 2 - bW / 2, boss.y - bH - 5, bW * (boss.health / boss.maxHealth), bH) }
+            floatingTexts.forEach(ft => { ctx.font = `${ft.size}px Arial`; ctx.fillStyle = `rgba(${ft.color},${ft.opacity})`; ctx.fillText(ft.text, ft.x, ft.y) })
+        }
+
+        function spawnItemBase(speedMultiplier = 1, yOffset = 0, customSize = itemSize) { const bS = (1.5 + Math.random() * 1.5) * speedMultiplier * difficultyMultiplier * (currentStage === 2 ? 1.2 : 1); return { initialX: Math.random() * (canvas.width - customSize), x: 0, y: -customSize * 2 + yOffset, speed: Math.min(bS, 12), size: customSize, amplitude: (15 + Math.random() * 25) * (customSize / itemSize), waveSpeed: (0.025 + Math.random() * 0.025) * (itemSize / customSize), angle: Math.random() * Math.PI * 2 } }
+        function setupSnakeItem(item) { item.x = item.initialX; return item }
+        function spawnGoodGuy() { goodGuys.push(setupSnakeItem({ ...spawnItemBase(1), type: 'goodGuy', emoji: currentGoodGuyEmoji })) }
+
+        function spawnNewBadGuy() {
+            const enemyData = enemyTypes[Math.floor(Math.random() * enemyTypes.length)]
+            const baseSpeed = enemyData.speedMultiplier || 1.0
+            const badGuy = setupSnakeItem({
+                ...spawnItemBase(baseSpeed, 0, itemSize),
+                type: 'badGuy',
+                enemyData: JSON.parse(JSON.stringify(enemyData)),
+                lastShotTime: Date.now() + Math.random() * 1000,
+                health: enemyData.health || 1,
+            })
+            badGuy.shootCooldown = (enemyData.shootCooldownBase || 3000) / difficultyMultiplier + Math.random() * 1000
+            if (enemyData.amplitudeMultiplier) badGuy.amplitude *= enemyData.amplitudeMultiplier
+            if (enemyData.waveSpeedMultiplier) badGuy.waveSpeed *= enemyData.waveSpeedMultiplier
+            badGuys.push(badGuy)
+        }
+
+        function spawnStar() { stars.push(setupSnakeItem({ ...spawnItemBase(0.8), type: 'star' })) }
+        function spawnFood() { foods.push(setupSnakeItem({ ...spawnItemBase(0.9), type: 'food' })) }
+        function spawnPowerUp(type) { let emoji, effDur, pType; switch (type) { case 'strongBullet': emoji = strongBulletPowerUpEmoji; effDur = strongBulletDuration; pType = 'strongBullet'; break; case 'twin': emoji = twinPowerUpEmoji; effDur = twinPowerDuration; pType = 'twin'; break; case 'triplet': if (Math.random() > 0.15) return; emoji = tripletPowerUpEmoji; effDur = tripletPowerDuration; pType = 'triplet'; break; case 'largeWater': emoji = largeWaterRefillEmoji; pType = 'largeWater'; break; case 'water': default: emoji = waterBulletEmoji; pType = 'water'; break }powerUps.push(setupSnakeItem({ ...spawnItemBase(0.7), emoji: emoji, type: pType, effectDuration: effDur })) }
+
+        function spawnEnemyProjectile(shooter) {
+            let pEmoji = enemyProjectileEmojis[Math.floor(Math.random() * enemyProjectileEmojis.length)]
+            let pSize = enemyProjectileSize
+            let pSpeedMult = 1
+
+            if (shooter.enemyData && shooter.enemyData.projectileType === 'pixelBullet') {
+                pEmoji = pixelBulletEmoji
+                pSize = pixelBulletSize
+                pSpeedMult = 1.5
+            }
+            const sS = shooter.type === 'boss' ? shooter.size : itemSize
+            enemyProjectiles.push({ x: shooter.x + sS / 2 - pSize / 2, y: shooter.y + sS, emoji: pEmoji, size: pSize, speed: ((currentStage === 2 || shooter.type === 'boss' ? 3.5 : 2.5) * difficultyMultiplier + Math.random() * 1.5) * pSpeedMult })
+            shooter.lastShotTime = Date.now()
+        }
+
+        function addFloatingText(text, x, y, color = "255,255,0", size = 16) { floatingTexts.push({ text, x, y, color, size, opacity: 1, speed: 1.5 }) }
+
+        function spawnBoss() {
+            isBossFight = true; badGuys = []
+            const theme = stageThemes[currentStage - 1] || stageThemes[0]
+            let bossConfig = {
+                emoji: theme.bossEmoji,
+                maxHealth: theme.bossMaxHealth,
+                speedXBase: theme.bossSpeedXBase,
+                shootCooldownBase: theme.bossShootCooldownBase,
+                timeBetweenActionsBase: theme.bossTimeBetweenActionsBase,
+                dropIntervalBase: theme.bossDropIntervalBase,
+                attackTypes: theme.bossAttackTypes || ['360', 'targeted']
+            }
+
+            boss = { x: canvas.width / 2 - bossSize / 2, y: 50, size: bossSize, maxHealth: bossConfig.maxHealth, health: 0, emoji: bossConfig.emoji, speedX: bossConfig.speedXBase * difficultyMultiplier, directionX: 1, lastShotTime: Date.now(), shootCooldownBase: bossConfig.shootCooldownBase, shootCooldown: 0, attackPatternTimer: 0, currentAttackPattern: 'random', type: 'boss', dropTimer: Date.now(), dropIntervalBase: bossConfig.dropIntervalBase, dropInterval: 0, actionTimer: 0, timeBetweenActionsBase: bossConfig.timeBetweenActionsBase, timeBetweenActions: 0, isAngry: false, tellDuration: 700, lastTellTime: 0, config: bossConfig }
+            boss.health = boss.maxHealth
+            boss.shootCooldown = boss.shootCooldownBase / difficultyMultiplier
+            boss.dropInterval = boss.dropIntervalBase / difficultyMultiplier
+            boss.timeBetweenActions = boss.timeBetweenActionsBase / difficultyMultiplier
+            updateBGMForStage()
+            addFloatingText("BOSS INCOMING!", canvas.width / 2 - 100, canvas.height / 2, "255,0,0", 24)
+        }
+
+        function showBossTell() {
+            const tellElement = document.createElement('div')
+            tellElement.classList.add('boss-tell')
+            tellElement.style.left = `${boss.x + boss.size / 2 - boss.size}px`
+            tellElement.style.top = `${boss.y + boss.size / 2 - boss.size}px`
+            tellElement.style.width = `${boss.size * 2}px`
+            tellElement.style.height = `${boss.size * 2}px`
+            mainGameArea.appendChild(tellElement)
+            playSound("mistake", "C2")
+            setTimeout(() => tellElement.remove(), boss.tellDuration)
+            boss.lastTellTime = Date.now()
+        }
+
+        function updateBoss(deltaTime) {
+            if (!boss) return
+            let angryMultiplier = boss.isAngry ? 1.5 : 1
+
+            if (!boss.isAngry && boss.health <= boss.maxHealth / 3) { boss.isAngry = true; boss.speedX *= 1.6; boss.shootCooldownBase /= 1.6; boss.timeBetweenActionsBase /= 1.6; addFloatingText("BOSS IS ANGRY!!", boss.x, boss.y - 20, "255,0,0", 22); playSound("explosion") }
+
+            boss.shootCooldown = (boss.shootCooldownBase / difficultyMultiplier) / angryMultiplier
+            boss.dropInterval = (boss.dropIntervalBase / difficultyMultiplier) / angryMultiplier
+            boss.timeBetweenActions = (boss.timeBetweenActionsBase / difficultyMultiplier) / angryMultiplier
+
+            boss.x += (boss.speedX * angryMultiplier) * boss.directionX * (deltaTime / 16.67)
+            if (boss.x <= 0 || boss.x + boss.size >= canvas.width) boss.directionX *= -1
+
+            boss.actionTimer += deltaTime
+            if (boss.actionTimer >= boss.timeBetweenActions) {
+                boss.actionTimer = 0; boss.timeBetweenActions = ((boss.timeBetweenActionsBase * 0.7 + Math.random() * boss.timeBetweenActionsBase * 0.5) / difficultyMultiplier) / angryMultiplier
+                const actionRoll = Math.random()
+
+                const availableAttacks = boss.config.attackTypes
+                let selectedAttack = 'targeted'
+                if (availableAttacks && availableAttacks.length > 0) {
+                    selectedAttack = availableAttacks[Math.floor(Math.random() * availableAttacks.length)]
+                }
+
+                if (selectedAttack === '360' && actionRoll < (currentStage === 1 ? 0.15 : 0.25) && Date.now() - boss.lastTellTime > boss.tellDuration + 1000) {
+                    showBossTell()
+                    setTimeout(() => {
+                        if (!boss) return
+                        const numProjBase = currentStage === 1 ? 3 : (currentStage === 2 ? 5 : 7)
+                        const numProj = numProjBase + Math.floor(difficultyMultiplier * 2) * (boss.isAngry ? 1.3 : 1)
+                        for (let i = 0; i < numProj; i++) { const angle = (i / numProj) * Math.PI * 2; const speed = (2.5 + Math.random() * 1.0) * difficultyMultiplier * (boss.isAngry ? 1.3 : 1); enemyProjectiles.push({ x: boss.x + boss.size / 2 - enemyProjectileSize / 2, y: boss.y + boss.size / 2 - enemyProjectileSize / 2, emoji: enemyProjectileEmojis[Math.floor(Math.random() * enemyProjectileEmojis.length)], size: enemyProjectileSize, speedX: Math.cos(angle) * speed, speedY: Math.sin(angle) * speed, isRadial: true }) }
+                        boss.lastShotTime = Date.now()
+                    }, boss.tellDuration)
+                } else if (selectedAttack === 'laserBeam' && boss.config.emoji === '🤖') {
+                    const laserSpeed = (5 + Math.random() * 2) * difficultyMultiplier * (boss.isAngry ? 1.2 : 1) * 0.4
+                    enemyProjectiles.push({ x: boss.x + boss.size / 2 - pixelBulletSize / 2, y: boss.y + boss.size, emoji: '⚡', size: pixelBulletSize * 2, speed: laserSpeed, isRadial: false })
+                    boss.lastShotTime = Date.now()
+                }
+                else {
+                    const numShotsBase = currentStage === 1 ? 1 : (currentStage === 2 ? 2 : 3)
+                    const numShots = 1 + Math.floor(Math.random() * numShotsBase * difficultyMultiplier) * (boss.isAngry ? 1.6 : 1)
+                    for (let k = 0; k < numShots; k++) { setTimeout(() => { if (!boss) return; const pSpeed = (3.2 + Math.random() * 2.2) * difficultyMultiplier * (boss.isAngry ? 1.4 : 1); const angleToPl = Math.atan2((playerY + playerSize / 2) - (boss.y + boss.size / 2), (playerX + playerSize / 2) - (boss.x + boss.size / 2)); const spread = (Math.random() - 0.5) * 0.35; enemyProjectiles.push({ x: boss.x + boss.size / 2 - enemyProjectileSize / 2, y: boss.y + boss.size / 2, emoji: enemyProjectileEmojis[Math.floor(Math.random() * enemyProjectileEmojis.length)], size: enemyProjectileSize, speedX: Math.cos(angleToPl + spread) * pSpeed, speedY: Math.sin(angleToPl + spread) * pSpeed, isRadial: true }) }, k * (100 / (difficultyMultiplier * angryMultiplier))) }
+                    boss.lastShotTime = Date.now()
+                }
+            }
+            if (Date.now() - boss.dropTimer > boss.dropInterval) {
+                const dropRoll = Math.random()
+                if (dropRoll < 0.4) spawnGoodGuy()
+                else if (dropRoll < 0.75) spawnPowerUp('water')
+                else spawnPowerUp('largeWater')
+                boss.dropTimer = Date.now(); boss.dropInterval = ((boss.dropIntervalBase * 0.7 + Math.random() * boss.dropIntervalBase * 0.5) / difficultyMultiplier) / angryMultiplier
+            }
+        }
+
+        function checkCollisions() {
+            goodGuys.forEach((g, i) => { if (isColliding(playerX, playerY, playerSize, playerSize, g.x, g.y, itemSize, itemSize)) { goodGuys.splice(i, 1); score += 10; playSound("collect", "G4"); addFloatingText("+10", playerX, playerY) } })
+            badGuys.forEach((b, i) => { if (isColliding(playerX, playerY, playerSize, playerSize, b.x, b.y, itemSize, itemSize)) { if (!isInvincible) { takeDamage() } else { score += b.enemyData.points || 5; playSound("explosion"); addFloatingText(`+${b.enemyData.points || 5}`, b.x, b.y, "255,165,0"); b.health = 0; addFloatingText(explosionEmoji, b.x, b.y, "255,165,0", itemSize * 1.5) } if (b.health <= 0) badGuys.splice(i, 1) } })
+            stars.forEach((s, i) => { if (isColliding(playerX, playerY, playerSize, playerSize, s.x, s.y, itemSize, itemSize)) { stars.splice(i, 1); isInvincible = true; invincibilityTimer = invincibilityDuration; playerEmoji = '🌟'; playSound("star", "A5"); triggerScreenFlash() } })
+            foods.forEach((f, i) => { if (isColliding(playerX, playerY, playerSize, playerSize, f.x, f.y, itemSize, itemSize)) { foods.splice(i, 1); if (lives < MAX_LIVES) lives++; playSound("collect", "E4"); addFloatingText("+❤️", playerX, playerY - 20, "0,255,0") } })
+            powerUps.forEach((p, i) => { if (isColliding(playerX, playerY, playerSize, playerSize, p.x, p.y, p.size, p.size)) { playSound("powerUp", "C6"); if (p.type === 'strongBullet') { isBulletStrong = true; strongBulletTimer = p.effectDuration } else if (p.type === 'twin') { isTwinActive = true; twinPowerTimer = p.effectDuration } else if (p.type === 'triplet') { isTripletActive = true; tripletPowerTimer = p.effectDuration } else if (p.type === 'water') waterLevel = Math.min(waterLevel + 5, MAX_WATER); else if (p.type === 'largeWater') waterLevel = Math.min(waterLevel + 10, MAX_WATER); powerUps.splice(i, 1) } })
+
+            for (let i = bullets.length - 1; i >= 0; i--) { const bullet = bullets[i]; for (let j = badGuys.length - 1; j >= 0; j--) { const badGuy = badGuys[j]; if (bullet && badGuy && isColliding(bullet.x, bullet.y, bullet.size, bullet.size, badGuy.x, badGuy.y, itemSize, itemSize)) { if (!bullet.isStrong) bullets.splice(i, 1); badGuy.health--; if (badGuy.health <= 0) { badGuys.splice(j, 1); score += badGuy.enemyData.points || 5; playSound("enemyHit", "G3"); addFloatingText(`+${badGuy.enemyData.points || 5}`, badGuy.x, badGuy.y) } else { playSound("enemyHit", "E3") } break } } }
+
+            enemyProjectiles.forEach((p, i) => { if (isColliding(playerX, playerY, playerSize, playerSize, p.x, p.y, p.size, p.size)) { enemyProjectiles.splice(i, 1); if (!isInvincible) takeDamage() } })
+
+            if (stageTargetItem && isColliding(playerX, playerY, playerSize, playerSize, stageTargetItem.x, stageTargetItem.y, stageTargetItem.size, stageTargetItem.size)) {
+                collectStageTarget()
+            }
+
+            if (isBossFight && boss) { for (let i = bullets.length - 1; i >= 0; i--) { const b = bullets[i]; if (b && isColliding(b.x, b.y, b.size, b.size, boss.x, boss.y, boss.size, boss.size)) { const dmg = b.isStrong ? 2 : 1; if (!b.isStrong) bullets.splice(i, 1); else bullets.splice(i, 1); boss.health -= dmg; score += dmg; playSound("bossHit"); if (boss.health <= 0) { defeatBoss(); break } } } }
+            for (let i = bullets.length - 1; i >= 0; i--) { const b = bullets[i]; for (let j = goodGuys.length - 1; j >= 0; j--) { const gG = goodGuys[j]; if (b && gG && isColliding(b.x, b.y, b.size, b.size, gG.x, gG.y, itemSize, itemSize)) { bullets.splice(i, 1); gG.displayEmoji = shotGoodGuyEmoji; playSound("mistake"); score = Math.max(0, score - 15); addFloatingText("-15!", gG.x, gG.y, "255,50,50", 18); const tGG = gG; setTimeout(() => { const idxR = goodGuys.indexOf(tGG); if (idxR > -1) goodGuys.splice(idxR, 1) }, 300); break } } }
+        }
+
+        function createCelebrationParticle() { const particle = document.createElement('div'); particle.classList.add('particle'); const colors = ['#FFD700', '#FF69B4', '#00FA9A', '#1E90FF', '#ADFF2F']; particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)]; particle.style.left = `${Math.random() * 100}%`; particle.style.top = `${Math.random() * 100}%`; celebrationContainer.appendChild(particle); let angle = Math.random() * Math.PI * 2; let speed = Math.random() * 3 + 2; let currentX = parseFloat(particle.style.left); let currentY = parseFloat(particle.style.top); let opacity = 1; function animateParticle() { currentX += Math.cos(angle) * speed; currentY += Math.sin(angle) * speed - 1; opacity -= 0.02; speed *= 0.98; particle.style.left = `${currentX}%`; particle.style.top = `${currentY}%`; particle.style.opacity = opacity; if (opacity > 0) { requestAnimationFrame(animateParticle) } else { particle.remove() } } requestAnimationFrame(animateParticle) }
+        function startCelebration(isBossDefeat = false) {
+            celebrationContainer.innerHTML = ''; for (let i = 0; i < (isBossDefeat ? 100 : 70); i++) { setTimeout(createCelebrationParticle, i * (isBossDefeat ? 10 : 15)) }
+            playSound("star", isBossDefeat ? "C7" : "C6")
+            addFloatingText(isBossDefeat ? "BOSS DEFEATED!" : "STAGE CLEAR!", canvas.width / 2 - (isBossDefeat ? 120 : 100), canvas.height / 2 - 30, "255,215,0", 32)
+            if (isBossDefeat) addFloatingText("INCREDIBLE!", canvas.width / 2 - 90, canvas.height / 2, "255,255,255", 28)
+        }
+
+        function defeatBoss() {
+            startCelebration(true)
+            score += 100; isBossFight = false; boss = null; enemyProjectiles = []
+            const theme = stageThemes[currentStage - 1] || stageThemes[0]
+            stageTargetItem = setupSnakeItem({
+                ...spawnItemBase(0.5, canvas.height / 3, itemSize * 2),
+                emoji: theme.targetEmoji,
+                type: 'stageTarget',
+                amplitude: 10
+            })
+            stageTargetItem.x = canvas.width / 2 - stageTargetItem.size / 2
+            waitingForTargetGrab = true
+        }
+
+        function collectStageTarget() {
+            playSound("star", "E6")
+            addFloatingText("STAGE COMPLETE!", stageTargetItem.x, stageTargetItem.y, "0,255,100", 28)
+            stageTargetItem = null
+            waitingForTargetGrab = false
+
+            gameRunning = false
+            stageTransitioning = true
+            stopBGM()
+
+            fadeOverlay.classList.add('active')
+            setTimeout(() => {
+                const nextStageNumber = currentStage + 1
+                if (nextStageNumber <= stageThemes.length) {
+                    const nextTheme = stageThemes[nextStageNumber - 1]
+                    stageIntroTitle.textContent = `Stage ${nextStageNumber}: ${nextTheme.name}`
+                    stageIntroGoodEmoji.textContent = `Next: Collect ${nextTheme.goodEmoji}!`
+                    stageIntroOverlay.classList.remove('hidden')
+                } else {
+                    triggerGameOver("CONGRATULATIONS! All stages cleared!")
+                }
+                fadeOverlay.classList.remove('active')
+            }, 700)
+        }
+
+
+        function triggerStageClear(msg) { gameRunning = false; stageTransitioning = true; stopBGM(); stageClearText.innerHTML = `<h2 class="text-2xl mb-1">${msg}</h2><div id="celebrationContainerInner" style="position:relative; height: 50px;"></div>`; stageClearOverlay.classList.remove('hidden'); const innerCelebrationContainer = document.getElementById('celebrationContainerInner'); if (innerCelebrationContainer) { celebrationContainer = innerCelebrationContainer; startCelebration() } }
+        function takeDamage() { if (playerExplosionTimer > 0) return; lives--; playSound("hit"); triggerScreenShake(true); playerHitFlashTimer = 400; damageFlashOverlay.classList.add('active'); setTimeout(() => damageFlashOverlay.classList.remove('active'), 100); if (lives <= 0) { playerExplosionTimer = playerExplosionDuration; playSound("explosion") } }
+        function triggerScreenShake(harder = false) { gameContainer.classList.add(harder ? 'shake-harder' : 'shake-hard'); setTimeout(() => gameContainer.classList.remove(harder ? 'shake-harder' : 'shake-hard'), harder ? 400 : 300) }
+        function triggerScreenFlash() { screenFlashOverlay.classList.add('active'); setTimeout(() => { screenFlashOverlay.classList.remove('active'); screenFlashOverlay.style.opacity = '0' }, 150) }
+        function isColliding(x1, y1, w1, h1, x2, y2, w2, h2) { return x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2 }
+        function handleChanceLossLogic() { chances--; updateUI(); if (chances <= 0) triggerGameOver("All Chances Lost! Game Over."); else { lives = MAX_LIVES; playerX = canvas.width / 2 - playerSize / 2; playerY = canvas.height - playerSize - 10; isInvincible = true; invincibilityTimer = 2000; playerEmoji = '🌟'; updateUI() } }
+        function triggerGameOver(msg) { gameRunning = false; gameOverState = true; stopBGM(); messageText.textContent = msg; retryStageButton.style.display = chances > 0 ? 'inline-block' : 'none'; messageOverlay.classList.remove('hidden') }
+
+        const keys = {}; window.addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'Space' && gameRunning && !gameOverState && playerExplosionTimer <= 0 && !isPaused) shoot(); if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) e.preventDefault() }); window.addEventListener('keyup', (e) => { keys[e.code] = false })
+        let mouseTargetX = null, mouseTargetY = null
+        function handlePlayerMovement(deltaTime) { if (!gameRunning || gameOverState || playerExplosionTimer > 0) return; let dx = 0, dy = 0; if (keys['ArrowLeft'] || keys['KeyA']) dx -= playerSpeed; if (keys['ArrowRight'] || keys['KeyD']) dx += playerSpeed; if (keys['ArrowUp'] || keys['KeyW']) dy -= playerSpeed; if (keys['ArrowDown'] || keys['KeyS']) dy += playerSpeed; if (dx !== 0 || dy !== 0) { mouseTargetX = null; mouseTargetY = null; playerX = Math.max(0, Math.min(canvas.width - playerSize, playerX + dx)); playerY = Math.max(0, Math.min(canvas.height - playerSize, playerY + dy)) } else if (mouseTargetX !== null && mouseTargetY !== null) { const tX = mouseTargetX - playerSize / 2, tY = mouseTargetY - playerSize / 2; const mS = playerSpeed * (deltaTime / 16.67) * 1.5; if (Math.abs(playerX - tX) > mS) playerX += (playerX < tX ? 1 : -1) * mS; else playerX = tX; if (Math.abs(playerY - tY) > mS) playerY += (playerY < tY ? 1 : -1) * mS; else playerY = tY; playerX = Math.max(0, Math.min(canvas.width - playerSize, playerX)); playerY = Math.max(0, Math.min(canvas.height - playerSize, playerY)) } }
+        function shoot() { if (waterLevel <= 0 || playerExplosionTimer > 0) return; const maxBullets = isTwinActive || isTripletActive ? 12 : 8; if (bullets.length >= maxBullets) return; const cB = (oX = 0) => ({ x: playerX + playerSize / 2 - (isBulletStrong ? strongBulletSize : itemSize) / 2 + oX, y: playerY, speed: -15, size: isBulletStrong ? strongBulletSize : itemSize, isStrong: isBulletStrong }); if (isTripletActive) { bullets.push(cB(-playerSize / 2)); bullets.push(cB(0)); bullets.push(cB(playerSize / 2)); waterLevel = Math.max(0, waterLevel - 2) } else if (isTwinActive) { bullets.push(cB(-playerSize / 4)); bullets.push(cB(playerSize / 4)); waterLevel = Math.max(0, waterLevel - 1) } else { bullets.push(cB()) } waterLevel = Math.max(0, waterLevel - 1); playSound("shoot"); updateUI() }
+        let isPointerDown = false
+        function handlePointerMove(e) { e.preventDefault(); if (!gameRunning || gameOverState || playerExplosionTimer > 0 || isPaused) return; const r = canvas.getBoundingClientRect(); let cX, cY; if (e.touches) { cX = e.touches[0].clientX; cY = e.touches[0].clientY } else { cX = e.clientX; cY = e.clientY } mouseTargetX = cX - r.left; mouseTargetY = cY - r.top; if (isPointerDown && e.touches) { playerX = Math.max(0, Math.min(canvas.width - playerSize, mouseTargetX - playerSize / 2)); playerY = Math.max(0, Math.min(canvas.height - playerSize, mouseTargetY - playerSize / 2)) } }
+        function handlePointerDown(e) { e.preventDefault(); if (!gameRunning || gameOverState || playerExplosionTimer > 0 || isPaused) return; isPointerDown = true; if (!e.touches) shoot() }
+        function handlePointerUp(e) { e.preventDefault(); if (!gameRunning || gameOverState || playerExplosionTimer > 0 || isPaused) return; if (e.changedTouches) { if (mouseTargetX === null || (Math.abs(playerX - (mouseTargetX - playerSize / 2)) < playerSpeed * 3 && Math.abs(playerY - (mouseTargetY - playerSize / 2)) < playerSpeed * 3)) shoot() } isPointerDown = false }
+        canvas.addEventListener('mousemove', handlePointerMove, { passive: false }); canvas.addEventListener('mousedown', handlePointerDown, { passive: false }); canvas.addEventListener('mouseup', handlePointerUp, { passive: false }); canvas.addEventListener('touchmove', handlePointerMove, { passive: false }); canvas.addEventListener('touchstart', handlePointerDown, { passive: false }); canvas.addEventListener('touchend', handlePointerUp, { passive: false })
+
+        function resizeCanvas() {
+            const gameWrapper = document.getElementById('gameWrapper')
+            const container = document.getElementById('gameContainer')
+            const mainGameArea = document.getElementById('mainGameArea')
+
+            const topStatsHeight = document.getElementById('topControlsAndStats').offsetHeight
+            const controlsHeight = document.querySelector('.game-controls').offsetHeight + document.getElementById('controlsInfo').offsetHeight
+            const containerPadding = parseInt(getComputedStyle(container).paddingTop) + parseInt(getComputedStyle(container).paddingBottom)
+
+            const availableHeightForMainArea = container.clientHeight - topStatsHeight - controlsHeight - containerPadding - 10
+            mainGameArea.style.height = `${Math.max(100, availableHeightForMainArea)}px`
+
+            const sideBarWidth = 25; const sideBarMargin = 3
+            const totalSideBarSpace = (sideBarWidth + sideBarMargin) * 2
+
+            let targetCanvasWidth = mainGameArea.clientWidth - totalSideBarSpace
+
+            const aspectRatio = 4 / 3
+            let targetCanvasHeight = targetCanvasWidth / aspectRatio
+
+            if (targetCanvasHeight > mainGameArea.clientHeight) {
+                targetCanvasHeight = mainGameArea.clientHeight
+                targetCanvasWidth = targetCanvasHeight * aspectRatio
+            }
+
+            canvas.width = Math.max(100, targetCanvasWidth)
+            canvas.height = Math.max(75, targetCanvasHeight)
+
+            document.querySelectorAll('.side-bar').forEach(bar => bar.style.height = `${canvas.height}px`)
+
+            initializeBgStars()
+            if (playerX !== undefined && playerY !== undefined) { playerX = Math.max(0, Math.min(canvas.width - playerSize, playerX || canvas.width / 2 - playerSize / 2)); playerY = Math.max(0, Math.min(canvas.height - playerSize, playerY || canvas.height - playerSize - 10)) }
+            if (gameRunning && !gameOverState && !stageTransitioning) draw()
+        }
+
+        function initializeBgStars() { bgStars = []; const bS = currentTheme.starSpeedBase || 0.2, sV = currentTheme.starSpeedVariation || 0.5; for (let i = 0; i < numBgStars; i++)bgStars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: Math.random() * (currentTheme.starSizeMultiplier || 1) * 2 + 1, speed: Math.random() * sV + bS }) }
+
+        function changeStage(stageNum) {
+            currentStage = stageNum
+            currentTheme = stageThemes[currentStage - 1] || stageThemes[0]
+            currentGoodGuyEmoji = currentTheme.goodEmoji
+
+            document.getElementById('startGoodEmoji').textContent = currentGoodGuyEmoji
+            document.getElementById('startGoodEmojiPenalty').textContent = currentGoodGuyEmoji
+            document.getElementById('startBossEmojis').textContent = stageThemes.map(t => t.bossEmoji).slice(0, stageThemes.length).join('')
+
+
+            canvas.style.backgroundColor = currentTheme.bgColor
+            initializeBgStars(); updateBGMForStage()
+            goodGuys = []; badGuys = []; stars = []; foods = []; bullets = []; enemyProjectiles = []; powerUps = []; stageTargetItem = null
+            isBossFight = false; boss = null; waitingForTargetGrab = false
+            playerX = canvas.width / 2 - playerSize / 2; playerY = canvas.height - playerSize - 10
+            lastSpawnTime = Date.now(); lastPowerUpSpawnTime = Date.now()
+        }
+        function initGameValues() { score = 0; waterLevel = MAX_WATER; lives = MAX_LIVES; chances = 3; currentStage = 1; difficultyMultiplier = 1; isInvincible = false; invincibilityTimer = 0; playerEmoji = '🤠'; isBulletStrong = false; strongBulletTimer = 0; isTwinActive = false; twinPowerTimer = 0; isTripletActive = false; tripletPowerTimer = 0; playerExplosionTimer = 0; playerHitFlashTimer = 0; goodGuys = []; badGuys = []; stars = []; foods = []; bullets = []; enemyProjectiles = []; floatingTexts = []; powerUps = []; isBossFight = false; boss = null; waitingForTargetGrab = false; stageTargetItem = null; changeStage(1); updateUI() }
+
+        function forceRestartGame(event) { if (event) event.stopPropagation(); stopBGM(); gameRunning = false; gameOverState = true; isPaused = false; if (pauseButton) pauseButton.textContent = "❚❚ Pause"; if (pauseOverlay) pauseOverlay.classList.add('hidden'); startOverlay.classList.remove('hidden'); messageOverlay.classList.add('hidden'); stageClearOverlay.classList.add('hidden'); stageIntroOverlay.classList.add('hidden') }
+        restartGeneralButton.addEventListener('click', forceRestartGame)
+
+        function startGameLogic(retryCurrentStage = false) {
+            if (!retryCurrentStage) {
+                initGameValues()
+            } else {
+                lives = MAX_LIVES
+                isInvincible = false; invincibilityTimer = 0; playerEmoji = '🤠'
+                isBulletStrong = false; strongBulletTimer = 0; isTwinActive = false; twinPowerTimer = 0; isTripletActive = false; tripletPowerTimer = 0
+                playerExplosionTimer = 0; playerHitFlashTimer = 0
+                goodGuys = []; badGuys = []; stars = []; foods = []; bullets = []; enemyProjectiles = []; powerUps = []
+                isBossFight = false; boss = null; waitingForTargetGrab = false; stageTargetItem = null
+                playerX = canvas.width / 2 - playerSize / 2
+                playerY = canvas.height - playerSize - 10
+                lastSpawnTime = Date.now(); lastPowerUpSpawnTime = Date.now()
+                updateUI()
+                addFloatingText(`Retrying Stage ${currentStage}!`, canvas.width / 2 - 120, canvas.height / 2, "0,200,255", 24)
+            }
+
+            gameOverState = false; stageTransitioning = false; isPaused = false
+            if (pauseButton) pauseButton.textContent = "❚❚ Pause"
+            if (pauseOverlay) pauseOverlay.classList.add('hidden')
+
+            messageOverlay.classList.add('hidden'); startOverlay.classList.add('hidden'); stageClearOverlay.classList.add('hidden'); stageIntroOverlay.classList.add('hidden')
+            gameRunning = true
+            updateBGMForStage()
+            lastTime = performance.now(); requestAnimationFrame(gameLoop)
+        }
+
+        function handleStartGameInteraction(event, isFullRestart = true) {
+            if (event) event.stopPropagation()
+            justStartedGame = true
+
+            const startGameAction = () => {
+                if (isFullRestart) {
+                    startGameLogic(false)
+                } else {
+                    startGameLogic(true)
+                }
+                setTimeout(() => { justStartedGame = false }, 150)
+            }
+
+            if (Tone.context.state !== 'running') {
+                Tone.start().then(() => {
+                    console.log("AudioContext started by user interaction.")
+                    startGameAction()
+                }).catch(err => {
+                    console.error("Error starting AudioContext:", err)
+                    startGameAction()
+                })
+            } else {
+                startGameAction()
+            }
+        }
+
+
+        pauseButton.addEventListener('click', (event) => {
+            event.stopPropagation()
+            if (justStartedGame) return
+            if (!gameRunning || gameOverState || stageTransitioning) return
+            isPaused = !isPaused
+            if (isPaused) {
+                pauseButton.textContent = "▶ Play"
+                if (pauseOverlay) pauseOverlay.classList.remove('hidden')
+                if (Tone.Transport.state === 'started' && isBgmOn) Tone.Transport.pause()
+            } else {
+                pauseButton.textContent = "❚❚ Pause"
+                if (pauseOverlay) pauseOverlay.classList.add('hidden')
+                if (Tone.Transport.state === 'paused' && isBgmOn) Tone.Transport.start()
+                lastTime = performance.now()
+                requestAnimationFrame(gameLoop)
+            }
+        })
+
+        window.addEventListener('load', () => {
+            startButton.addEventListener('click', (e) => handleStartGameInteraction(e, true))
+            restartModalButton.addEventListener('click', (e) => handleStartGameInteraction(e, true))
+            retryStageButton.addEventListener('click', (e) => handleStartGameInteraction(e, false))
+
+            startNextStageButton.addEventListener('click', (event) => {
+                event.stopPropagation()
+                justStartedGame = true
+                stageIntroOverlay.classList.add('hidden')
+
+                changeStage(currentStage + 1)
+
+                stageTransitioning = false
+                gameRunning = true
+                isPaused = false
+                if (pauseButton) pauseButton.textContent = "❚❚ Pause"
+                if (pauseOverlay) pauseOverlay.classList.add('hidden')
+                startBGM()
+                lastTime = performance.now()
+                requestAnimationFrame(gameLoop)
+                setTimeout(() => { justStartedGame = false }, 150)
+            })
+
+            bgmVolumeSlider.addEventListener('input', (e) => {
+                if (bgmSynth) {
+                    const newVolumeDb = parseFloat(e.target.value) * 40 - 35
+                    bgmSynth.volume.value = newVolumeDb
+                }
+                isBgmOn = parseFloat(e.target.value) > 0.01
+                if (document.getElementById('bgmToggleButton')) document.getElementById('bgmToggleButton').textContent = isBgmOn ? "🎵 Mute BGM" : "🔇 Unmute BGM"
+                if (isBgmOn && bgmLoop && bgmLoop.mute) bgmLoop.mute = false
+                else if (!isBgmOn && bgmLoop) bgmLoop.mute = true
+            })
+
+            sfxVolumeSlider.addEventListener('input', (e) => {
+                if (sfxGainNode) {
+                    sfxGainNode.gain.value = parseFloat(e.target.value)
+                }
+                isSfxOn = parseFloat(e.target.value) > 0.01
+                if (document.getElementById('sfxToggleButton')) document.getElementById('sfxToggleButton').textContent = isSfxOn ? "🔊 Mute SFX" : "🔈 Unmute SFX"
+            })
+
+            resizeCanvas()
+            startOverlay.classList.remove('hidden')
+        })
+        window.addEventListener('resize', resizeCanvas)
+
+        function showToast(message) { toastNotification.textContent = message; toastNotification.classList.add('show'); setTimeout(() => { toastNotification.classList.remove('show') }, 2000) }
+        shareButton.addEventListener('click', () => { const url = window.location.href; const textArea = document.createElement("textarea"); textArea.value = url; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); showToast('URL Copied!') } catch (err) { showToast('Copy Failed.'); console.error('Copy URL error:', err) } document.body.removeChild(textArea) })
+
+        screenshotButton.addEventListener('click', () => {
+            showToast('Taking screenshot...')
+            const gameAreaElement = document.getElementById('gameContainer')
+            if (html2canvas && gameAreaElement) {
+                html2canvas(gameAreaElement, {
+                    allowTaint: true, useCORS: true, backgroundColor: '#0c1119',
+                    onclone: (clonedDoc) => {
+                        clonedDoc.getElementById('gameContainer').style.transform = ''
+                    }
+                }).then(canvasCapture => {
+                    const dataURL = canvasCapture.toDataURL('image/png')
+                    const link = document.createElement('a')
+                    link.download = 'emoji-catcher-screenshot.png'
+                    link.href = dataURL
+                    document.body.appendChild(link); link.click(); document.body.removeChild(link)
+                    showToast('Screenshot Saved!')
+                }).catch(err => {
+                    showToast('Screenshot Failed.'); console.error('html2canvas error:', err)
+                })
+            } else { showToast('Screenshot tool not ready.'); console.error('html2canvas not loaded or gameContainer not found') }
+        });
+
+    </script>
+</body>
+
+</html>
