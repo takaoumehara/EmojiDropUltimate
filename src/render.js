@@ -280,6 +280,14 @@ function drawTitle() {
   const ja = getLang() === 'ja';
   if (Weather.loaded) Weather.effects.slice(0, 3).forEach((fx, i) => label(ja ? fx.ja : fx.en, W / 2, py + (44 + i * 18) * UI, '#9fd8b0', 11 * UI));
 
+  // ストリーク(戻る動機): 連続記録が途切れそうなら強調
+  if (Save.streakAtRisk()) {
+    const glow = 0.6 + 0.4 * Math.sin(time * 4);
+    ctx.globalAlpha = glow;
+    label(ja ? `🔥 ${Save.data.streak}日連続中! 今日プレイで継続` : `🔥 ${Save.data.streak}-day streak! Play today to keep it`, W / 2, H * 0.47, '#ff9d3c', 12.5 * UI);
+    ctx.globalAlpha = 1;
+  }
+
   // メニューボタン(コンパクト)
   game.menuBtns = [];
   const bw = Math.min(W * 0.74, 348), bx = (W - bw) / 2, bh = 46 * UI, gap = 11 * UI;

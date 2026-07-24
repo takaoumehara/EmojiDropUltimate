@@ -12,7 +12,9 @@ import { BossAI } from './bossai.js';
 import { t, getLang } from './i18n.js';
 import { generateStage, proceduralStage, scaleStage } from './aistage.js';
 import { Save } from './save.js';
-import { shareCard } from './sharecard.js';
+import { SHARE_URL } from './sharecard.js';
+import { Leaderboard } from './leaderboard.js';
+import { openShare } from './ui.js';
 
 export function rankOf(score) { return score >= 180000 ? 'S' : score >= 120000 ? 'A' : score >= 70000 ? 'B' : 'C'; }
 
@@ -539,6 +541,10 @@ function recordRunEnd({ daily = false } = {}) {
   const newSkins = Save.recordRun(r);
   game.lastResult = { ...r, rank: rankOf(game.score), newSkins };
   if (newSkins > 0) game.skinFlash = 4;
+  // デイリーは匿名ランキングへスコア送信(名前=任意のスクリーンネーム)
+  if (daily) {
+    Leaderboard.submit({ name: Save.name(), cid: Save.clientId(), score: game.score, day: todayKey() });
+  }
 }
 
 export function shareRun() {
@@ -549,9 +555,10 @@ export function shareRun() {
       : game.aiMode ? (ja ? 'AIステージ' : 'AI STAGE') : (ja ? 'ストーリー' : 'STORY');
   const sub = game.endless ? (ja ? `ワールド ${r.world} 到達` : `Reached World ${r.world}`)
     : (ja ? `ステージ ${r.world}` : `Stage ${r.world}`);
-  return shareCard({
+  return openShare({
     emoji: stage().emoji, mode, stageName: game.stages[game.stageIndex] && game.stages[game.stageIndex].name,
     rank: r.rank, score: r.score, sub, weather: Weather.loaded ? Weather.statusLine() : '',
+    daily: game.daily, day: todayKey(), url: SHARE_URL,
   });
 }
 export function toTitle() {

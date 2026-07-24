@@ -4,10 +4,11 @@
 // ============================================================
 import { getLang } from './i18n.js';
 
-const URL_SHARE = location.origin + location.pathname;
+export const SHARE_URL = location.origin + location.pathname;
+const URL_SHARE = SHARE_URL;
 const HASHTAG = '#EmojiDropUltimate';
 
-function buildCanvas(d) {
+export function buildCanvas(d) {
   const W = 1080, Hgt = 1350;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = Hgt;
@@ -58,14 +59,19 @@ function buildCanvas(d) {
   return cv;
 }
 
-function summaryText(d) {
+// SNS本文(URLは含めない。各共有先で url は別パラメータで渡す)
+export function summaryText(d) {
   const ja = getLang() === 'ja';
   const parts = [];
   parts.push(ja ? `EMOJI DROP ULTIMATE で ${d.score} 点!` : `Scored ${d.score} in EMOJI DROP ULTIMATE!`);
   if (d.rank) parts.push(ja ? `ランク ${d.rank}` : `Rank ${d.rank}`);
   if (d.sub) parts.push(d.sub);
-  parts.push(HASHTAG + ' ' + URL_SHARE);
+  parts.push(HASHTAG);
   return parts.join(' ');
+}
+
+export async function cardBlob(d) {
+  return new Promise(res => buildCanvas(d).toBlob(res, 'image/png'));
 }
 
 // 生成 → 共有/保存。戻り値: 'shared' | 'downloaded' | 'copied' | 'error'

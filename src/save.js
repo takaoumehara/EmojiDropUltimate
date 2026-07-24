@@ -9,7 +9,7 @@ const DEF = {
   bestScore: 0, bestWorld: 0, bestDailyScore: 0,
   kills: 0, shots: 0, hits: 0, deaths: 0, runs: 0,
   streak: 0, lastPlay: '', dailyPlayed: '', dailyBest: 0,
-  skin: 0,
+  skin: 0, name: '', cid: '',
 };
 
 function yesterdayKey() {
@@ -67,6 +67,24 @@ export const Save = {
 
   accuracy() { return this.data.shots ? Math.round(this.data.hits / this.data.shots * 100) : 0; },
   playedDailyToday() { return this.data.dailyPlayed === todayKey(); },
+
+  // スクリーンネーム(個人情報なし・任意)。未設定なら自動生成。
+  name() {
+    if (!this.data.name) { this.data.name = 'Player' + (1000 + Math.floor(Math.random() * 9000)); this.persist(); }
+    return this.data.name;
+  },
+  setName(n) {
+    n = String(n || '').replace(/[<>\n\r\t]/g, '').trim().slice(0, 14);
+    if (n) { this.data.name = n; this.persist(); }
+    return this.data.name;
+  },
+  // 端末ID(匿名・ランキングの重複更新キー用。個人情報ではない)
+  clientId() {
+    if (!this.data.cid) { this.data.cid = 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); this.persist(); }
+    return this.data.cid;
+  },
+  // ストリークが途切れそう(今日まだ遊んでいない)
+  streakAtRisk() { return this.data.streak > 0 && this.data.lastPlay !== todayKey(); },
 };
 
 function load() {
