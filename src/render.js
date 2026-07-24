@@ -26,6 +26,18 @@ function label(text, x, y, color, size, align = 'center', weight = 800) {
   ctx.fillText(text, x, y);
 }
 
+// テーマ色をなめらかに補間(ステージが変わると自機/弾がスッと変色する)
+function hexToRgb(h) { const n = parseInt(String(h).slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function rgbCss(c, a) { const r = c[0] | 0, g = c[1] | 0, b = c[2] | 0; return a == null ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${a})`; }
+let curShip = null, curShot = null;
+function tickTint() {
+  const tint = stageTint(stage());
+  const ts = hexToRgb(tint.ship), to = hexToRgb(tint.shot);
+  if (!curShip) { curShip = ts.slice(); curShot = to.slice(); return; }
+  const k = 0.08;
+  for (let i = 0; i < 3; i++) { curShip[i] += (ts[i] - curShip[i]) * k; curShot[i] += (to[i] - curShot[i]) * k; }
+}
+
 let wDrops = null;
 function ensureDrops() {
   if (wDrops) return;
@@ -114,15 +126,15 @@ function drawPlayer() {
     ctx.fillStyle = 'rgba(185,103,255,0.35)'; ctx.beginPath(); ctx.arc(tt.x, tt.y, pulse + 5, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#e3c8ff'; ctx.beginPath(); ctx.arc(tt.x, tt.y, pulse, 0, Math.PI * 2); ctx.fill();
   }
-  const tint = stageTint(stage());
+  const shipCol = rgbCss(curShip || [127, 208, 255]);
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(dirDef().fy, dirDef().fx) + Math.PI / 2);
   // テーマ連動のエンジン光(自機がステージに馴染む)
   ctx.globalAlpha = 0.16 + 0.05 * Math.sin(performance.now() * 0.006);
-  ctx.fillStyle = tint.ship; ctx.beginPath(); ctx.arc(0, 2, 17, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = shipCol; ctx.beginPath(); ctx.arc(0, 2, 17, 0, Math.PI * 2); ctx.fill();
   ctx.globalAlpha = 1;
   const th = 9 + Math.sin(p.anim) * 4;
   const tg = ctx.createLinearGradient(0, 13, 0, 13 + th);
-  tg.addColorStop(0, '#fff'); tg.addColorStop(0.35, tint.ship); tg.addColorStop(1, 'rgba(0,0,0,0)');
+  tg.addColorStop(0, '#fff'); tg.addColorStop(0.35, shipCol); tg.addColorStop(1, 'rgba(0,0,0,0)');
   const sk = Save.currentSkin();
   ctx.fillStyle = tg; ctx.beginPath(); ctx.moveTo(-5, 13); ctx.lineTo(5, 13); ctx.lineTo(1, 13 + th); ctx.lineTo(-1, 13 + th); ctx.fill();
   ctx.fillStyle = sk.body; ctx.fillRect(-6, -4, 12, 18);
@@ -131,6 +143,16 @@ function drawPlayer() {
   ctx.fillStyle = '#ffffff'; ctx.fillRect(-2, -13, 4, 11);
   ctx.fillStyle = sk.wing; ctx.fillRect(-17, 4, 11, 8); ctx.fillRect(6, 4, 11, 8);
   ctx.fillStyle = '#00ffaa'; ctx.fillRect(-2, -8, 4, 6);
+  // 発砲マズルフラッシュ(テーマ色・一瞬)
+  const mz = p.muzzle || 0;
+  if (mz > 0.02) {
+    const shotCol = rgbCss(curShot || [143, 227, 255]);
+    ctx.globalAlpha = clamp(mz * 0.85, 0, 1);
+    ctx.fillStyle = shotCol; ctx.beginPath(); ctx.arc(0, -16, 3 + (1 - mz) * 7, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = clamp(mz, 0, 1);
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, -16, 2 + (1 - mz) * 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   if (p.shield) {
     ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2.5;
     ctx.globalAlpha = 0.55 + 0.3 * Math.sin(performance.now() * 0.006);
@@ -142,10 +164,11 @@ function drawPlayer() {
 
 function drawBullets() {
   const a = Math.atan2(dirDef().fy, dirDef().fx);
-  const shot = stageTint(stage()).shot;
+  const shot = rgbCss(curShot || [143, 227, 255]);
+  const shotGlow = rgbCss(curShot || [143, 227, 255], 0.4);
   for (const b of game.pBullets) {
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a + Math.PI / 2);
-    ctx.fillStyle = b.opt ? 'rgba(185,103,255,0.45)' : shot + '66'; ctx.fillRect(-2.5, 0, 5, 12);
+    ctx.fillStyle = b.opt ? 'rgba(185,103,255,0.45)' : shotGlow; ctx.fillRect(-2.5, 0, 5, 12);
     ctx.fillStyle = b.opt ? '#e3c8ff' : shot; ctx.fillRect(-2, -5, 4, 9);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(-1, -5, 2, 7);
     ctx.restore();
@@ -454,6 +477,7 @@ function drawVictory() {
 // === メイン描画 ===
 export function draw() {
   ctx.clearRect(0, 0, W, H);
+  tickTint();
   switch (game.state) {
     case 'title': drawTitle(); break;
     case 'intro': drawIntro(); break;

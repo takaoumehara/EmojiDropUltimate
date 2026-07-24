@@ -65,6 +65,7 @@ function updatePlayer(dt, keys) {
   if (p.boost) { p.boostT -= dt * 1000; if (p.boostT <= 0) p.boost = false; }
   p.fireT -= dt * 1000;
   if (p.fireT <= 0) { fire(); p.fireT = p.power >= 3 ? 105 : 130; }
+  if (p.muzzle > 0) p.muzzle -= dt * 11;
   p.anim += dt * 10;
 }
 
@@ -72,6 +73,7 @@ function fire() {
   const p = game.player, a = fwAngle();
   const fx = Math.cos(a), fy = Math.sin(a);
   const px = -fy, py = fx;
+  p.muzzle = 1;
   Snd.shoot();
   const mk = (ox, spread = 0) => {
     game.pBullets.push({ x: p.x + fx * 20 + px * ox, y: p.y + fy * 20 + py * ox, vx: fx * CFG.BULLET_SPEED + px * spread, vy: fy * CFG.BULLET_SPEED + py * spread, size: 4 });
