@@ -41,6 +41,7 @@ export const STAGES = [
       { type: 'kamikaze', emoji: '🐝', hp: 1, speed: 235, pts: 250, size: 15 },
     ],
     boss: { emoji: '👑', name: 'クラウドキング', en: 'CLOUD KING', hp: 70 },
+    ship: '#7fd0ff', shot: '#8fe3ff',
     dur: 38000, bpm: 128, scale: [60, 64, 67, 69, 71],
   },
   {
@@ -54,6 +55,7 @@ export const STAGES = [
       { type: 'kamikaze', emoji: '🐡', hp: 1, speed: 255, pts: 250, size: 16 },
     ],
     boss: { emoji: '🐙', name: 'クラーケン', en: 'KRAKEN', hp: 95 },
+    ship: '#3fe0d0', shot: '#5fe6ff',
     dur: 40000, bpm: 132, scale: [62, 65, 69, 72, 74],
   },
   {
@@ -67,6 +69,7 @@ export const STAGES = [
       { type: 'kamikaze', emoji: '🕷️', hp: 1, speed: 275, pts: 270, size: 15 },
     ],
     boss: { emoji: '🕸️', name: 'スパイダークイーン', en: 'SPIDER QUEEN', hp: 115 },
+    ship: '#c17bff', shot: '#d29bff',
     dur: 40000, bpm: 138, scale: [57, 60, 62, 64, 67],
   },
   {
@@ -80,6 +83,7 @@ export const STAGES = [
       { type: 'tank',     emoji: '🚓', hp: 5, speed: 45,  pts: 400, size: 24, shootRate: 0.7 },
     ],
     boss: { emoji: '🖥️', name: 'メインフレーム', en: 'MAINFRAME', hp: 135 },
+    ship: '#57e6ff', shot: '#7cf0ff',
     dur: 42000, bpm: 144, scale: [60, 63, 65, 67, 70],
   },
   {
@@ -93,6 +97,7 @@ export const STAGES = [
       { type: 'kamikaze', emoji: '☄️', hp: 1, speed: 320, pts: 300, size: 16 },
     ],
     boss: { emoji: '🐉', name: 'ヘルドラゴン', en: 'HELL DRAGON', hp: 160 },
+    ship: '#ff7a3c', shot: '#ffb03c',
     dur: 42000, bpm: 152, scale: [64, 65, 67, 69, 71],
   },
   {
@@ -106,6 +111,7 @@ export const STAGES = [
       { type: 'tank',     emoji: '🌑', hp: 7, speed: 42,  pts: 500, size: 26, shootRate: 0.9 },
     ],
     boss: { emoji: '🛸', name: 'マザーシップ', en: 'MOTHERSHIP', hp: 200 },
+    ship: '#b98cff', shot: '#e879f9',
     dur: 44000, bpm: 160, scale: [57, 59, 60, 64, 65],
   },
 ];
@@ -164,6 +170,26 @@ export const BOSS_STYLES = {
   ]},
 };
 export const STYLE_KEYS = ['king', 'kraken', 'spider', 'mainframe', 'dragon', 'mothership'];
+
+// === アダプティブBGMの音色パレット(テーマ毎に鳴りが変わる) ===
+//   lead=主旋律 / bass=低音 / pad=和音 / feel: 0=明るい 1=暗い
+export const MUSIC_PALETTES = [
+  { lead: 'square',   bass: 'triangle', pad: 'sine',     feel: 0 }, // 空
+  { lead: 'triangle', bass: 'sine',     pad: 'triangle', feel: 0 }, // 水
+  { lead: 'sawtooth', bass: 'square',   pad: 'sine',     feel: 1 }, // 洞窟
+  { lead: 'square',   bass: 'sawtooth', pad: 'square',   feel: 1 }, // ネオン
+  { lead: 'sawtooth', bass: 'square',   pad: 'sawtooth', feel: 1 }, // マグマ
+  { lead: 'triangle', bass: 'sine',     pad: 'sine',     feel: 0 }, // 宇宙
+];
+
+// ステージ→自機/弾のテーマ色(明示値が無ければ空色から導出)
+export function stageTint(st) {
+  const sky = (st && st.sky) || ['#4488ff', '#8fd3ff'];
+  return {
+    ship: (st && st.ship) || sky[1],
+    shot: (st && st.shot) || sky[1],
+  };
+}
 
 export const BELLS = [
   { color: '#ffffff', name: 'SCORE',  ja: 'スコア',   effect: 'points', value: 500 },

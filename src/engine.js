@@ -636,6 +636,8 @@ export function update(dt, keys) {
       updateLightning(dt);
       Director.update(dt, game);
       checkCollisions();
+      // BGM緊張度: ボス=最高潮 / コンボ・残機ピンチで高まる
+      Snd.setIntensity(game.bossActive ? 0.92 : 0.32 + Math.min(0.34, game.combo * 0.03) + (game.lives <= 1 ? 0.22 : 0));
       break;
     case 'finale': {
       const F = game.finale;

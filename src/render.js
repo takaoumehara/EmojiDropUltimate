@@ -1,7 +1,7 @@
 // ============================================================
 // render.js — 描画(読みやすさ優先: 大きめ・視認性の高いサンセリフ)
 // ============================================================
-import { BELLS, clamp } from './config.js';
+import { BELLS, clamp, stageTint } from './config.js';
 import { W, H, ctx, UI } from './env.js';
 import { game } from './state.js';
 import { stage, dirDef } from './geo.js';
@@ -114,10 +114,15 @@ function drawPlayer() {
     ctx.fillStyle = 'rgba(185,103,255,0.35)'; ctx.beginPath(); ctx.arc(tt.x, tt.y, pulse + 5, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#e3c8ff'; ctx.beginPath(); ctx.arc(tt.x, tt.y, pulse, 0, Math.PI * 2); ctx.fill();
   }
+  const tint = stageTint(stage());
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(dirDef().fy, dirDef().fx) + Math.PI / 2);
+  // テーマ連動のエンジン光(自機がステージに馴染む)
+  ctx.globalAlpha = 0.16 + 0.05 * Math.sin(performance.now() * 0.006);
+  ctx.fillStyle = tint.ship; ctx.beginPath(); ctx.arc(0, 2, 17, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
   const th = 9 + Math.sin(p.anim) * 4;
   const tg = ctx.createLinearGradient(0, 13, 0, 13 + th);
-  tg.addColorStop(0, '#fff'); tg.addColorStop(0.4, '#ffd400'); tg.addColorStop(1, 'rgba(255,60,0,0)');
+  tg.addColorStop(0, '#fff'); tg.addColorStop(0.35, tint.ship); tg.addColorStop(1, 'rgba(0,0,0,0)');
   const sk = Save.currentSkin();
   ctx.fillStyle = tg; ctx.beginPath(); ctx.moveTo(-5, 13); ctx.lineTo(5, 13); ctx.lineTo(1, 13 + th); ctx.lineTo(-1, 13 + th); ctx.fill();
   ctx.fillStyle = sk.body; ctx.fillRect(-6, -4, 12, 18);
@@ -137,10 +142,12 @@ function drawPlayer() {
 
 function drawBullets() {
   const a = Math.atan2(dirDef().fy, dirDef().fx);
+  const shot = stageTint(stage()).shot;
   for (const b of game.pBullets) {
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a + Math.PI / 2);
-    ctx.fillStyle = b.opt ? 'rgba(185,103,255,0.45)' : 'rgba(120,210,255,0.4)'; ctx.fillRect(-2, 0, 4, 11);
-    ctx.fillStyle = b.opt ? '#e3c8ff' : '#ffffff'; ctx.fillRect(-2, -5, 4, 9);
+    ctx.fillStyle = b.opt ? 'rgba(185,103,255,0.45)' : shot + '66'; ctx.fillRect(-2.5, 0, 5, 12);
+    ctx.fillStyle = b.opt ? '#e3c8ff' : shot; ctx.fillRect(-2, -5, 4, 9);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(-1, -5, 2, 7);
     ctx.restore();
   }
   for (const b of game.eBullets) {
