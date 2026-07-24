@@ -1,0 +1,178 @@
+// ============================================================
+// config.js — ゲーム定数・ステージ定義・純粋ユーティリティ
+//   新ステージ/敵/ボスの追加はこのファイルだけで完結する。
+// ============================================================
+
+export const CFG = {
+  PLAYER_SPEED: 330,
+  BULLET_SPEED: 560,
+  EBULLET_SPEED: 190,
+  COMBO_WINDOW: 2000,
+  INV_TIME: 2200,
+  MAX_LIVES: 3,
+  MAX_POWER: 3,
+  MAX_OPTIONS: 2,
+  MAX_BOMBS: 3,
+  MAX_COMBO_MUL: 8,
+  WARN_TIME: 2200,
+  CLEAR_TIME: 3000,
+  INTRO_TIME: 2400,
+  MAX_SHAKE: 10,
+  CONTINUES: 2,
+};
+
+// 進行方向(=撃つ方向)。敵は前方から迫る。
+export const DIRS = {
+  up:    { fx: 0, fy: -1, arrow: '⬆️' },
+  right: { fx: 1, fy: 0,  arrow: '➡️' },
+  down:  { fx: 0, fy: 1,  arrow: '⬇️' },
+  left:  { fx: -1, fy: 0, arrow: '⬅️' },
+};
+
+export const STAGES = [
+  {
+    name: 'スカイラッシュ', en: 'SKY RUSH', emoji: '🌤️', dir: 'up',
+    sky: ['#2e86d4', '#a8ddff'], night: ['#0b1240', '#2c3e8f'],
+    bgEmojis: ['☁️', '🕊️', '🎈', '🪁'],
+    enemies: [
+      { type: 'straight', emoji: '🐦', hp: 1, speed: 125, pts: 100, size: 17 },
+      { type: 'wave',     emoji: '🦋', hp: 1, speed: 105, pts: 150, size: 18, amp: 70, freq: 2 },
+      { type: 'shooter',  emoji: '🦉', hp: 2, speed: 55,  pts: 200, size: 20, shootRate: 0.6 },
+      { type: 'kamikaze', emoji: '🐝', hp: 1, speed: 235, pts: 250, size: 15 },
+    ],
+    boss: { emoji: '👑', name: 'クラウドキング', en: 'CLOUD KING', hp: 70 },
+    dur: 38000, bpm: 128, scale: [60, 64, 67, 69, 71],
+  },
+  {
+    name: 'ディープダイブ', en: 'DEEP DIVE', emoji: '🌊', dir: 'right',
+    sky: ['#014f6d', '#02a8a8'], night: ['#021c30', '#014f6d'],
+    bgEmojis: ['🫧', '🐳', '🪸', '🐚'],
+    enemies: [
+      { type: 'straight', emoji: '🐟', hp: 1, speed: 140, pts: 100, size: 17 },
+      { type: 'wave',     emoji: '🪼', hp: 2, speed: 95,  pts: 150, size: 19, amp: 95, freq: 1.5 },
+      { type: 'shooter',  emoji: '🦈', hp: 3, speed: 65,  pts: 250, size: 23, shootRate: 0.8 },
+      { type: 'kamikaze', emoji: '🐡', hp: 1, speed: 255, pts: 250, size: 16 },
+    ],
+    boss: { emoji: '🐙', name: 'クラーケン', en: 'KRAKEN', hp: 95 },
+    dur: 40000, bpm: 132, scale: [62, 65, 69, 72, 74],
+  },
+  {
+    name: 'フリーフォール', en: 'FREE FALL', emoji: '🕳️', dir: 'down',
+    sky: ['#3b2a52', '#191026'], night: ['#241634', '#0d0716'],
+    bgEmojis: ['🪨', '🕸️', '💎', '🍄'],
+    enemies: [
+      { type: 'straight', emoji: '🦇', hp: 1, speed: 150, pts: 120, size: 17 },
+      { type: 'wave',     emoji: '👻', hp: 2, speed: 105, pts: 170, size: 19, amp: 80, freq: 2.4 },
+      { type: 'shooter',  emoji: '🧟', hp: 3, speed: 60,  pts: 260, size: 21, shootRate: 0.9 },
+      { type: 'kamikaze', emoji: '🕷️', hp: 1, speed: 275, pts: 270, size: 15 },
+    ],
+    boss: { emoji: '🕸️', name: 'スパイダークイーン', en: 'SPIDER QUEEN', hp: 115 },
+    dur: 40000, bpm: 138, scale: [57, 60, 62, 64, 67],
+  },
+  {
+    name: 'ネオンシティ', en: 'NEON CITY', emoji: '🏙️', dir: 'left',
+    sky: ['#3d0a63', '#c026d3'], night: ['#1c0433', '#701a75'],
+    bgEmojis: ['🏙️', '📡', '💾', '🛰️'],
+    enemies: [
+      { type: 'straight', emoji: '🤖', hp: 2, speed: 135, pts: 150, size: 19 },
+      { type: 'wave',     emoji: '👾', hp: 2, speed: 110, pts: 200, size: 20, amp: 110, freq: 1.9 },
+      { type: 'shooter',  emoji: '🛸', hp: 3, speed: 70,  pts: 300, size: 22, shootRate: 1.1 },
+      { type: 'tank',     emoji: '🚓', hp: 5, speed: 45,  pts: 400, size: 24, shootRate: 0.7 },
+    ],
+    boss: { emoji: '🖥️', name: 'メインフレーム', en: 'MAINFRAME', hp: 135 },
+    dur: 42000, bpm: 144, scale: [60, 63, 65, 67, 70],
+  },
+  {
+    name: 'マグマコア', en: 'MAGMA CORE', emoji: '🌋', dir: 'up',
+    sky: ['#7a0c0c', '#ff7b00'], night: ['#3d0505', '#a33000'],
+    bgEmojis: ['🔥', '🌋', '💥', '🪨'],
+    enemies: [
+      { type: 'straight', emoji: '😈', hp: 2, speed: 155, pts: 200, size: 19 },
+      { type: 'wave',     emoji: '👺', hp: 3, speed: 115, pts: 250, size: 21, amp: 90, freq: 2.1 },
+      { type: 'shooter',  emoji: '👹', hp: 4, speed: 75,  pts: 350, size: 23, shootRate: 1.2 },
+      { type: 'kamikaze', emoji: '☄️', hp: 1, speed: 320, pts: 300, size: 16 },
+    ],
+    boss: { emoji: '🐉', name: 'ヘルドラゴン', en: 'HELL DRAGON', hp: 160 },
+    dur: 42000, bpm: 152, scale: [64, 65, 67, 69, 71],
+  },
+  {
+    name: 'ギャラクシーエッジ', en: 'GALAXY EDGE', emoji: '🌌', dir: 'up',
+    sky: ['#060618', '#1c1c4e'], night: ['#02020c', '#12123a'],
+    bgEmojis: ['⭐', '🪐', '☄️', '✨'],
+    enemies: [
+      { type: 'straight', emoji: '👽', hp: 2, speed: 150, pts: 220, size: 19 },
+      { type: 'wave',     emoji: '🛸', hp: 3, speed: 115, pts: 280, size: 21, amp: 120, freq: 1.7 },
+      { type: 'shooter',  emoji: '👾', hp: 4, speed: 80,  pts: 380, size: 22, shootRate: 1.4 },
+      { type: 'tank',     emoji: '🌑', hp: 7, speed: 42,  pts: 500, size: 26, shootRate: 0.9 },
+    ],
+    boss: { emoji: '🛸', name: 'マザーシップ', en: 'MOTHERSHIP', hp: 200 },
+    dur: 44000, bpm: 160, scale: [57, 59, 60, 64, 65],
+  },
+];
+
+export const BOSS_PHASES = [
+  { attacks: [
+    { type: 'aimed',  interval: 850,  speed: 240, count: 1 },
+    { type: 'spread', interval: 1500, speed: 190, count: 5, arc: 0.5 },
+  ]},
+  { attacks: [
+    { type: 'spread', interval: 1000, speed: 210, count: 7, arc: 0.6 },
+    { type: 'aimed',  interval: 620,  speed: 270, count: 2 },
+    { type: 'summon', interval: 4200, minion: 0 },
+  ]},
+  { attacks: [
+    { type: 'spread', interval: 750,  speed: 240, count: 9, arc: 0.75 },
+    { type: 'aimed',  interval: 430,  speed: 300, count: 3 },
+    { type: 'summon', interval: 3400, minion: 1 },
+    { type: 'charge', interval: 5200 },
+  ]},
+];
+
+// ベル(Twinbee風) — 撃つと色が変わる
+export const BELLS = [
+  { color: '#ffffff', name: 'SCORE',  ja: 'スコア',   effect: 'points', value: 500 },
+  { color: '#4a9eff', name: 'SPEED',  ja: 'スピード', effect: 'speed', duration: 9000 },
+  { color: '#ff5252', name: 'POWER',  ja: 'パワー',   effect: 'power' },
+  { color: '#b967ff', name: 'OPTION', ja: 'オプション', effect: 'option' },
+  { color: '#ffd700', name: 'SHIELD', ja: 'シールド', effect: 'shield' },
+  { color: '#7CFC00', name: 'BOMB',   ja: 'ボム',     effect: 'bomb' },
+];
+
+// 編隊パターン: (敵タイプ配列, 横軸の幅 span) → [{t, lat, delay}]
+export const PATTERNS = [
+  (types, span) => {
+    const t = types[randInt(0, 1)];
+    const n = randInt(4, 6);
+    return Array.from({ length: n }, (_, i) => ({ t, lat: span * (i + 1) / (n + 1), delay: i * 140 }));
+  },
+  (types, span) => {
+    const t = types[randInt(0, 2)];
+    const mid = span / 2;
+    return Array.from({ length: 5 }, (_, i) => ({ t, lat: mid + (i - 2) * 52, delay: Math.abs(i - 2) * 220 }));
+  },
+  (types, span) => {
+    const t = types[randInt(1, types.length - 1)];
+    return [0, 1, 2, 3].map(i => ({ t, lat: span * (i % 2 ? 0.7 : 0.3), delay: i * 240 }));
+  },
+  (types, span) => {
+    const t = types[randInt(0, 1)];
+    return Array.from({ length: 4 }, (_, i) => ({ t, lat: span * (0.2 + i * 0.2), delay: i * 190 }));
+  },
+  (types, span) => {
+    const t = types[types.length - 1];
+    return [{ t: { ...t, hp: t.hp + 2, pts: t.pts * 2 }, lat: span / 2, delay: 0 }];
+  },
+  (types, span) => {
+    const t = types[randInt(0, 2)];
+    return [0, 1, 2, 3, 4, 5].map(i => ({ t, lat: span * (i % 2 ? 0.12 : 0.88), delay: Math.floor(i / 2) * 300 }));
+  },
+];
+
+// === 純粋ユーティリティ ===
+export const rand = (a, b) => Math.random() * (b - a) + a;
+export const randInt = (a, b) => Math.floor(rand(a, b + 1));
+export const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+export const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+export const lerp = (a, b, t) => a + (b - a) * t;
+export const midiFreq = m => 440 * Math.pow(2, (m - 69) / 12);

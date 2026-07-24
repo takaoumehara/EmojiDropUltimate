@@ -1,0 +1,112 @@
+// ============================================================
+// aistage.js — AIステージ生成
+//   まず Vercel サーバーレス関数 /api/ai-stage (Gemini) に問い合わせ、
+//   失敗/未接続時は端末内でユニークなステージを手続き生成する(オフラインOK)。
+// ============================================================
+import { rand, randInt, pick } from './config.js';
+
+const DIRS_LIST = ['up', 'right', 'down', 'left'];
+const HEX = /^#([0-9a-fA-F]{6})$/;
+const isEmoji = s => typeof s === 'string' && s.length > 0 && s.length <= 8;
+const hex = (c, fb) => (typeof c === 'string' && HEX.test(c.trim())) ? c.trim() : fb;
+const clampN = (v, a, b, fb) => (typeof v === 'number' && isFinite(v)) ? Math.max(a, Math.min(b, Math.round(v))) : fb;
+
+// LLM/手続き どちらの結果もここで安全な STAGE 形へ正規化する
+export function normalizeStage(raw) {
+  raw = raw || {};
+  const dir = DIRS_LIST.includes(raw.dir) ? raw.dir : pick(DIRS_LIST);
+  const sky = Array.isArray(raw.sky) ? raw.sky : [];
+  const night = Array.isArray(raw.night) ? raw.night : [];
+  const bg = Array.isArray(raw.bgEmojis) ? raw.bgEmojis.filter(isEmoji).slice(0, 4) : [];
+  while (bg.length < 4) bg.push('✨');
+  const types = ['straight', 'wave', 'shooter', 'tank', 'kamikaze'];
+  let enemies = Array.isArray(raw.enemies) ? raw.enemies : [];
+  enemies = enemies.slice(0, 4).map((e, i) => {
+    e = e || {};
+    const type = types.includes(e.type) ? e.type : ['straight', 'wave', 'shooter', 'tank'][i % 4];
+    return {
+      type, emoji: isEmoji(e.emoji) ? e.emoji : ['👾', '🦠', '🛸', '🌀'][i % 4],
+      hp: clampN(e.hp, 1, 8, 1 + i), speed: clampN(e.speed, 40, 340, 120 + i * 10),
+      pts: clampN(e.pts, 50, 800, 120 + i * 60), size: clampN(e.size, 14, 28, 18 + i),
+      amp: clampN(e.amp, 40, 140, 90), freq: (typeof e.freq === 'number' ? Math.max(1, Math.min(3, e.freq)) : 2),
+      shootRate: (type === 'shooter' || type === 'tank') ? (typeof e.shootRate === 'number' ? Math.max(0.4, Math.min(1.5, e.shootRate)) : 0.9) : 0,
+    };
+  });
+  while (enemies.length < 4) {
+    const i = enemies.length;
+    enemies.push({ type: ['straight', 'wave', 'shooter', 'tank'][i], emoji: ['👾', '🦠', '🛸', '🌀'][i], hp: 1 + i, speed: 120 + i * 10, pts: 120 + i * 60, size: 18 + i, amp: 90, freq: 2, shootRate: i >= 2 ? 0.9 : 0 });
+  }
+  const boss = raw.boss || {};
+  return {
+    name: (typeof raw.name === 'string' && raw.name.trim()) ? raw.name.trim().slice(0, 16) : 'ミステリーゾーン',
+    en: (typeof raw.en === 'string' && raw.en.trim()) ? raw.en.trim().slice(0, 24) : 'MYSTERY ZONE',
+    emoji: isEmoji(raw.emoji) ? raw.emoji : '🌀',
+    dir,
+    sky: [hex(sky[0], '#2b1b52'), hex(sky[1], '#7b2ff7')],
+    night: [hex(night[0], '#12071f'), hex(night[1], '#3a1466')],
+    bgEmojis: bg,
+    enemies,
+    boss: {
+      emoji: isEmoji(boss.emoji) ? boss.emoji : '👹',
+      name: (typeof boss.name === 'string' && boss.name.trim()) ? boss.name.trim().slice(0, 16) : 'カオスロード',
+      en: (typeof boss.en === 'string' && boss.en.trim()) ? boss.en.trim().slice(0, 24) : 'CHAOS LORD',
+      hp: clampN(boss.hp, 60, 260, 150),
+    },
+    dur: 40000,
+    bpm: clampN(raw.bpm, 120, 168, 140),
+    scale: Array.isArray(raw.scale) && raw.scale.every(n => typeof n === 'number') ? raw.scale.slice(0, 6) : [60, 63, 65, 67, 70],
+    ai: true,
+  };
+}
+
+// 端末内で手続き生成(キーもサーバーも不要)
+const THEMES = [
+  { name: 'キャンディ地獄', en: 'CANDY HELL', emoji: '🍬', sky: ['#ff6fae', '#ffd1ec'], night: ['#5a123f', '#a11d6e'], bg: ['🍭', '🧁', '🍩', '🍫'], en_list: ['🍬', '🍡', '🧁', '🍰'], boss: ['🎂', 'シュガーロード', 'SUGAR LORD'] },
+  { name: '寿司ストーム', en: 'SUSHI STORM', emoji: '🍣', sky: ['#0e6b5a', '#57e0b8'], night: ['#04241d', '#0b5a48'], bg: ['🍤', '🐟', '🍥', '🥢'], en_list: ['🍣', '🍙', '🦐', '🐙'], boss: ['🐋', 'デカネタ大将', 'BIG NETA'] },
+  { name: 'ロボ工場', en: 'ROBO FACTORY', emoji: '🏭', sky: ['#3a3f52', '#8b95b8'], night: ['#12141d', '#33384d'], bg: ['⚙️', '🔩', '🔌', '📦'], en_list: ['🤖', '🦾', '🔧', '📡'], boss: ['🦿', 'ギガボット', 'GIGABOT'] },
+  { name: '恐竜ジャングル', en: 'DINO JUNGLE', emoji: '🦖', sky: ['#2f7d32', '#a5e86a'], night: ['#0f2a12', '#2c5a1e'], bg: ['🌿', '🌴', '🥚', '🦴'], en_list: ['🦕', '🐊', '🦎', '🐍'], boss: ['🦖', 'ティラノキング', 'TYRANNO KING'] },
+  { name: '氷結パレス', en: 'FROST PALACE', emoji: '🧊', sky: ['#2c6fb0', '#bfe8ff'], night: ['#0b2036', '#1d4d7a'], bg: ['❄️', '🌨️', '🧊', '⛄'], en_list: ['🐧', '🦭', '❄️', '🐻‍❄️'], boss: ['🧙', 'アイスウィッチ', 'ICE WITCH'] },
+  { name: 'お化け屋敷', en: 'HAUNTED HOUSE', emoji: '🏚️', sky: ['#4a2c6b', '#9b6fd4'], night: ['#1a0f2e', '#3a1f5c'], bg: ['🕯️', '🕸️', '⚰️', '🔮'], en_list: ['👻', '🧛', '🦇', '💀'], boss: ['🎃', 'パンプキングド', 'PUMPKIN LORD'] },
+  { name: 'エモジ銀河', en: 'EMOJI GALAXY', emoji: '🌠', sky: ['#1b0b3a', '#6d3bd6'], night: ['#08041a', '#2a1466'], bg: ['🪐', '⭐', '🌙', '☄️'], en_list: ['🛸', '👽', '🌟', '🚀'], boss: ['🌞', 'ソーラータイタン', 'SOLAR TITAN'] },
+];
+
+export function proceduralStage() {
+  const th = pick(THEMES);
+  const dir = pick(DIRS_LIST);
+  const mk = (i, type) => ({
+    type, emoji: th.en_list[i % th.en_list.length],
+    hp: type === 'tank' ? randInt(4, 7) : type === 'shooter' ? randInt(2, 4) : randInt(1, 2),
+    speed: type === 'kamikaze' ? randInt(240, 320) : type === 'tank' ? randInt(42, 60) : randInt(100, 160),
+    pts: 120 + i * 70, size: randInt(16, 24),
+    amp: randInt(70, 120), freq: rand(1.5, 2.6),
+    shootRate: (type === 'shooter' || type === 'tank') ? rand(0.7, 1.3) : 0,
+  });
+  return normalizeStage({
+    name: th.name, en: th.en, emoji: th.emoji, dir,
+    sky: th.sky, night: th.night, bgEmojis: th.bg,
+    enemies: [mk(0, 'straight'), mk(1, 'wave'), mk(2, 'shooter'), mk(3, pick(['tank', 'kamikaze']))],
+    boss: { emoji: th.boss[0], name: th.boss[1], en: th.boss[2], hp: randInt(150, 210) },
+    bpm: randInt(132, 160),
+  });
+}
+
+// メイン: サーバー(Gemini)→ 失敗時ローカル
+export async function generateStage(weatherSummary) {
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 12000);
+    const r = await fetch('/api/ai-stage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ weather: weatherSummary || 'clear', seed: Math.floor(Math.random() * 1e9) }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(to);
+    if (!r.ok) throw new Error('http ' + r.status);
+    const data = await r.json();
+    if (!data || !data.stage) throw new Error('no stage');
+    return { stage: normalizeStage(data.stage), source: 'ai' };
+  } catch (e) {
+    return { stage: proceduralStage(), source: 'local' };
+  }
+}
