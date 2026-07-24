@@ -5,14 +5,15 @@ import { ctx, DPR, resize } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
 import { Weather } from './weather.js';
-import { update, initStars, togglePause, toTitle, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue } from './engine.js';
+import { update, initStars, togglePause, toTitle, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue, openCoopLobby, startCoop } from './engine.js';
 import { draw } from './render.js';
 import { keys, updateMuteIcon } from './input.js';
 import { Save } from './save.js';
+import { Coop } from './coop.js';
 import { toggleLang } from './i18n.js';
 
 // デバッグ用ハンドル(DevTools から状態確認・操作できる。無害)
-window.EDU = { get game() { return game; }, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue, toTitle, Weather, Save };
+window.EDU = { get game() { return game; }, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue, toTitle, openCoopLobby, startCoop, Coop, Weather, Save };
 
 // URL ?seed=xxxx で同じステージを再現(共有リンク用)
 const _seed = new URLSearchParams(location.search).get('seed');

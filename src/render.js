@@ -10,6 +10,7 @@ import { Weather } from './weather.js';
 import { Director } from './director.js';
 import { BossAI } from './bossai.js';
 import { Save } from './save.js';
+import { Coop } from './coop.js';
 
 // 読みやすいサンセリフ(ピクセルフォントは小サイズで潰れるため不使用)
 const SANS = `'Baloo 2', 'M PLUS Rounded 1c', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif`;
@@ -263,6 +264,7 @@ function drawHUD() {
   label(`PW${p.power}${p.options ? ' OP' + p.options : ''}${p.shield ? ' 🛡' : ''}${p.boost ? ' 💨' : ''}`, pad, H - 26 * UI, '#8fd3ff', 12 * UI, 'left');
   const slabel = game.endless ? ('W' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('' + (game.stageIndex + 1));
   label(`${slabel} ${stage().emoji}${dirDef().arrow}`, W - pad, H - 28 * UI, '#fff', 12 * UI, 'right');
+  if (game.coop) drawCoopHud();
   if (Director.msg && Director.msgT > 0) {
     ctx.globalAlpha = clamp(Director.msgT, 0, 1);
     label(Director.msg, W / 2, H - 78 * UI, '#00ffcc', 12 * UI);
@@ -327,7 +329,10 @@ function drawTitle() {
     drawBtnSub('ai', bx, by, half, 60 * UI, t('endless_ai'), t('endless_sub'), '#b967ff');
     drawBtnSub('daily', bx + half + 12 * UI, by, half, 60 * UI, t('daily') + (Save.playedDailyToday() ? ' ✓' : ''), t('daily_sub'), '#ffd23f');
   }
-  by += 60 * UI + 18 * UI;
+  by += 60 * UI + 14 * UI;
+  // 👥 2人共闘(QRで友達と一緒に同じボスを削る)
+  drawBtnSub('coop', bx, by, bw, 54 * UI, '👥 ' + t('coop'), t('coop_sub'), '#4ad6a0');
+  by += 54 * UI + 16 * UI;
 
   // ストリーク催促(途切れそうな時だけ・控えめ)
   if (Save.streakAtRisk()) {
@@ -370,6 +375,53 @@ function roundRect(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+// === 2人共闘: ロビー ===
+function drawCoopLobby() {
+  const time = game.titleAnim, ja = getLang() === 'ja';
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#07211c'); grad.addColorStop(1, '#0a2a4d');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+  for (const s of game.stars) { ctx.fillStyle = `rgba(255,255,255,${(s.b * 0.6).toFixed(2)})`; ctx.fillRect(s.x, s.y, s.size, s.size); }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `${Math.round(40 * UI)}px serif`; ctx.fillText('👥', W / 2, H * 0.16);
+  label(t('coop'), W / 2, H * 0.24, '#4ad6a0', 26 * UI);
+  label(ja ? '同じボスを二人で削り切る' : 'Beat one boss together', W / 2, H * 0.29, '#bfe8d8', 12 * UI);
+
+  label(ja ? 'あいことば' : 'ROOM CODE', W / 2, H * 0.375, '#8fb0c8', 12 * UI);
+  label(Coop.code || '------', W / 2, H * 0.435, '#ffffff', 46 * UI);
+  label(ja ? 'このコードを友達に送って参加してもらう' : 'Send this code to your friend', W / 2, H * 0.495, '#9fb6d8', 11 * UI);
+
+  game.menuBtns = [];
+  const bw = Math.min(W * 0.78, 340), bx = (W - bw) / 2;
+  let by = H * 0.60;
+  if (!Coop.connected) {
+    ctx.globalAlpha = 0.55 + 0.45 * Math.sin(time * 4);
+    label(ja ? '📡 相方の参加を待っています…' : '📡 waiting for partner…', W / 2, by - 16 * UI, '#ffd27f', 12 * UI);
+    ctx.globalAlpha = 1;
+    drawBtnSub('coopJoin', bx, by, bw, 56 * UI, ja ? '▶ フレンドを参加(デモ)' : '▶ Join a friend (demo)', ja ? 'Phase 0: オフライン検証用' : 'Phase 0: offline preview', '#4ad6a0');
+    by += 56 * UI + 14 * UI;
+  } else {
+    label(ja ? `✅ ${Coop.partner.name} が参加!` : `✅ ${Coop.partner.name} joined!`, W / 2, by - 16 * UI, '#7CFC00', 14 * UI);
+    const blink = Math.floor(time * 2) % 2 === 0;
+    drawBtn('coopStart', bx, by, bw, 60 * UI, ja ? '▶ 共闘スタート' : '▶ START CO-OP', '#ffffff', blink, false, 20 * UI);
+    by += 60 * UI + 14 * UI;
+  }
+  drawBtn('coopBack', bx, by, bw, 46 * UI, ja ? '← 戻る' : '← Back', '#5577aa');
+}
+
+// === 2人共闘: プレイ中の相方パネル ===
+function drawCoopHud() {
+  const c = Coop, ja = getLang() === 'ja';
+  const x = W - 12 * UI, y = 60 * UI;
+  const face = c.partner.alive ? '🧑‍🚀' : '💫';
+  label(`${face} ${c.partner.name}`, x, y, c.partner.alive ? '#4ad6a0' : '#8899aa', 12 * UI, 'right');
+  label(String(c.partner.score).padStart(6, '0'), x, y + 16 * UI, '#cfe8ff', 12 * UI, 'right');
+  if (c.bossSharedMax > 0 && game.bossActive) {
+    const tot = Math.max(1, c.localDmg + c.partner.dmg);
+    label((ja ? '👥 貢献 ' : '👥 ') + `${Math.round(c.localDmg / tot * 100)}% : ${Math.round(c.partner.dmg / tot * 100)}%`, x, y + 32 * UI, '#ffd27f', 11 * UI, 'right');
+  }
 }
 
 function drawIntro() {
@@ -421,13 +473,16 @@ function drawFinale() {
   const pop = Math.min(1, F.t / 400);
   const s = 1 + (1 - pop) * 0.7 + Math.sin(F.t * 0.012) * 0.03;
   const title = F.kind === 'victory' ? (ja ? '勝  利!' : 'VICTORY!')
-    : F.kind === 'world' ? `WORLD ${game.world - 1} ${ja ? '突破!' : 'CLEAR!'}`
-      : (ja ? 'ステージクリア!' : 'STAGE CLEAR!');
+    : F.kind === 'coop' ? (ja ? '共闘クリア!' : 'CO-OP CLEAR!')
+      : F.kind === 'world' ? `WORLD ${game.world - 1} ${ja ? '突破!' : 'CLEAR!'}`
+        : (ja ? 'ステージクリア!' : 'STAGE CLEAR!');
+  const gold = F.kind === 'victory' || F.kind === 'coop';
   ctx.save(); ctx.translate(W / 2, H * 0.40); ctx.scale(s, s);
-  label(title, 0, 0, F.kind === 'victory' ? '#ffd700' : '#8fff9d', 36 * UI);
+  label(title, 0, 0, gold ? '#ffd700' : '#8fff9d', 36 * UI);
   ctx.restore();
   if (F.t > 500) label(`+${F.bonus}`, W / 2, H * 0.40 + 42 * UI, '#ffe14d', 20 * UI);
   if (F.kind === 'victory' && F.t > 900) label(ja ? '✨ 全ステージ制覇 ✨' : '✨ ALL STAGES CLEAR ✨', W / 2, H * 0.40 + 72 * UI, '#b98cff', 14 * UI);
+  if (F.kind === 'coop' && F.t > 900) label(ja ? `👥 ${Coop.partner.name} と一緒に撃破!` : `👥 Beaten with ${Coop.partner.name}!`, W / 2, H * 0.40 + 72 * UI, '#4ad6a0', 14 * UI);
   if (game.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, 0.85)})`; ctx.fillRect(0, 0, W, H); }
 }
 
@@ -460,8 +515,8 @@ function drawVictory() {
   ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
   drawParticles();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(52 * UI)}px serif`;
-  ctx.fillText('🏆', W / 2, H * 0.24);
-  label(game.aiMode ? t('ai_clear') : t('all_clear'), W / 2, H * 0.35, '#ffd700', 24 * UI);
+  ctx.fillText(game.coop ? '👥' : '🏆', W / 2, H * 0.24);
+  label(game.coop ? (getLang() === 'ja' ? `${Coop.partner.name} と共闘クリア!` : `Co-op clear with ${Coop.partner.name}!`) : (game.aiMode ? t('ai_clear') : t('all_clear')), W / 2, H * 0.35, '#ffd700', game.coop ? 18 * UI : 24 * UI);
   label(t('final_score') + ' ' + game.score, W / 2, H * 0.45, '#fff', 14 * UI);
   const rank = game.score >= 180000 ? 'S' : game.score >= 120000 ? 'A' : game.score >= 70000 ? 'B' : 'C';
   label(t('rank') + ' ' + rank, W / 2, H * 0.55, { S: '#ffd700', A: '#ff66aa', B: '#8fd3ff', C: '#99cc99' }[rank], 38 * UI);
@@ -480,6 +535,7 @@ export function draw() {
   tickTint();
   switch (game.state) {
     case 'title': drawTitle(); break;
+    case 'coop': drawCoopLobby(); break;
     case 'intro': drawIntro(); break;
     case 'play': case 'warn': {
       ctx.save(); ctx.translate(game.shakeX, game.shakeY);

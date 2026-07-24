@@ -11,7 +11,7 @@ export function newGame() {
     hi: parseInt(localStorage.getItem('edu_hiscore') || '0'),
     lives: CFG.MAX_LIVES, bombs: 1, continues: CFG.CONTINUES,
     combo: 0, comboMul: 1, lastKill: 0,
-    stages: STAGES, aiMode: false, endless: false, daily: false,
+    stages: STAGES, aiMode: false, endless: false, daily: false, coop: false,
     world: 1, pendingStage: null, lastResult: null, skinFlash: 0, finale: null,
     stageIndex: 0, stageTime: 0, waveIdx: 0,
     nextWave: 0, nextBell: 0,

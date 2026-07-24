@@ -15,6 +15,9 @@ import { Save } from './save.js';
 import { SHARE_URL } from './sharecard.js';
 import { Leaderboard } from './leaderboard.js';
 import { openShare } from './ui.js';
+import { Coop } from './coop.js';
+
+const COOP_HP_MUL = 2.2; // 共闘ボスは二人がかり前提で硬くする
 
 export function rankOf(score) { return score >= 180000 ? 'S' : score >= 120000 ? 'A' : score >= 70000 ? 'B' : 'C'; }
 
@@ -199,13 +202,15 @@ function spawnBoss() {
   const st = stage();
   const styleKey = (st.boss.style && BOSS_STYLES[st.boss.style]) ? st.boss.style : STYLE_KEYS[game.stageIndex % STYLE_KEYS.length];
   const style = BOSS_STYLES[styleKey];
+  const hp = Math.round(st.boss.hp * (game.coop ? COOP_HP_MUL : 1)); // 共闘は二人がかり前提で硬く
   game.boss = {
     prog: -80, targetProg: 150, lat: latSpan() / 2, latPhase: 0,
-    hp: st.boss.hp, maxHp: st.boss.hp, phase: 0,
+    hp, maxHp: hp, phase: 0,
     atkT: 900, atkIdx: 0, flash: 0, entering: true,
     charging: false, chargeTo: null, returning: false, x: -999, y: -999,
     style: styleKey, col: style.col, phases: style.phases, ringAng: 0, spiralAng: 0,
   };
+  if (game.coop) Coop.initBoss(hp);
   game.bossActive = true;
   BossAI.reset();
   Snd.startBGM(st, game.stageIndex, 'boss');
@@ -219,6 +224,8 @@ function updateBoss(dt) {
     b.prog = lerp(b.prog, b.targetProg, dt * 2);
     if (Math.abs(b.prog - b.targetProg) < 3) { b.entering = false; b.prog = b.targetProg; }
   } else {
+    // 共闘: 相方の与ダメを反映(相方が削り切れば撃破)
+    if (game.coop) { b.hp = Coop.bossShared; if (b.hp <= 0) { bossDefeated(); return; } }
     if (b.flash > 0) b.flash -= dt * 6;
     const hpR = b.hp / b.maxHp;
     b.phase = hpR <= 0.33 ? 2 : hpR <= 0.66 ? 1 : 0;
@@ -311,27 +318,35 @@ function bossAttack(b, atk) {
 function damageBoss(dmg) {
   const b = game.boss;
   if (!b || b.entering) return;
-  b.hp -= dmg; b.flash = 1; game.stats.hits++; Snd.bossHit();
+  b.flash = 1; game.stats.hits++; Snd.bossHit();
   game.shake = Math.min(game.shake + 1.5, CFG.MAX_SHAKE);
-  if (b.hp <= 0) {
-    // === 撃破フィナーレ(爽快感の余韻) ===
-    Snd.kill(); Snd.bomb();
-    const bx = b.x, by = b.y, emoji = stage().boss.emoji;
-    explosion(bx, by, 18, '#ffd700');
-    game.boss = null; game.bossActive = false;
-    game.eBullets = []; game.enemies = [];
-    const bonus = Math.round((game.endless ? 3000 * game.world : 5000 * (game.stageIndex + 1)) * Weather.mods.scoreMul);
-    game.score += bonus; saveHi();
-    let kind;
-    if (game.endless) { kind = 'world'; game.world++; game.pendingStage = scaleStage(proceduralStage(), game.world); }
-    else if (game.daily) { kind = 'victory'; recordRunEnd({ daily: true }); }
-    else if (game.stageIndex >= game.stages.length - 1) { kind = 'victory'; recordRunEnd({}); }
-    else kind = 'stage';
-    game.finale = { t: 0, dur: kind === 'victory' ? 3400 : 2300, kind, bx, by, emoji, bonus, snd: false };
-    game.state = 'finale';
-    game.flash = 0.95; game.shake = CFG.MAX_SHAKE;
-    Snd.stopBGM();
-  }
+  if (game.coop) { Coop.dealLocal(dmg); b.hp = Coop.bossShared; } // 共闘: 共有HPを削る
+  else b.hp -= dmg;
+  if (b.hp <= 0) bossDefeated();
+}
+
+// ボス撃破 → フィナーレ(爽快感の余韻)。ソロ/共闘/エンドレスで分岐。
+function bossDefeated() {
+  const b = game.boss;
+  if (!b) return;
+  Snd.kill(); Snd.bomb();
+  const bx = b.x, by = b.y, emoji = stage().boss.emoji;
+  explosion(bx, by, 18, '#ffd700');
+  game.boss = null; game.bossActive = false;
+  game.eBullets = []; game.enemies = [];
+  const bonus = Math.round((game.coop ? 8000 : game.endless ? 3000 * game.world : 5000 * (game.stageIndex + 1)) * Weather.mods.scoreMul);
+  game.score += bonus; saveHi();
+  let kind;
+  if (game.coop) { kind = 'coop'; recordRunEnd({}); }
+  else if (game.endless) { kind = 'world'; game.world++; game.pendingStage = scaleStage(proceduralStage(), game.world); }
+  else if (game.daily) { kind = 'victory'; recordRunEnd({ daily: true }); }
+  else if (game.stageIndex >= game.stages.length - 1) { kind = 'victory'; recordRunEnd({}); }
+  else kind = 'stage';
+  const big = kind === 'victory' || kind === 'coop';
+  game.finale = { t: 0, dur: big ? 3400 : 2300, kind, bx, by, emoji, bonus, snd: false };
+  game.state = 'finale';
+  game.flash = 0.95; game.shake = CFG.MAX_SHAKE;
+  Snd.stopBGM();
 }
 
 // === ベル ===
@@ -547,6 +562,24 @@ export function startFromSeed(seedStr) {
   startStage(0);
 }
 
+// === 2人共闘 ===
+// ロビーを開く(ホストとしてコード発行、相方待ち)
+export function openCoopLobby() {
+  Snd.init();
+  Coop.host();
+  game.state = 'coop';
+}
+// 共闘スタート: 共有の種でステージ生成 → 短めの道中 → 共有ボス
+export function startCoop() {
+  if (!Coop.connected) return; // 相方が参加してから
+  Snd.init(); freshGame();
+  game.coop = true; game.aiMode = true;
+  const st = proceduralStage(makeRng(Coop.seed || hashStr('coop')));
+  st.dur = 16000; // 共闘は短時間セッション: 早めにボスへ
+  game.stages = [st];
+  startStage(0);
+}
+
 function recordRunEnd({ daily = false } = {}) {
   const r = {
     score: game.score,
@@ -566,11 +599,13 @@ function recordRunEnd({ daily = false } = {}) {
 export function shareRun() {
   const r = game.lastResult || { score: game.score, world: game.stageIndex + 1, rank: rankOf(game.score) };
   const ja = getLang() === 'ja';
-  const mode = game.endless ? (ja ? 'エンドレスAI' : 'ENDLESS AI')
-    : game.daily ? (ja ? 'デイリー ' + todayKey() : 'DAILY ' + todayKey())
-      : game.aiMode ? (ja ? 'AIステージ' : 'AI STAGE') : (ja ? 'ストーリー' : 'STORY');
-  const sub = game.endless ? (ja ? `ワールド ${r.world} 到達` : `Reached World ${r.world}`)
-    : (ja ? `ステージ ${r.world}` : `Stage ${r.world}`);
+  const mode = game.coop ? (ja ? '2人共闘' : 'CO-OP')
+    : game.endless ? (ja ? 'エンドレスAI' : 'ENDLESS AI')
+      : game.daily ? (ja ? 'デイリー ' + todayKey() : 'DAILY ' + todayKey())
+        : game.aiMode ? (ja ? 'AIステージ' : 'AI STAGE') : (ja ? 'ストーリー' : 'STORY');
+  const sub = game.coop ? (ja ? `${Coop.partner.name} と共闘クリア` : `Cleared with ${Coop.partner.name}`)
+    : game.endless ? (ja ? `ワールド ${r.world} 到達` : `Reached World ${r.world}`)
+      : (ja ? `ステージ ${r.world}` : `Stage ${r.world}`);
   return openShare({
     emoji: stage().emoji, mode, stageName: game.stages[game.stageIndex] && game.stages[game.stageIndex].name,
     rank: r.rank, score: r.score, sub, weather: Weather.loaded ? Weather.statusLine() : '',
@@ -578,7 +613,7 @@ export function shareRun() {
   });
 }
 export function toTitle() {
-  saveHi(); Snd.stopBGM();
+  saveHi(); Snd.stopBGM(); Coop.reset();
   const hi = Math.max(game.hi, game.score);
   setGame(newGame()); game.hi = hi;
   initStars();
@@ -598,6 +633,7 @@ export function togglePause() {
   }
 }
 function retryRun() {
+  if (game.coop && Coop.connected) { startCoop(); return; }
   const d = game.daily, e = game.endless || game.aiMode;
   if (d) startDaily(); else if (e) requestAIStage(); else startRun();
 }
@@ -638,6 +674,7 @@ export function update(dt, keys) {
       updateLightning(dt);
       Director.update(dt, game);
       checkCollisions();
+      if (game.coop) { Coop.update(dt); Coop.setLocalStatus(game.score, !game.player.dead); }
       // BGM緊張度: ボス=最高潮 / コンボ・残機ピンチで高まる
       Snd.setIntensity(game.bossActive ? 0.92 : 0.32 + Math.min(0.34, game.combo * 0.03) + (game.lives <= 1 ? 0.22 : 0));
       break;
@@ -647,9 +684,9 @@ export function update(dt, keys) {
       if (Math.random() < dt * 9) explosion(F.bx + rand(-80, 80), F.by + rand(-80, 80), 8, pick(['#ffd700', '#ff8a3c', '#ff2a2a', '#8fd3ff']));
       updateParticles(dt); updateShake(dt);
       if (game.skinFlash > 0) game.skinFlash -= dt;
-      if (!F.snd && F.t > (F.kind === 'victory' ? 700 : 450)) { F.snd = true; (F.kind === 'victory' ? Snd.victory() : Snd.clear()); }
+      if (!F.snd && F.t > (F.kind === 'victory' || F.kind === 'coop' ? 700 : 450)) { F.snd = true; (F.kind === 'victory' || F.kind === 'coop' ? Snd.victory() : Snd.clear()); }
       if (F.t >= F.dur) {
-        if (F.kind === 'victory') game.state = 'victory';
+        if (F.kind === 'victory' || F.kind === 'coop') game.state = 'victory';
         else if (F.kind === 'world') { if (game.pendingStage) startEndlessNext(); }
         else startStage(game.stageIndex + 1);
       }
