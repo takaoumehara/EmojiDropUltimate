@@ -8,8 +8,12 @@ export const ctx = canvas.getContext('2d');
 export let W = 0, H = 0, DPR = 1, UI = 1;
 
 export function resize() {
-  W = window.innerWidth;
-  H = window.innerHeight;
+  // 回転→戻しでレイアウトが崩れる不具合対策:
+  //   iOS/一部WebViewは回転直後 window.innerWidth が古い値を返す。
+  //   スケール非依存で安定している documentElement.clientWidth を優先して使う。
+  const de = document.documentElement;
+  W = de.clientWidth || window.innerWidth;
+  H = de.clientHeight || window.innerHeight;
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = W * DPR;
   canvas.height = H * DPR;

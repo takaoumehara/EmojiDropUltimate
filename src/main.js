@@ -20,6 +20,13 @@ if (_seed) { setTimeout(() => startFromSeed(_seed), 400); }
 
 resize();
 window.addEventListener('resize', resize);
+// 端末回転: iOS は回転直後に寸法が確定しないため、少し遅らせて数回測り直す。
+window.addEventListener('orientationchange', () => {
+  resize(); initStars();
+  setTimeout(() => { resize(); initStars(); }, 200);
+  setTimeout(() => { resize(); initStars(); }, 500);
+});
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 initStars();
 updateMuteIcon(Snd.muted);
 Weather.load();
