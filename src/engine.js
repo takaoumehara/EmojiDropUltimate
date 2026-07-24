@@ -569,13 +569,17 @@ export function openCoopLobby() {
   Coop.host();
   game.state = 'coop';
 }
-// 共闘スタート: 共有の種でステージ生成 → 短めの道中 → 共有ボス
+// 共闘スタート: 共有の種でステージ決定 → 短めの道中 → 共有ボス
+//   Coop.mode: 'story'=オリジナル6ステージから種で1面 / 'ai'=AI生成面
 export function startCoop() {
   if (!Coop.connected) return; // 相方が参加してから
   Snd.init(); freshGame();
-  game.coop = true; game.aiMode = true;
-  const st = proceduralStage(makeRng(Coop.seed || hashStr('coop')));
+  const rng = makeRng(Coop.seed || hashStr('coop'));
+  let st;
+  if (Coop.mode === 'story') st = JSON.parse(JSON.stringify(STAGES[Math.floor(rng() * STAGES.length)]));
+  else st = proceduralStage(rng);
   st.dur = 16000; // 共闘は短時間セッション: 早めにボスへ
+  game.coop = true; game.aiMode = Coop.mode !== 'story';
   game.stages = [st];
   startStage(0);
 }
@@ -652,7 +656,13 @@ export function handleOverTap(x, y) {
 // === メイン更新(ロジックのみ・描画は render.js) ===
 export function update(dt, keys) {
   switch (game.state) {
+    case 'splash':
+      game.titleAnim += dt;
+      game.splashT -= dt * 1000;
+      if (game.splashT <= 0) game.state = 'title';
+      break;
     case 'title':
+    case 'coop':
       game.titleAnim += dt;
       break;
     case 'intro':

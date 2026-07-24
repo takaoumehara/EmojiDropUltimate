@@ -46,8 +46,13 @@ export const Save = {
       if (r.score > d.dailyBest || d.dailyPlayed !== todayKey()) { d.dailyBest = Math.max(d.dailyBest, r.score); }
       d.dailyPlayed = todayKey();
     }
-    this.persist();
+    // 新しく解禁されたら自動で装着(スキン切替UIは持たない方針)
     const after = this.unlockedCount();
+    if (after > beforeUnlocked) {
+      const unlocked = SKINS.map((s, i) => (d.bestWorld >= s.need ? i : -1)).filter(i => i >= 0);
+      d.skin = unlocked[unlocked.length - 1];
+    }
+    this.persist();
     return after - beforeUnlocked; // 新規解禁数
   },
 

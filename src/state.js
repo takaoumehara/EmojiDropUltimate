@@ -6,7 +6,8 @@ import { CFG, STAGES } from './config.js';
 
 export function newGame() {
   return {
-    state: 'title', // title/intro/play/warn/clear/pause/over/victory
+    state: 'title', // splash/title/coop/intro/play/warn/finale/clear/pause/over/victory
+    splashT: 0,
     score: 0,
     hi: parseInt(localStorage.getItem('edu_hiscore') || '0'),
     lives: CFG.MAX_LIVES, bombs: 1, continues: CFG.CONTINUES,

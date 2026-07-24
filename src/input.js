@@ -5,7 +5,6 @@ import { canvas } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
 import { toggleLang } from './i18n.js';
-import { Save } from './save.js';
 import { startRun, requestAIStage, startDaily, togglePause, useBomb, doContinue, toTitle, handleOverTap, openCoopLobby, startCoop } from './engine.js';
 import { Coop } from './coop.js';
 
@@ -23,8 +22,9 @@ function hitMenu(x, y) {
       else if (b.id === 'coopJoin') Coop.mockJoin();
       else if (b.id === 'coopStart') startCoop();
       else if (b.id === 'coopBack') toTitle();
+      else if (b.id === 'coopModeStory') Coop.mode = 'story';
+      else if (b.id === 'coopModeAi') Coop.mode = 'ai';
       else if (b.id === 'lang') toggleLang();
-      else if (b.id === 'skin') Save.cycleSkin();
       return true;
     }
   }
@@ -35,7 +35,8 @@ window.addEventListener('keydown', e => {
   keys[e.key] = true;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault();
   const s = game.state;
-  if (s === 'title') { if (e.key === ' ' || e.key === 'Enter') startRun(); if (e.key === 'l' || e.key === 'L') toggleLang(); }
+  if (s === 'splash') { if (e.key === ' ' || e.key === 'Enter') game.state = 'title'; }
+  else if (s === 'title') { if (e.key === ' ' || e.key === 'Enter') startRun(); if (e.key === 'l' || e.key === 'L') toggleLang(); }
   else if (e.key === ' ' && s === 'play') useBomb();
   else if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (s === 'play' || s === 'pause' || s === 'warn')) togglePause();
   else if (e.key === 'm' || e.key === 'M') { Snd.init(); updateMuteIcon(Snd.toggleMute()); }
@@ -47,6 +48,7 @@ window.addEventListener('keyup', e => { keys[e.key] = false; });
 canvas.addEventListener('pointerdown', e => {
   Snd.init();
   const s = game.state, now = performance.now();
+  if (s === 'splash') { game.state = 'title'; return; }
   if (s === 'title' || s === 'coop') { hitMenu(e.clientX, e.clientY); return; }
   if (s === 'pause') { togglePause(); return; }
   if (s === 'over' || s === 'victory') { handleOverTap(e.clientX, e.clientY); return; }

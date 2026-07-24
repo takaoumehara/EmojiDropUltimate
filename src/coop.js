@@ -16,6 +16,7 @@ function makeCode() {
 export const Coop = {
   active: false,          // 共闘モード中か
   role: 'host',           // 'host' | 'guest'
+  mode: 'story',          // 'story'=オリジナル面 | 'ai'=AI生成面(ロビーで選択)
   code: '',               // 相方が入力する6桁コード
   seed: 0,                // 共有ステージ種
   connected: false,       // 相方が参加したか

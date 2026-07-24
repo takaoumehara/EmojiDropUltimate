@@ -10,7 +10,7 @@ import { draw } from './render.js';
 import { keys, updateMuteIcon } from './input.js';
 import { Save } from './save.js';
 import { Coop } from './coop.js';
-import { toggleLang } from './i18n.js';
+import { toggleLang, getLang } from './i18n.js';
 
 // デバッグ用ハンドル(DevTools から状態確認・操作できる。無害)
 window.EDU = { get game() { return game; }, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue, toTitle, openCoopLobby, startCoop, Coop, Weather, Save };
@@ -18,6 +18,9 @@ window.EDU = { get game() { return game; }, startRun, requestAIStage, startDaily
 // URL ?seed=xxxx で同じステージを再現(共有リンク用)
 const _seed = new URLSearchParams(location.search).get('seed');
 if (_seed) { setTimeout(() => startFromSeed(_seed), 400); }
+
+// 起動スプラッシュ(数秒でタイトルへ。タップでスキップ可)
+game.state = 'splash'; game.splashT = 2000;
 
 resize();
 window.addEventListener('resize', resize);
@@ -37,21 +40,21 @@ const pauseBtn = document.getElementById('pauseBtn');
 const muteBtn = document.getElementById('muteBtn');
 const homeBtn = document.getElementById('homeBtn');
 const langBtn = document.getElementById('langBtn');
-const skinBtn = document.getElementById('skinBtn');
 pauseBtn.addEventListener('click', () => { Snd.init(); togglePause(); });
 muteBtn.addEventListener('click', () => { Snd.init(); updateMuteIcon(Snd.toggleMute()); });
 homeBtn.addEventListener('click', () => { if (game.state !== 'title') toTitle(); });
-langBtn.addEventListener('click', () => { Snd.init(); toggleLang(); });
-skinBtn.addEventListener('click', () => { Snd.init(); Save.cycleSkin(); });
+// 言語ボタン: 「切り替え先」を表示(JA表示中→「EN」)
+function syncLangBtn() { langBtn.textContent = getLang() === 'ja' ? 'EN' : '日本語'; }
+langBtn.addEventListener('click', () => { Snd.init(); toggleLang(); syncLangBtn(); });
+syncLangBtn();
 
 function syncButtons() {
   const s = game.state;
   const title = s === 'title';
   const playing = s === 'play' || s === 'warn' || s === 'pause';
-  muteBtn.style.display = 'flex';
+  muteBtn.style.display = s === 'splash' ? 'none' : 'flex';
   langBtn.style.display = title ? 'flex' : 'none';
-  skinBtn.style.display = title ? 'flex' : 'none';
-  homeBtn.style.display = title ? 'none' : 'flex';
+  homeBtn.style.display = (title || s === 'splash') ? 'none' : 'flex';
   pauseBtn.style.display = playing ? 'flex' : 'none';
 }
 
