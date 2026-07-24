@@ -3,7 +3,7 @@
 //   まず Vercel サーバーレス関数 /api/ai-stage (Gemini) に問い合わせ、
 //   失敗/未接続時は端末内でユニークなステージを手続き生成する(オフラインOK)。
 // ============================================================
-import { rand, randInt, pick, clamp } from './config.js';
+import { rand, randInt, pick, clamp, STYLE_KEYS } from './config.js';
 
 const DIRS_LIST = ['up', 'right', 'down', 'left'];
 const HEX = /^#([0-9a-fA-F]{6})$/;
@@ -51,6 +51,7 @@ export function normalizeStage(raw) {
       name: (typeof boss.name === 'string' && boss.name.trim()) ? boss.name.trim().slice(0, 16) : 'カオスロード',
       en: (typeof boss.en === 'string' && boss.en.trim()) ? boss.en.trim().slice(0, 24) : 'CHAOS LORD',
       hp: clampN(boss.hp, 60, 260, 150),
+      style: STYLE_KEYS.includes(boss.style) ? boss.style : pick(STYLE_KEYS),
     },
     dur: 40000,
     bpm: clampN(raw.bpm, 120, 168, 140),

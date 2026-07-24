@@ -52,6 +52,11 @@ export const Weather = {
   },
 
   icon() { return ({ clear: '☀️', clouds: '⛅', fog: '🌫️', rain: '🌧️', snow: '❄️', thunder: '⛈️' })[this.kind] || '☀️'; },
+  conditionLabel() {
+    const ja = getLang() === 'ja';
+    const m = { clear: ['快晴', 'Clear'], clouds: ['くもり', 'Cloudy'], fog: ['霧', 'Fog'], rain: ['雨', 'Rain'], snow: ['雪', 'Snow'], thunder: ['雷雨', 'Storm'] };
+    const p = m[this.kind] || m.clear; return ja ? p[0] : p[1];
+  },
 
   statusLine() {
     const ja = getLang() === 'ja';

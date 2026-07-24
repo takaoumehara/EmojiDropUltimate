@@ -1,7 +1,7 @@
 // ============================================================
 // engine.js — ゲームロジック(更新・生成・当たり判定・状態遷移)
 // ============================================================
-import { CFG, BELLS, BOSS_PHASES, STAGES, PATTERNS, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
+import { CFG, BELLS, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
 import { W, H } from './env.js';
 import { game, newGame, setGame } from './state.js';
 import { stage, dirDef, fwAngle, inAngle, isVert, latSpan, fwSpan, posFromPL, invPL, latOf, playerHome } from './geo.js';
@@ -195,11 +195,14 @@ function killEnemy(e, silent = false) {
 // === ボス ===
 function spawnBoss() {
   const st = stage();
+  const styleKey = (st.boss.style && BOSS_STYLES[st.boss.style]) ? st.boss.style : STYLE_KEYS[game.stageIndex % STYLE_KEYS.length];
+  const style = BOSS_STYLES[styleKey];
   game.boss = {
     prog: -80, targetProg: 150, lat: latSpan() / 2, latPhase: 0,
     hp: st.boss.hp, maxHp: st.boss.hp, phase: 0,
     atkT: 900, atkIdx: 0, flash: 0, entering: true,
     charging: false, chargeTo: null, returning: false, x: -999, y: -999,
+    style: styleKey, col: style.col, phases: style.phases, ringAng: 0, spiralAng: 0,
   };
   game.bossActive = true;
   BossAI.reset();
@@ -233,7 +236,7 @@ function updateBoss(dt) {
       } else b.lat = oscLat;
       b.atkT -= dt * 1000;
       if (b.atkT <= 0 && !b.returning) {
-        const ph = BOSS_PHASES[b.phase];
+        const ph = (b.phases || BOSS_PHASES)[b.phase];
         const atk = ph.attacks[b.atkIdx % ph.attacks.length];
         b.atkT = atk.interval; b.atkIdx++;
         bossAttack(b, atk);
@@ -243,22 +246,40 @@ function updateBoss(dt) {
   if (!b.charging) { const pos = posFromPL(b.prog, b.lat); b.x = pos.x; b.y = pos.y; }
 }
 
+function ebPush(b, x, y, a, speed, size) {
+  game.eBullets.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size, boss: true, col: b.col });
+}
 function bossAttack(b, atk) {
   switch (atk.type) {
     case 'aimed': {
       const aim = BossAI.aimPoint(b, atk.speed, b.phase);
       const base = Math.atan2(aim.y - b.y, aim.x - b.x);
-      for (let i = 0; i < atk.count; i++) {
-        const a = base + (i - (atk.count - 1) / 2) * 0.16;
-        game.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * atk.speed, vy: Math.sin(a) * atk.speed, size: 7, boss: true });
-      }
+      for (let i = 0; i < atk.count; i++) ebPush(b, b.x, b.y, base + (i - (atk.count - 1) / 2) * 0.16, atk.speed, 7);
       break;
     }
     case 'spread': {
       const base = inAngle();
+      for (let i = 0; i < atk.count; i++) ebPush(b, b.x, b.y, base - atk.arc / 2 + atk.arc / (atk.count - 1) * i, atk.speed, 6);
+      break;
+    }
+    case 'ring': {
+      b.ringAng += atk.spin || 0;
+      for (let i = 0; i < atk.count; i++) ebPush(b, b.x, b.y, b.ringAng + i / atk.count * Math.PI * 2, atk.speed, 6);
+      break;
+    }
+    case 'spiral': {
+      for (let i = 0; i < atk.count; i++) ebPush(b, b.x, b.y, b.spiralAng + i / atk.count * Math.PI * 2, atk.speed, 6);
+      b.spiralAng += atk.spin || 0.4;
+      break;
+    }
+    case 'wall': {
+      const base = inAngle();
+      const gap = latOf(game.player), span = latSpan();
       for (let i = 0; i < atk.count; i++) {
-        const a = base - atk.arc / 2 + atk.arc / (atk.count - 1) * i;
-        game.eBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * atk.speed, vy: Math.sin(a) * atk.speed, size: 6, boss: true });
+        const lat = span * (i + 0.5) / atk.count;
+        if (Math.abs(lat - gap) < span * 0.13) continue; // プレイヤー位置に隙間
+        const pos = posFromPL(b.prog, lat);
+        ebPush(b, pos.x, pos.y, base, atk.speed, 6);
       }
       break;
     }
@@ -291,30 +312,23 @@ function damageBoss(dmg) {
   b.hp -= dmg; b.flash = 1; game.stats.hits++; Snd.bossHit();
   game.shake = Math.min(game.shake + 1.5, CFG.MAX_SHAKE);
   if (b.hp <= 0) {
-    Snd.kill();
-    const bx = b.x, by = b.y;
-    for (let i = 0; i < 5; i++) setTimeout(() => explosion(bx + rand(-40, 40), by + rand(-40, 40), 10, pick(['#ffd700', '#ff6600', '#ff2200'])), i * 130);
-    explosion(bx, by, 16, '#ffd700');
+    // === 撃破フィナーレ(爽快感の余韻) ===
+    Snd.kill(); Snd.bomb();
+    const bx = b.x, by = b.y, emoji = stage().boss.emoji;
+    explosion(bx, by, 18, '#ffd700');
     game.boss = null; game.bossActive = false;
+    game.eBullets = []; game.enemies = [];
     const bonus = Math.round((game.endless ? 3000 * game.world : 5000 * (game.stageIndex + 1)) * Weather.mods.scoreMul);
-    game.score += bonus;
-    popup(W / 2, H / 2 - 60, t('boss_bonus') + ' +' + bonus, '#ffd700');
-    game.eBullets = [];
-    saveHi();
-    if (game.endless) {
-      // エンドレス: 次ワールドを即生成(ローカル手続き生成・段階的に強化)して連戦
-      game.world++;
-      game.pendingStage = scaleStage(proceduralStage(), game.world);
-      game.state = 'clear'; game.clearT = CFG.CLEAR_TIME; Snd.stopBGM(); Snd.clear();
-    } else if (game.daily) {
-      recordRunEnd({ daily: true });
-      game.state = 'victory'; Snd.stopBGM(); Snd.victory();
-    } else if (game.stageIndex >= game.stages.length - 1) {
-      recordRunEnd({});
-      game.state = 'victory'; Snd.stopBGM(); Snd.victory();
-    } else {
-      game.state = 'clear'; game.clearT = CFG.CLEAR_TIME; Snd.stopBGM(); Snd.clear();
-    }
+    game.score += bonus; saveHi();
+    let kind;
+    if (game.endless) { kind = 'world'; game.world++; game.pendingStage = scaleStage(proceduralStage(), game.world); }
+    else if (game.daily) { kind = 'victory'; recordRunEnd({ daily: true }); }
+    else if (game.stageIndex >= game.stages.length - 1) { kind = 'victory'; recordRunEnd({}); }
+    else kind = 'stage';
+    game.finale = { t: 0, dur: kind === 'victory' ? 3400 : 2300, kind, bx, by, emoji, bonus, snd: false };
+    game.state = 'finale';
+    game.flash = 0.95; game.shake = CFG.MAX_SHAKE;
+    Snd.stopBGM();
   }
 }
 
@@ -623,14 +637,24 @@ export function update(dt, keys) {
       Director.update(dt, game);
       checkCollisions();
       break;
+    case 'finale': {
+      const F = game.finale;
+      F.t += dt * 1000;
+      if (Math.random() < dt * 9) explosion(F.bx + rand(-80, 80), F.by + rand(-80, 80), 8, pick(['#ffd700', '#ff8a3c', '#ff2a2a', '#8fd3ff']));
+      updateParticles(dt); updateShake(dt);
+      if (game.skinFlash > 0) game.skinFlash -= dt;
+      if (!F.snd && F.t > (F.kind === 'victory' ? 700 : 450)) { F.snd = true; (F.kind === 'victory' ? Snd.victory() : Snd.clear()); }
+      if (F.t >= F.dur) {
+        if (F.kind === 'victory') game.state = 'victory';
+        else if (F.kind === 'world') { if (game.pendingStage) startEndlessNext(); }
+        else startStage(game.stageIndex + 1);
+      }
+      break;
+    }
     case 'clear':
       game.clearT -= dt * 1000;
       updateParticles(dt); updateBg(dt);
-      if (game.skinFlash > 0) game.skinFlash -= dt;
-      if (game.clearT <= 0) {
-        if (game.endless) { if (game.pendingStage) startEndlessNext(); }
-        else startStage(game.stageIndex + 1);
-      }
+      if (game.clearT <= 0) startStage(game.stageIndex + 1);
       break;
     case 'over':
       game.overT += dt; updateParticles(dt);

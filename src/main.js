@@ -9,6 +9,7 @@ import { update, initStars, togglePause, toTitle, startRun, requestAIStage, star
 import { draw } from './render.js';
 import { keys, updateMuteIcon } from './input.js';
 import { Save } from './save.js';
+import { toggleLang } from './i18n.js';
 
 // デバッグ用ハンドル(DevTools から状態確認・操作できる。無害)
 window.EDU = { get game() { return game; }, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue, toTitle, Weather, Save };
@@ -27,12 +28,24 @@ Weather.load();
 const pauseBtn = document.getElementById('pauseBtn');
 const muteBtn = document.getElementById('muteBtn');
 const homeBtn = document.getElementById('homeBtn');
+const langBtn = document.getElementById('langBtn');
+const skinBtn = document.getElementById('skinBtn');
 pauseBtn.addEventListener('click', () => { Snd.init(); togglePause(); });
 muteBtn.addEventListener('click', () => { Snd.init(); updateMuteIcon(Snd.toggleMute()); });
 homeBtn.addEventListener('click', () => { if (game.state !== 'title') toTitle(); });
-pauseBtn.style.display = 'flex';
-muteBtn.style.display = 'flex';
-homeBtn.style.display = 'flex';
+langBtn.addEventListener('click', () => { Snd.init(); toggleLang(); });
+skinBtn.addEventListener('click', () => { Snd.init(); Save.cycleSkin(); });
+
+function syncButtons() {
+  const s = game.state;
+  const title = s === 'title';
+  const playing = s === 'play' || s === 'warn' || s === 'pause';
+  muteBtn.style.display = 'flex';
+  langBtn.style.display = title ? 'flex' : 'none';
+  skinBtn.style.display = title ? 'flex' : 'none';
+  homeBtn.style.display = title ? 'none' : 'flex';
+  pauseBtn.style.display = playing ? 'flex' : 'none';
+}
 
 document.addEventListener('visibilitychange', () => { if (document.hidden && (game.state === 'play' || game.state === 'warn')) togglePause(); });
 
@@ -43,6 +56,7 @@ function loop(now) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   update(dt, keys);
   draw();
+  syncButtons();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

@@ -129,6 +129,42 @@ export const BOSS_PHASES = [
 ];
 
 // ベル(Twinbee風) — 撃つと色が変わる
+// === ボススタイル(ステージ毎に弾幕と色が変わる) ===
+// 攻撃type: aimed(狙撃) spread(扇) ring(全方位) spiral(渦) wall(壁+隙間) summon(召喚) charge(突進)
+export const BOSS_STYLES = {
+  king: { col: '#ffe14d', phases: [
+    { attacks: [{ type: 'spread', interval: 1100, speed: 200, count: 5, arc: 0.6 }, { type: 'ring', interval: 1700, speed: 170, count: 10 }] },
+    { attacks: [{ type: 'spread', interval: 900, speed: 220, count: 7, arc: 0.7 }, { type: 'aimed', interval: 700, speed: 250, count: 2 }] },
+    { attacks: [{ type: 'ring', interval: 900, speed: 200, count: 14, spin: 0.4 }, { type: 'aimed', interval: 500, speed: 280, count: 3 }, { type: 'summon', interval: 3800, minion: 0 }] },
+  ]},
+  kraken: { col: '#3fe0d0', phases: [
+    { attacks: [{ type: 'spiral', interval: 180, speed: 175, count: 2, spin: 0.45 }, { type: 'aimed', interval: 1200, speed: 230, count: 1 }] },
+    { attacks: [{ type: 'spiral', interval: 150, speed: 190, count: 3, spin: 0.5 }, { type: 'summon', interval: 4200, minion: 0 }] },
+    { attacks: [{ type: 'spiral', interval: 120, speed: 200, count: 3, spin: -0.55 }, { type: 'ring', interval: 1600, speed: 180, count: 12 }, { type: 'aimed', interval: 600, speed: 260, count: 2 }] },
+  ]},
+  spider: { col: '#c17bff', phases: [
+    { attacks: [{ type: 'wall', interval: 1900, speed: 150, count: 11 }, { type: 'aimed', interval: 900, speed: 220, count: 1 }] },
+    { attacks: [{ type: 'wall', interval: 1550, speed: 170, count: 13 }, { type: 'summon', interval: 3600, minion: 0 }] },
+    { attacks: [{ type: 'wall', interval: 1250, speed: 190, count: 15 }, { type: 'spread', interval: 800, speed: 210, count: 7, arc: 0.6 }, { type: 'summon', interval: 3000, minion: 1 }] },
+  ]},
+  mainframe: { col: '#57e6ff', phases: [
+    { attacks: [{ type: 'wall', interval: 1600, speed: 205, count: 12 }, { type: 'aimed', interval: 520, speed: 270, count: 1 }] },
+    { attacks: [{ type: 'aimed', interval: 360, speed: 300, count: 2 }, { type: 'wall', interval: 1400, speed: 225, count: 14 }] },
+    { attacks: [{ type: 'aimed', interval: 300, speed: 320, count: 3 }, { type: 'wall', interval: 1150, speed: 245, count: 16 }, { type: 'ring', interval: 1500, speed: 200, count: 12 }] },
+  ]},
+  dragon: { col: '#ff7a3c', phases: [
+    { attacks: [{ type: 'spread', interval: 900, speed: 230, count: 7, arc: 0.9 }, { type: 'charge', interval: 5000 }] },
+    { attacks: [{ type: 'spread', interval: 760, speed: 250, count: 9, arc: 1.0 }, { type: 'ring', interval: 1400, speed: 200, count: 12 }, { type: 'charge', interval: 4200 }] },
+    { attacks: [{ type: 'spread', interval: 620, speed: 270, count: 11, arc: 1.1 }, { type: 'aimed', interval: 400, speed: 300, count: 3 }, { type: 'charge', interval: 3400 }, { type: 'ring', interval: 1200, speed: 220, count: 14, spin: 0.5 }] },
+  ]},
+  mothership: { col: '#7CFC00', phases: [
+    { attacks: [{ type: 'ring', interval: 1200, speed: 180, count: 12 }, { type: 'summon', interval: 3800, minion: 0 }] },
+    { attacks: [{ type: 'ring', interval: 1000, speed: 200, count: 16, spin: 0.35 }, { type: 'spiral', interval: 160, speed: 190, count: 2, spin: 0.5 }] },
+    { attacks: [{ type: 'ring', interval: 850, speed: 210, count: 18, spin: 0.4 }, { type: 'aimed', interval: 450, speed: 290, count: 3 }, { type: 'summon', interval: 2800, minion: 1 }, { type: 'charge', interval: 5000 }] },
+  ]},
+};
+export const STYLE_KEYS = ['king', 'kraken', 'spider', 'mainframe', 'dragon', 'mothership'];
+
 export const BELLS = [
   { color: '#ffffff', name: 'SCORE',  ja: 'スコア',   effect: 'points', value: 500 },
   { color: '#4a9eff', name: 'SPEED',  ja: 'スピード', effect: 'speed', duration: 9000 },

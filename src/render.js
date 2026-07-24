@@ -144,9 +144,9 @@ function drawBullets() {
     ctx.restore();
   }
   for (const b of game.eBullets) {
-    const s = b.size;
-    ctx.fillStyle = b.boss ? 'rgba(255,80,80,0.3)' : 'rgba(255,190,80,0.3)'; ctx.beginPath(); ctx.arc(b.x, b.y, s + 3, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = b.boss ? '#ff4646' : '#ffaa00'; ctx.beginPath(); ctx.arc(b.x, b.y, s, 0, Math.PI * 2); ctx.fill();
+    const s = b.size, col = b.col || (b.boss ? '#ff4646' : '#ffaa00');
+    ctx.fillStyle = col + '55'; ctx.beginPath(); ctx.arc(b.x, b.y, s + 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(b.x, b.y, s, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(b.x, b.y, s * 0.42, 0, Math.PI * 2); ctx.fill();
   }
 }
@@ -272,38 +272,54 @@ function drawTitle() {
   label('— U L T I M A T E —', W / 2, cy + 40 * UI, '#ffd700', 16 * UI);
 
   const ja = getLang() === 'ja';
-  // 天気チップ(1行だけ・控えめ)
-  label(Weather.statusLine(), W / 2, H * 0.335, '#9fb6d8', 11 * UI);
-
-  // メニュー(大きめ余白・要素を絞る)
-  game.menuBtns = [];
-  const bw = Math.min(W * 0.72, 320), bx = (W - bw) / 2, half = (bw - 12 * UI) / 2;
-  const blink = Math.floor(time * 2) % 2 === 0;
-  let by = H * 0.47;
-  // START(大)
-  drawBtn('start', bx, by, bw, 56 * UI, '▶ ' + t('start_short'), '#ffffff', blink);
-  by += 56 * UI + 14 * UI;
-  // エンドレス / デイリー(2分割)
-  if (game.aiLoading) drawBtn('none', bx, by, bw, 48 * UI, t('ai_generating'), '#00ffcc', true, true);
-  else {
-    drawBtn('ai', bx, by, half, 48 * UI, ja ? '♾️ 無限' : '♾️ Endless', '#b967ff', false, false, 13 * UI);
-    drawBtn('daily', bx + half + 12 * UI, by, half, 48 * UI, (ja ? '🗓 毎日' : '🗓 Daily') + (Save.playedDailyToday() ? ' ✓' : ''), '#ffd23f', false, false, 13 * UI);
+  // 天気ブロック(中央寄せ・現在地とシーン生成の説明)
+  ctx.textAlign = 'center';
+  const wy = H * 0.315;
+  if (Weather.loaded) {
+    label(`📍 ${Weather.place}`, W / 2, wy, '#cfe8ff', 13 * UI);
+    label(`${Weather.icon()} ${Weather.conditionLabel()} ${Math.round(Weather.temp)}°C`, W / 2, wy + 22 * UI, '#ffffff', 15 * UI);
+    label(`🎨 ${t('weather_scene')}`, W / 2, wy + 44 * UI, '#9fd8b0', 12 * UI);
+  } else {
+    label(`📡 ${Weather.failed ? (ja ? '天気オフライン' : 'weather offline') : t('locating')}`, W / 2, wy + 22 * UI, '#9fb6d8', 12 * UI);
   }
-  by += 48 * UI + 14 * UI;
-  // 言語 / スキン(小)
-  drawBtn('lang', bx, by, half, 40 * UI, ja ? '🌐EN' : '🌐日本語', '#8fd3ff', false, false, 12 * UI);
-  drawBtn('skin', bx + half + 12 * UI, by, half, 40 * UI, '🎨' + Save.currentSkin().name, '#7CFC00', false, false, 12 * UI);
+
+  // メニュー(大きなSTARTを主役に・サブ表記で意味を明示)
+  game.menuBtns = [];
+  const bw = Math.min(W * 0.78, 340), bx = (W - bw) / 2, half = (bw - 12 * UI) / 2;
+  const blink = Math.floor(time * 2) % 2 === 0;
+  let by = H * 0.45;
+  // ▶ スタート(大・主役)
+  drawBtn('start', bx, by, bw, 66 * UI, '▶ ' + t('start_short'), '#ffffff', blink, false, 22 * UI);
+  by += 66 * UI + 16 * UI;
+  // ♾️ AI無限 / 🗓 デイリー(サブ表記つき)
+  if (game.aiLoading) drawBtn('none', bx, by, bw, 60 * UI, t('ai_generating'), '#00ffcc', true, true);
+  else {
+    drawBtnSub('ai', bx, by, half, 60 * UI, t('endless_ai'), t('endless_sub'), '#b967ff');
+    drawBtnSub('daily', bx + half + 12 * UI, by, half, 60 * UI, t('daily') + (Save.playedDailyToday() ? ' ✓' : ''), t('daily_sub'), '#ffd23f');
+  }
+  by += 60 * UI + 18 * UI;
 
   // ストリーク催促(途切れそうな時だけ・控えめ)
   if (Save.streakAtRisk()) {
     ctx.globalAlpha = 0.65 + 0.35 * Math.sin(time * 4);
-    label(ja ? `🔥 ${Save.data.streak}日連続中 — 今日プレイで継続` : `🔥 ${Save.data.streak}-day streak — play today`, W / 2, by + 40 * UI + 22 * UI, '#ff9d3c', 11 * UI);
+    label(ja ? `🔥 ${Save.data.streak}日連続中 — 今日プレイで継続` : `🔥 ${Save.data.streak}-day streak — play today`, W / 2, by + 6 * UI, '#ff9d3c', 12 * UI);
     ctx.globalAlpha = 1;
+    by += 24 * UI;
   }
 
-  // 最下段: ハイスコアのみ(または生成メッセージ)
-  label(game.aiMsg && !game.aiLoading ? game.aiMsg : t('hiscore') + ' ' + String(game.hi).padStart(7, '0'),
-    W / 2, H * 0.93, game.aiMsg && !game.aiLoading ? '#ffcf6f' : '#c7a83a', 11 * UI);
+  // ハイスコア(大きめ)/ 生成メッセージ
+  label(game.aiMsg && !game.aiLoading ? game.aiMsg : `🏆 ${t('hiscore')} ${String(game.hi).padStart(7, '0')}`,
+    W / 2, H * 0.93, game.aiMsg && !game.aiLoading ? '#ffcf6f' : '#ffd700', 14 * UI);
+}
+// アイコン+ラベル(上)とサブ説明(下)の2段ボタン
+function drawBtnSub(id, x, y, w, h, main, sub, color) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(x, y, w, h, 12); ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = 2; roundRect(x, y, w, h, 12); ctx.stroke();
+  label(main, x + w / 2, y + h * 0.36, color, 15 * UI);
+  label(sub, x + w / 2, y + h * 0.70, '#c9d4ea', 10.5 * UI);
+  ctx.restore();
+  game.menuBtns.push({ id, x, y, w, h });
 }
 function drawBtn(id, x, y, w, h, text, color, glow, spinner = false, fs = 15 * UI) {
   ctx.save();
@@ -356,6 +372,33 @@ function drawPause() {
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
   label(t('paused'), W / 2, H * 0.45, '#fff', 26 * UI);
   label(t('resume'), W / 2, H * 0.53, '#8fd3ff', 12 * UI);
+}
+
+function drawFinale() {
+  const F = game.finale; if (!F) return;
+  const ja = getLang() === 'ja';
+  const k = clamp(F.t / F.dur, 0, 1);
+  ctx.save(); ctx.translate(game.shakeX, game.shakeY);
+  drawBackground();
+  // 回転しながら崩れ落ちて消えるボス
+  ctx.save(); ctx.translate(F.bx, F.by); ctx.rotate(k * 7); ctx.scale(1 + k * 1.6, 1 + k * 1.6);
+  ctx.globalAlpha = clamp(1 - k * 1.15, 0, 1);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '72px serif'; ctx.fillText(F.emoji, 0, 0);
+  ctx.globalAlpha = 1; ctx.restore();
+  drawParticles();
+  ctx.restore();
+  // 大きなクリア文字(バウンドイン)
+  const pop = Math.min(1, F.t / 400);
+  const s = 1 + (1 - pop) * 0.7 + Math.sin(F.t * 0.012) * 0.03;
+  const title = F.kind === 'victory' ? (ja ? '勝  利!' : 'VICTORY!')
+    : F.kind === 'world' ? `WORLD ${game.world - 1} ${ja ? '突破!' : 'CLEAR!'}`
+      : (ja ? 'ステージクリア!' : 'STAGE CLEAR!');
+  ctx.save(); ctx.translate(W / 2, H * 0.40); ctx.scale(s, s);
+  label(title, 0, 0, F.kind === 'victory' ? '#ffd700' : '#8fff9d', 36 * UI);
+  ctx.restore();
+  if (F.t > 500) label(`+${F.bonus}`, W / 2, H * 0.40 + 42 * UI, '#ffe14d', 20 * UI);
+  if (F.kind === 'victory' && F.t > 900) label(ja ? '✨ 全ステージ制覇 ✨' : '✨ ALL STAGES CLEAR ✨', W / 2, H * 0.40 + 72 * UI, '#b98cff', 14 * UI);
+  if (game.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, 0.85)})`; ctx.fillRect(0, 0, W, H); }
 }
 
 function drawGameOver() {
@@ -416,6 +459,7 @@ export function draw() {
       if (game.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, 0.85)})`; ctx.fillRect(0, 0, W, H); }
       break;
     }
+    case 'finale': drawFinale(); break;
     case 'clear': drawClear(); break;
     case 'pause':
       ctx.save(); drawBackground(); drawBells(); drawEnemies(); drawBoss(); drawBullets(); drawPlayer(); ctx.restore();

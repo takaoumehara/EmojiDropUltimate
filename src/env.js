@@ -16,6 +16,6 @@ export function resize() {
   canvas.style.width = W + 'px';
   canvas.style.height = H + 'px';
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  // 読みやすさ優先で UI スケールを底上げ (小さすぎる端末でも最低 0.95)
-  UI = Math.max(0.95, Math.min(W / 400, H / 720, 1.5));
+  // 読みやすさ優先で UI スケールを底上げ (小さすぎる端末でも最低 1.05)
+  UI = Math.max(1.05, Math.min(W / 380, H / 680, 1.6));
 }
