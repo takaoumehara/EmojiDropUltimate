@@ -224,17 +224,15 @@ function drawHUD() {
   const pad = 12 * UI, top = 16 * UI;
   ctx.textBaseline = 'top';
   label(String(game.score).padStart(7, '0'), pad, top, '#fff', 18 * UI, 'left');
-  label(t('hiscore') + ' ' + String(game.hi).padStart(7, '0'), pad, top + 24 * UI, '#ffd700', 11 * UI, 'left');
   if (game.comboMul > 1 && performance.now() - game.lastKill < 2000) {
-    label(`${t('combo')} x${game.comboMul}`, W / 2, top + 6 * UI, '#ff8844', 18 * UI, 'center');
+    label(`${t('combo')} x${game.comboMul}`, W / 2, top + 4 * UI, '#ff8844', 17 * UI, 'center');
   }
   const p = game.player;
   ctx.font = `${Math.round(19 * UI)}px serif`; ctx.textAlign = 'left';
   ctx.fillText('❤️'.repeat(Math.max(0, game.lives)) + ' ' + '💣'.repeat(game.bombs), pad, H - 52 * UI);
   label(`PW${p.power}${p.options ? ' OP' + p.options : ''}${p.shield ? ' 🛡' : ''}${p.boost ? ' 💨' : ''}`, pad, H - 26 * UI, '#8fd3ff', 12 * UI, 'left');
-  const slabel = game.endless ? ('WORLD ' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('STAGE ' + (game.stageIndex + 1));
-  label(`${slabel} ${stage().emoji} ${dirDef().arrow}`, W - pad, H - 52 * UI, '#fff', 12 * UI, 'right');
-  if (Weather.loaded) label(`${Weather.icon()} ${Math.round(Weather.temp)}°C`, W - pad, H - 28 * UI, '#cfe8ff', 12 * UI, 'right');
+  const slabel = game.endless ? ('W' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('' + (game.stageIndex + 1));
+  label(`${slabel} ${stage().emoji}${dirDef().arrow}`, W - pad, H - 28 * UI, '#fff', 12 * UI, 'right');
   if (Director.msg && Director.msgT > 0) {
     ctx.globalAlpha = clamp(Director.msgT, 0, 1);
     label(Director.msg, W / 2, H - 78 * UI, '#00ffcc', 12 * UI);
@@ -273,42 +271,41 @@ function drawTitle() {
   label('EMOJI DROP', W / 2, cy, `hsl(${hue},90%,66%)`, 40 * UI);
   label('— U L T I M A T E —', W / 2, cy + 40 * UI, '#ffd700', 16 * UI);
 
-  // 天気パネル
-  const py = H * 0.36;
-  label(t('ai_engine'), W / 2, py, '#00ffcc', 12 * UI);
-  label(Weather.statusLine(), W / 2, py + 22 * UI, '#cfe8ff', 12 * UI);
   const ja = getLang() === 'ja';
-  if (Weather.loaded) Weather.effects.slice(0, 3).forEach((fx, i) => label(ja ? fx.ja : fx.en, W / 2, py + (44 + i * 18) * UI, '#9fd8b0', 11 * UI));
+  // 天気チップ(1行だけ・控えめ)
+  label(Weather.statusLine(), W / 2, H * 0.335, '#9fb6d8', 11 * UI);
 
-  // ストリーク(戻る動機): 連続記録が途切れそうなら強調
+  // メニュー(大きめ余白・要素を絞る)
+  game.menuBtns = [];
+  const bw = Math.min(W * 0.72, 320), bx = (W - bw) / 2, half = (bw - 12 * UI) / 2;
+  const blink = Math.floor(time * 2) % 2 === 0;
+  let by = H * 0.47;
+  // START(大)
+  drawBtn('start', bx, by, bw, 56 * UI, '▶ ' + t('start_short'), '#ffffff', blink);
+  by += 56 * UI + 14 * UI;
+  // エンドレス / デイリー(2分割)
+  if (game.aiLoading) drawBtn('none', bx, by, bw, 48 * UI, t('ai_generating'), '#00ffcc', true, true);
+  else {
+    drawBtn('ai', bx, by, half, 48 * UI, ja ? '♾️ 無限' : '♾️ Endless', '#b967ff', false, false, 13 * UI);
+    drawBtn('daily', bx + half + 12 * UI, by, half, 48 * UI, (ja ? '🗓 毎日' : '🗓 Daily') + (Save.playedDailyToday() ? ' ✓' : ''), '#ffd23f', false, false, 13 * UI);
+  }
+  by += 48 * UI + 14 * UI;
+  // 言語 / スキン(小)
+  drawBtn('lang', bx, by, half, 40 * UI, ja ? '🌐EN' : '🌐日本語', '#8fd3ff', false, false, 12 * UI);
+  drawBtn('skin', bx + half + 12 * UI, by, half, 40 * UI, '🎨' + Save.currentSkin().name, '#7CFC00', false, false, 12 * UI);
+
+  // ストリーク催促(途切れそうな時だけ・控えめ)
   if (Save.streakAtRisk()) {
-    const glow = 0.6 + 0.4 * Math.sin(time * 4);
-    ctx.globalAlpha = glow;
-    label(ja ? `🔥 ${Save.data.streak}日連続中! 今日プレイで継続` : `🔥 ${Save.data.streak}-day streak! Play today to keep it`, W / 2, H * 0.47, '#ff9d3c', 12.5 * UI);
+    ctx.globalAlpha = 0.65 + 0.35 * Math.sin(time * 4);
+    label(ja ? `🔥 ${Save.data.streak}日連続中 — 今日プレイで継続` : `🔥 ${Save.data.streak}-day streak — play today`, W / 2, by + 40 * UI + 22 * UI, '#ff9d3c', 11 * UI);
     ctx.globalAlpha = 1;
   }
 
-  // メニューボタン(コンパクト)
-  game.menuBtns = [];
-  const bw = Math.min(W * 0.74, 348), bx = (W - bw) / 2, bh = 46 * UI, gap = 11 * UI;
-  let by = H * 0.505;
-  const blink = Math.floor(time * 2) % 2 === 0;
-  drawBtn('start', bx, by, bw, bh, '▶ ' + t('start_short'), '#ffffff', blink); by += bh + gap;
-  if (game.aiLoading) { drawBtn('none', bx, by, bw, bh, t('ai_generating'), '#00ffcc', true, true); by += bh + gap; }
-  else { drawBtn('ai', bx, by, bw, bh, t('endless_ai'), '#b967ff', false); by += bh + gap; }
-  drawBtn('daily', bx, by, bw, bh, t('daily') + (Save.playedDailyToday() ? ' ✓' : ''), '#ffd23f', false); by += bh + gap;
-  drawBtn('lang', bx, by * 1, bw / 2 - 6 * UI, bh, ja ? '🌐 EN' : '🌐 日本語', '#8fd3ff', false);
-  drawBtn('skin', bx + bw / 2 + 6 * UI, by, bw / 2 - 6 * UI, bh, '🎨 ' + Save.currentSkin().name, '#7CFC00', false);
-
-  // 統計/ストリーク
-  const sy = H * 0.855;
-  const d = Save.data;
-  label(`🏆 W${d.bestWorld}   🔥 ${d.streak}${ja ? '日' : 'd'}   ⚔ ${d.kills}   🎯 ${Save.accuracy()}%`, W / 2, sy, '#9fd8b0', 11 * UI);
-  if (game.aiMsg && !game.aiLoading) label(game.aiMsg, W / 2, sy + 18 * UI, '#ffcf6f', 10.5 * UI);
-  else label(t('hiscore') + ' ' + String(game.hi).padStart(7, '0'), W / 2, sy + 18 * UI, '#ffd700', 11 * UI);
-  label(t('howto1'), W / 2, sy + 40 * UI, '#8899bb', 10.5 * UI);
+  // 最下段: ハイスコアのみ(または生成メッセージ)
+  label(game.aiMsg && !game.aiLoading ? game.aiMsg : t('hiscore') + ' ' + String(game.hi).padStart(7, '0'),
+    W / 2, H * 0.93, game.aiMsg && !game.aiLoading ? '#ffcf6f' : '#c7a83a', 11 * UI);
 }
-function drawBtn(id, x, y, w, h, text, color, glow, spinner = false) {
+function drawBtn(id, x, y, w, h, text, color, glow, spinner = false, fs = 15 * UI) {
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(x, y, w, h, 12); ctx.fill();
   ctx.strokeStyle = color; ctx.lineWidth = glow ? 3 : 2; roundRect(x, y, w, h, 12); ctx.stroke();
@@ -318,7 +315,7 @@ function drawBtn(id, x, y, w, h, text, color, glow, spinner = false) {
     ctx.arc(x + 26, y + h / 2, 10, a, a + Math.PI * 1.4); ctx.stroke();
     label(text, x + w / 2 + 12, y + h / 2, color, 13 * UI);
   } else {
-    label(text, x + w / 2, y + h / 2, color, 15 * UI);
+    label(text, x + w / 2, y + h / 2, color, fs);
   }
   ctx.restore();
   if (id !== 'none') game.menuBtns.push({ id, x, y, w, h });
