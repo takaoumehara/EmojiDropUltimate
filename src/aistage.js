@@ -3,7 +3,7 @@
 //   まず Vercel サーバーレス関数 /api/ai-stage (Gemini) に問い合わせ、
 //   失敗/未接続時は端末内でユニークなステージを手続き生成する(オフラインOK)。
 // ============================================================
-import { rand, randInt, pick } from './config.js';
+import { rand, randInt, pick, clamp } from './config.js';
 
 const DIRS_LIST = ['up', 'right', 'down', 'left'];
 const HEX = /^#([0-9a-fA-F]{6})$/;
@@ -70,24 +70,44 @@ const THEMES = [
   { name: 'エモジ銀河', en: 'EMOJI GALAXY', emoji: '🌠', sky: ['#1b0b3a', '#6d3bd6'], night: ['#08041a', '#2a1466'], bg: ['🪐', '⭐', '🌙', '☄️'], en_list: ['🛸', '👽', '🌟', '🚀'], boss: ['🌞', 'ソーラータイタン', 'SOLAR TITAN'] },
 ];
 
-export function proceduralStage() {
-  const th = pick(THEMES);
-  const dir = pick(DIRS_LIST);
+// rng を渡すと決定論的(デイリー/URLシードで全員同じステージ)。省略時は Math.random。
+export function proceduralStage(rng = Math.random) {
+  const R = (a, b) => rng() * (b - a) + a;
+  const RI = (a, b) => Math.floor(R(a, b + 1));
+  const PK = arr => arr[Math.floor(rng() * arr.length)];
+  const th = PK(THEMES);
+  const dir = PK(DIRS_LIST);
   const mk = (i, type) => ({
     type, emoji: th.en_list[i % th.en_list.length],
-    hp: type === 'tank' ? randInt(4, 7) : type === 'shooter' ? randInt(2, 4) : randInt(1, 2),
-    speed: type === 'kamikaze' ? randInt(240, 320) : type === 'tank' ? randInt(42, 60) : randInt(100, 160),
-    pts: 120 + i * 70, size: randInt(16, 24),
-    amp: randInt(70, 120), freq: rand(1.5, 2.6),
-    shootRate: (type === 'shooter' || type === 'tank') ? rand(0.7, 1.3) : 0,
+    hp: type === 'tank' ? RI(4, 7) : type === 'shooter' ? RI(2, 4) : RI(1, 2),
+    speed: type === 'kamikaze' ? RI(240, 320) : type === 'tank' ? RI(42, 60) : RI(100, 160),
+    pts: 120 + i * 70, size: RI(16, 24),
+    amp: RI(70, 120), freq: R(1.5, 2.6),
+    shootRate: (type === 'shooter' || type === 'tank') ? R(0.7, 1.3) : 0,
   });
   return normalizeStage({
     name: th.name, en: th.en, emoji: th.emoji, dir,
     sky: th.sky, night: th.night, bgEmojis: th.bg,
-    enemies: [mk(0, 'straight'), mk(1, 'wave'), mk(2, 'shooter'), mk(3, pick(['tank', 'kamikaze']))],
-    boss: { emoji: th.boss[0], name: th.boss[1], en: th.boss[2], hp: randInt(150, 210) },
-    bpm: randInt(132, 160),
+    enemies: [mk(0, 'straight'), mk(1, 'wave'), mk(2, 'shooter'), mk(3, PK(['tank', 'kamikaze']))],
+    boss: { emoji: th.boss[0], name: th.boss[1], en: th.boss[2], hp: RI(150, 210) },
+    bpm: RI(132, 160),
   });
+}
+
+// エンドレス用: ワールドが進むほど強く(世界1=等倍)
+export function scaleStage(base, world) {
+  const f = 1 + (world - 1) * 0.11;
+  const s = JSON.parse(JSON.stringify(base));
+  s.enemies = s.enemies.map(e => ({
+    ...e,
+    hp: Math.max(1, Math.round(e.hp * (1 + (world - 1) * 0.16))),
+    speed: Math.round(clamp(e.speed * (1 + (world - 1) * 0.05), 40, 360)),
+    shootRate: e.shootRate ? clamp(e.shootRate * f, 0.4, 2.0) : 0,
+    pts: Math.round(e.pts * f),
+  }));
+  s.boss = { ...s.boss, hp: Math.round(s.boss.hp * (1 + (world - 1) * 0.18)) };
+  s.dur = Math.max(24000, Math.round((s.dur || 40000) * (1 - (world - 1) * 0.03)));
+  return s;
 }
 
 // メイン: サーバー(Gemini)→ 失敗時ローカル

@@ -5,7 +5,8 @@ import { canvas } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
 import { toggleLang } from './i18n.js';
-import { startRun, requestAIStage, togglePause, useBomb, doContinue, toTitle, handleOverTap } from './engine.js';
+import { Save } from './save.js';
+import { startRun, requestAIStage, startDaily, togglePause, useBomb, doContinue, toTitle, handleOverTap } from './engine.js';
 
 export const keys = {};
 
@@ -16,7 +17,9 @@ function hitMenu(x, y) {
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
       if (b.id === 'start') startRun();
       else if (b.id === 'ai') requestAIStage();
+      else if (b.id === 'daily') startDaily();
       else if (b.id === 'lang') toggleLang();
+      else if (b.id === 'skin') Save.cycleSkin();
       return true;
     }
   }
@@ -41,8 +44,7 @@ canvas.addEventListener('pointerdown', e => {
   const s = game.state, now = performance.now();
   if (s === 'title') { hitMenu(e.clientX, e.clientY); return; }
   if (s === 'pause') { togglePause(); return; }
-  if (s === 'over') { handleOverTap(e.clientX, e.clientY); return; }
-  if (s === 'victory') { toTitle(); return; }
+  if (s === 'over' || s === 'victory') { handleOverTap(e.clientX, e.clientY); return; }
   if (s === 'play' || s === 'warn') {
     if (now - lastTapT < 280 && last && Math.hypot(e.clientX - last.sx, e.clientY - last.sy) < 40) useBomb();
     lastTapT = now;

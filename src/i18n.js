@@ -6,6 +6,13 @@
 const DICT = {
   ja: {
     start: 'タップ / SPACE でスタート',
+    start_short: 'スタート',
+    endless_ai: '♾️ エンドレスAI',
+    daily: '🗓 デイリー',
+    share: '📸 シェア / 保存',
+    retry: '↻ リトライ',
+    new_skin: '🎨 新スキン解禁!',
+    world: 'ワールド',
     ai_stage: '✨ AIステージを生成',
     ai_stage_short: 'AI STAGE',
     lang_name: '日本語',
@@ -50,6 +57,13 @@ const DICT = {
   },
   en: {
     start: 'TAP / SPACE to Start',
+    start_short: 'Start',
+    endless_ai: '♾️ Endless AI',
+    daily: '🗓 Daily',
+    share: '📸 Share / Save',
+    retry: '↻ Retry',
+    new_skin: '🎨 New skin!',
+    world: 'World',
     ai_stage: '✨ Generate AI Stage',
     ai_stage_short: 'AI STAGE',
     lang_name: 'English',

@@ -1,7 +1,7 @@
 // ============================================================
 // engine.js — ゲームロジック(更新・生成・当たり判定・状態遷移)
 // ============================================================
-import { CFG, BELLS, BOSS_PHASES, STAGES, PATTERNS, rand, randInt, pick, dist, clamp, lerp } from './config.js';
+import { CFG, BELLS, BOSS_PHASES, STAGES, PATTERNS, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
 import { W, H } from './env.js';
 import { game, newGame, setGame } from './state.js';
 import { stage, dirDef, fwAngle, inAngle, isVert, latSpan, fwSpan, posFromPL, invPL, latOf, playerHome } from './geo.js';
@@ -9,8 +9,12 @@ import { Snd } from './audio.js';
 import { Weather } from './weather.js';
 import { Director } from './director.js';
 import { BossAI } from './bossai.js';
-import { t } from './i18n.js';
-import { generateStage } from './aistage.js';
+import { t, getLang } from './i18n.js';
+import { generateStage, proceduralStage, scaleStage } from './aistage.js';
+import { Save } from './save.js';
+import { shareCard } from './sharecard.js';
+
+export function rankOf(score) { return score >= 180000 ? 'S' : score >= 120000 ? 'A' : score >= 70000 ? 'B' : 'C'; }
 
 // === パーティクル / ポップアップ ===
 export function particles(x, y, n, color, mul = 1) {
@@ -96,6 +100,7 @@ function killPlayer() {
   if (game.lives <= 0) {
     setTimeout(() => {
       if (game.state !== 'play' && game.state !== 'warn') return;
+      recordRunEnd({ daily: game.daily });
       game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
     }, 900);
   } else {
@@ -289,12 +294,21 @@ function damageBoss(dmg) {
     for (let i = 0; i < 5; i++) setTimeout(() => explosion(bx + rand(-40, 40), by + rand(-40, 40), 10, pick(['#ffd700', '#ff6600', '#ff2200'])), i * 130);
     explosion(bx, by, 16, '#ffd700');
     game.boss = null; game.bossActive = false;
-    const bonus = Math.round(5000 * (game.stageIndex + 1) * Weather.mods.scoreMul);
+    const bonus = Math.round((game.endless ? 3000 * game.world : 5000 * (game.stageIndex + 1)) * Weather.mods.scoreMul);
     game.score += bonus;
     popup(W / 2, H / 2 - 60, t('boss_bonus') + ' +' + bonus, '#ffd700');
     game.eBullets = [];
     saveHi();
-    if (game.stageIndex >= game.stages.length - 1) {
+    if (game.endless) {
+      // エンドレス: 次ワールドを即生成(ローカル手続き生成・段階的に強化)して連戦
+      game.world++;
+      game.pendingStage = scaleStage(proceduralStage(), game.world);
+      game.state = 'clear'; game.clearT = CFG.CLEAR_TIME; Snd.stopBGM(); Snd.clear();
+    } else if (game.daily) {
+      recordRunEnd({ daily: true });
+      game.state = 'victory'; Snd.stopBGM(); Snd.victory();
+    } else if (game.stageIndex >= game.stages.length - 1) {
+      recordRunEnd({});
       game.state = 'victory'; Snd.stopBGM(); Snd.victory();
     } else {
       game.state = 'clear'; game.clearT = CFG.CLEAR_TIME; Snd.stopBGM(); Snd.clear();
@@ -472,32 +486,73 @@ function updateShake(dt) {
 function saveHi() {
   if (game.score > game.hi) { game.hi = game.score; localStorage.setItem('edu_hiscore', String(game.hi)); }
 }
+function freshGame() { const hi = game.hi; setGame(newGame()); game.hi = hi; Director.reset(); Save.startRun(); }
+
 export function startRun() {
-  Snd.init();
-  const hi = game.hi;
-  setGame(newGame()); game.hi = hi;
-  Director.reset();
+  Snd.init(); freshGame();
   startStage(0);
 }
-export function startAIStage(stageObj) {
-  Snd.init();
-  const hi = game.hi;
-  setGame(newGame()); game.hi = hi;
-  game.stages = [stageObj]; game.aiMode = true;
-  Director.reset();
-  startStage(0);
-}
+// エンドレスAI: 第1ワールドはサーバー(Gemini)で生成→以降はローカル手続き生成で無限連戦
 export function requestAIStage() {
   if (game.aiLoading) return;
   Snd.init();
-  game.aiLoading = true;
-  game.aiMsg = t('ai_generating');
+  game.aiLoading = true; game.aiMsg = t('ai_generating');
   generateStage(Weather.summary()).then(res => {
     game.aiLoading = false;
     if (game.state !== 'title') return;
-    if (res.source === 'local') { game.aiMsg = t('ai_failed'); }
-    startAIStage(res.stage);
+    if (res.source === 'local') game.aiMsg = t('ai_failed');
+    startEndless(res.stage);
   }).catch(() => { game.aiLoading = false; game.aiMsg = t('ai_failed'); });
+}
+function startEndless(stageObj) {
+  Snd.init(); freshGame();
+  game.stages = [stageObj]; game.aiMode = true; game.endless = true; game.world = 1;
+  startStage(0);
+}
+function startEndlessNext() {
+  const st = game.pendingStage; game.pendingStage = null;
+  game.stages = [st]; game.aiMode = false;
+  startStage(0);
+}
+// デイリー: 日付シードでローカル生成(全員同じステージ)。1画面クリアでスコア確定。
+export function startDaily() {
+  Snd.init(); freshGame();
+  const seed = hashStr('daily-' + todayKey());
+  game.stages = [proceduralStage(makeRng(seed))]; game.aiMode = true; game.daily = true;
+  startStage(0);
+}
+// URL の ?seed=xxxx で同じステージを再現
+export function startFromSeed(seedStr) {
+  Snd.init(); freshGame();
+  const seed = hashStr('seed-' + seedStr);
+  game.stages = [proceduralStage(makeRng(seed))]; game.aiMode = true;
+  startStage(0);
+}
+
+function recordRunEnd({ daily = false } = {}) {
+  const r = {
+    score: game.score,
+    world: game.endless ? game.world : (game.stageIndex + 1),
+    kills: game.stats.kills, shots: game.stats.shots, hits: game.stats.hits,
+    deaths: game.stats.deathTimes.length, daily,
+  };
+  const newSkins = Save.recordRun(r);
+  game.lastResult = { ...r, rank: rankOf(game.score), newSkins };
+  if (newSkins > 0) game.skinFlash = 4;
+}
+
+export function shareRun() {
+  const r = game.lastResult || { score: game.score, world: game.stageIndex + 1, rank: rankOf(game.score) };
+  const ja = getLang() === 'ja';
+  const mode = game.endless ? (ja ? 'エンドレスAI' : 'ENDLESS AI')
+    : game.daily ? (ja ? 'デイリー ' + todayKey() : 'DAILY ' + todayKey())
+      : game.aiMode ? (ja ? 'AIステージ' : 'AI STAGE') : (ja ? 'ストーリー' : 'STORY');
+  const sub = game.endless ? (ja ? `ワールド ${r.world} 到達` : `Reached World ${r.world}`)
+    : (ja ? `ステージ ${r.world}` : `Stage ${r.world}`);
+  return shareCard({
+    emoji: stage().emoji, mode, stageName: game.stages[game.stageIndex] && game.stages[game.stageIndex].name,
+    rank: r.rank, score: r.score, sub, weather: Weather.loaded ? Weather.statusLine() : '',
+  });
 }
 export function toTitle() {
   saveHi(); Snd.stopBGM();
@@ -519,10 +574,17 @@ export function togglePause() {
     game.state = game.pausedFrom; Snd.startBGM(stage(), game.stageIndex, game.bossActive ? 'boss' : 'stage');
   }
 }
+function retryRun() {
+  const d = game.daily, e = game.endless || game.aiMode;
+  if (d) startDaily(); else if (e) requestAIStage(); else startRun();
+}
 export function handleOverTap(x, y) {
   for (const btn of game.overBtns) {
     if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
-      if (btn.id === 'continue') doContinue(); else toTitle();
+      if (btn.id === 'continue') doContinue();
+      else if (btn.id === 'share') shareRun();
+      else if (btn.id === 'retry') retryRun();
+      else toTitle();
       return;
     }
   }
@@ -557,7 +619,11 @@ export function update(dt, keys) {
     case 'clear':
       game.clearT -= dt * 1000;
       updateParticles(dt); updateBg(dt);
-      if (game.clearT <= 0) startStage(game.stageIndex + 1);
+      if (game.skinFlash > 0) game.skinFlash -= dt;
+      if (game.clearT <= 0) {
+        if (game.endless) { if (game.pendingStage) startEndlessNext(); }
+        else startStage(game.stageIndex + 1);
+      }
       break;
     case 'over':
       game.overT += dt; updateParticles(dt);

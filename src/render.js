@@ -9,6 +9,7 @@ import { t, getLang } from './i18n.js';
 import { Weather } from './weather.js';
 import { Director } from './director.js';
 import { BossAI } from './bossai.js';
+import { Save } from './save.js';
 
 // 読みやすいサンセリフ(ピクセルフォントは小サイズで潰れるため不使用)
 const SANS = `'Baloo 2', 'M PLUS Rounded 1c', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif`;
@@ -117,13 +118,13 @@ function drawPlayer() {
   const th = 9 + Math.sin(p.anim) * 4;
   const tg = ctx.createLinearGradient(0, 13, 0, 13 + th);
   tg.addColorStop(0, '#fff'); tg.addColorStop(0.4, '#ffd400'); tg.addColorStop(1, 'rgba(255,60,0,0)');
+  const sk = Save.currentSkin();
   ctx.fillStyle = tg; ctx.beginPath(); ctx.moveTo(-5, 13); ctx.lineTo(5, 13); ctx.lineTo(1, 13 + th); ctx.lineTo(-1, 13 + th); ctx.fill();
-  ctx.fillStyle = '#4488ff'; ctx.fillRect(-6, -4, 12, 18);
-  ctx.fillStyle = '#66aaff'; ctx.fillRect(-4, -2, 8, 14);
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(-3, -15, 6, 13);
-  ctx.fillStyle = '#ccddff'; ctx.fillRect(-2, -13, 4, 11);
-  ctx.fillStyle = '#ff4444'; ctx.fillRect(-17, 4, 11, 8); ctx.fillRect(6, 4, 11, 8);
-  ctx.fillStyle = '#ff7777'; ctx.fillRect(-15, 6, 7, 4); ctx.fillRect(8, 6, 7, 4);
+  ctx.fillStyle = sk.body; ctx.fillRect(-6, -4, 12, 18);
+  ctx.fillStyle = sk.body2; ctx.fillRect(-4, -2, 8, 14);
+  ctx.fillStyle = sk.nose; ctx.fillRect(-3, -15, 6, 13);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(-2, -13, 4, 11);
+  ctx.fillStyle = sk.wing; ctx.fillRect(-17, 4, 11, 8); ctx.fillRect(6, 4, 11, 8);
   ctx.fillStyle = '#00ffaa'; ctx.fillRect(-2, -8, 4, 6);
   if (p.shield) {
     ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2.5;
@@ -231,7 +232,7 @@ function drawHUD() {
   ctx.font = `${Math.round(19 * UI)}px serif`; ctx.textAlign = 'left';
   ctx.fillText('❤️'.repeat(Math.max(0, game.lives)) + ' ' + '💣'.repeat(game.bombs), pad, H - 52 * UI);
   label(`PW${p.power}${p.options ? ' OP' + p.options : ''}${p.shield ? ' 🛡' : ''}${p.boost ? ' 💨' : ''}`, pad, H - 26 * UI, '#8fd3ff', 12 * UI, 'left');
-  const slabel = game.aiMode ? 'AI' : ('STAGE ' + (game.stageIndex + 1));
+  const slabel = game.endless ? ('WORLD ' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('STAGE ' + (game.stageIndex + 1));
   label(`${slabel} ${stage().emoji} ${dirDef().arrow}`, W - pad, H - 52 * UI, '#fff', 12 * UI, 'right');
   if (Weather.loaded) label(`${Weather.icon()} ${Math.round(Weather.temp)}°C`, W - pad, H - 28 * UI, '#cfe8ff', 12 * UI, 'right');
   if (Director.msg && Director.msgT > 0) {
@@ -279,21 +280,25 @@ function drawTitle() {
   const ja = getLang() === 'ja';
   if (Weather.loaded) Weather.effects.slice(0, 3).forEach((fx, i) => label(ja ? fx.ja : fx.en, W / 2, py + (44 + i * 18) * UI, '#9fd8b0', 11 * UI));
 
-  // メニューボタン
+  // メニューボタン(コンパクト)
   game.menuBtns = [];
-  const bw = Math.min(W * 0.72, 340), bx = (W - bw) / 2, bh = 52 * UI;
-  let by = H * 0.60;
+  const bw = Math.min(W * 0.74, 348), bx = (W - bw) / 2, bh = 46 * UI, gap = 11 * UI;
+  let by = H * 0.505;
   const blink = Math.floor(time * 2) % 2 === 0;
-  drawBtn('start', bx, by, bw, bh, t('start'), '#ffffff', blink); by += bh + 14 * UI;
-  if (game.aiLoading) drawBtn('none', bx, by, bw, bh, t('ai_generating'), '#00ffcc', true, true);
-  else drawBtn('ai', bx, by, bw, bh, t('ai_stage'), '#b967ff', false); by += bh + 14 * UI;
-  drawBtn('lang', bx, by, bw, bh, (ja ? '🌐 English' : '🌐 日本語'), '#8fd3ff', false);
+  drawBtn('start', bx, by, bw, bh, '▶ ' + t('start_short'), '#ffffff', blink); by += bh + gap;
+  if (game.aiLoading) { drawBtn('none', bx, by, bw, bh, t('ai_generating'), '#00ffcc', true, true); by += bh + gap; }
+  else { drawBtn('ai', bx, by, bw, bh, t('endless_ai'), '#b967ff', false); by += bh + gap; }
+  drawBtn('daily', bx, by, bw, bh, t('daily') + (Save.playedDailyToday() ? ' ✓' : ''), '#ffd23f', false); by += bh + gap;
+  drawBtn('lang', bx, by * 1, bw / 2 - 6 * UI, bh, ja ? '🌐 EN' : '🌐 日本語', '#8fd3ff', false);
+  drawBtn('skin', bx + bw / 2 + 6 * UI, by, bw / 2 - 6 * UI, bh, '🎨 ' + Save.currentSkin().name, '#7CFC00', false);
 
-  by = H * 0.895;
-  if (game.aiMsg && !game.aiLoading) label(game.aiMsg, W / 2, by - 26 * UI, '#ffcf6f', 11 * UI);
-  label(t('hiscore') + ' ' + String(game.hi).padStart(7, '0'), W / 2, by, '#ffd700', 12 * UI);
-  label(t('howto1'), W / 2, by + 22 * UI, '#8899bb', 11 * UI);
-  label(t('howto2'), W / 2, by + 40 * UI, '#8899bb', 11 * UI);
+  // 統計/ストリーク
+  const sy = H * 0.855;
+  const d = Save.data;
+  label(`🏆 W${d.bestWorld}   🔥 ${d.streak}${ja ? '日' : 'd'}   ⚔ ${d.kills}   🎯 ${Save.accuracy()}%`, W / 2, sy, '#9fd8b0', 11 * UI);
+  if (game.aiMsg && !game.aiLoading) label(game.aiMsg, W / 2, sy + 18 * UI, '#ffcf6f', 10.5 * UI);
+  else label(t('hiscore') + ' ' + String(game.hi).padStart(7, '0'), W / 2, sy + 18 * UI, '#ffd700', 11 * UI);
+  label(t('howto1'), W / 2, sy + 40 * UI, '#8899bb', 10.5 * UI);
 }
 function drawBtn(id, x, y, w, h, text, color, glow, spinner = false) {
   ctx.save();
@@ -349,15 +354,20 @@ function drawPause() {
 }
 
 function drawGameOver() {
-  ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fillRect(0, 0, W, H);
-  label(t('game_over'), W / 2, H * 0.28, '#ff3030', 30 * UI);
-  label(t('score') + ' ' + game.score, W / 2, H * 0.38, '#fff', 15 * UI);
-  if (game.score >= game.hi && game.score > 0) label(t('new_record'), W / 2, H * 0.44, '#ffd700', 13 * UI);
+  ctx.fillStyle = 'rgba(0,0,0,0.74)'; ctx.fillRect(0, 0, W, H);
+  label(t('game_over'), W / 2, H * 0.20, '#ff3030', 30 * UI);
+  const r = game.lastResult;
+  if (r && (game.endless)) label(`${t('world')} ${r.world}`, W / 2, H * 0.28, '#b98cff', 17 * UI);
+  label(t('score') + ' ' + game.score, W / 2, H * 0.345, '#fff', 16 * UI);
+  if (game.score >= game.hi && game.score > 0) label(t('new_record'), W / 2, H * 0.40, '#ffd700', 13 * UI);
+  if (game.skinFlash > 0) label(t('new_skin') + ' ' + Save.currentSkin().name, W / 2, H * 0.44, '#7CFC00', 13 * UI);
   game.overBtns = [];
-  const bw = Math.min(W * 0.72, 320), bh = 52 * UI;
-  let by = H * 0.55;
-  if (game.continues > 0) { overBtn('continue', W / 2 - bw / 2, by, bw, bh, `${t('continue')} (${t('remain')} ${game.continues})`, '#00cc88'); by += bh + 16 * UI; }
-  overBtn('title', W / 2 - bw / 2, by, bw, bh, t('to_title'), '#5577aa');
+  const bw = Math.min(W * 0.74, 330), bh = 48 * UI, bx = W / 2 - bw / 2, gap = 13 * UI;
+  let by = H * 0.50;
+  if (game.continues > 0) { overBtn('continue', bx, by, bw, bh, `${t('continue')} (${t('remain')} ${game.continues})`, '#00cc88'); by += bh + gap; }
+  overBtn('share', bx, by, bw, bh, t('share'), '#ff8bd0'); by += bh + gap;
+  overBtn('retry', bx, by, bw, bh, t('retry'), '#8fd3ff'); by += bh + gap;
+  overBtn('title', bx, by, bw, bh, t('to_title'), '#5577aa');
 }
 function overBtn(id, x, y, w, h, text, color) {
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; roundRect(x, y, w, h, 12); ctx.fill();
@@ -379,7 +389,11 @@ function drawVictory() {
   label(t('rank') + ' ' + rank, W / 2, H * 0.55, { S: '#ffd700', A: '#ff66aa', B: '#8fd3ff', C: '#99cc99' }[rank], 38 * UI);
   const acc = game.stats.shots ? Math.round(game.stats.hits / game.stats.shots * 100) : 0;
   label(`${t('kills')} ${game.stats.kills}   ${t('accuracy')} ${acc}%   ${t('hits_taken')} ${game.stats.deathTimes.length}`, W / 2, H * 0.62, '#aab', 12 * UI);
-  if (Math.floor(performance.now() / 500) % 2 === 0) label(t('tap_title'), W / 2, H * 0.74, '#fff', 13 * UI);
+  game.overBtns = [];
+  const bw = Math.min(W * 0.7, 320), bh = 48 * UI, bx = W / 2 - bw / 2, gap = 13 * UI;
+  let by = H * 0.70;
+  overBtn('share', bx, by, bw, bh, t('share'), '#ff8bd0'); by += bh + gap;
+  overBtn('title', bx, by, bw, bh, t('to_title'), '#5577aa');
 }
 
 // === メイン描画 ===

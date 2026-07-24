@@ -168,6 +168,14 @@ export const PATTERNS = [
   },
 ];
 
+// 自機スキン(bestWorld で解禁。見た目のみ・性能に影響しない)
+export const SKINS = [
+  { name: 'CLASSIC', body: '#4488ff', body2: '#66aaff', nose: '#ffffff', wing: '#ff4444', trail: '#ffd400', need: 0 },
+  { name: 'EMERALD', body: '#0fa36b', body2: '#3fd99a', nose: '#eafff5', wing: '#ffd23f', trail: '#7CFC00', need: 3 },
+  { name: 'MAGMA',   body: '#ff5a3c', body2: '#ff8a5c', nose: '#fff0e0', wing: '#ffd23f', trail: '#ff3b00', need: 6 },
+  { name: 'GALAXY',  body: '#8b5cf6', body2: '#b98cff', nose: '#f3e8ff', wing: '#22d3ee', trail: '#e879f9', need: 10 },
+];
+
 // === 純粋ユーティリティ ===
 export const rand = (a, b) => Math.random() * (b - a) + a;
 export const randInt = (a, b) => Math.floor(rand(a, b + 1));
@@ -176,3 +184,20 @@ export const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const midiFreq = m => 440 * Math.pow(2, (m - 69) / 12);
+
+// 文字列 → 32bit シード
+export function hashStr(s) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+// 決定論的乱数(mulberry32)。同じシード→同じ結果。
+export function makeRng(seed) {
+  let a = seed >>> 0;
+  return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+// きょうの日付キー(ローカル)
+export function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
