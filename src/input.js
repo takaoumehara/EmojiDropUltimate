@@ -4,7 +4,7 @@
 import { canvas } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
-import { toggleLang } from './i18n.js';
+import { toggleLang, getLang } from './i18n.js';
 import { startRun, requestAIStage, startDaily, togglePause, useBomb, doContinue, toTitle, handleOverTap, openCoopLobby, startCoop } from './engine.js';
 import { Coop } from './coop.js';
 
@@ -19,8 +19,12 @@ function hitMenu(x, y) {
       else if (b.id === 'ai') requestAIStage();
       else if (b.id === 'daily') startDaily();
       else if (b.id === 'coop') openCoopLobby();
-      else if (b.id === 'coopJoin') Coop.mockJoin();
-      else if (b.id === 'coopStart') startCoop();
+      else if (b.id === 'coopEnter') { // ゲスト: あいことばで参加
+        const c = prompt(getLang() === 'ja' ? 'あいことば(6文字)を入力' : 'Enter the 6-char code');
+        if (c) Coop.join(c);
+      }
+      else if (b.id === 'coopDemo') Coop.mockJoin();
+      else if (b.id === 'coopStart') { if (Coop.role === 'host') Coop.startGame(); startCoop(); }
       else if (b.id === 'coopBack') toTitle();
       else if (b.id === 'coopModeStory') Coop.mode = 'story';
       else if (b.id === 'coopModeAi') Coop.mode = 'ai';

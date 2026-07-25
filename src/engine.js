@@ -583,6 +583,8 @@ export function startCoop() {
   game.stages = [st];
   startStage(0);
 }
+// ゲスト: ホストの開始合図(共有種つき)を受けて同時スタート
+Coop.onStartGame = () => startCoop();
 
 function recordRunEnd({ daily = false } = {}) {
   const r = {
@@ -684,7 +686,10 @@ export function update(dt, keys) {
       updateLightning(dt);
       Director.update(dt, game);
       checkCollisions();
-      if (game.coop) { Coop.update(dt); Coop.setLocalStatus(game.score, !game.player.dead); }
+      if (game.coop) {
+        Coop.update(dt);
+        Coop.sendPos(game.player.x / W, game.player.y / H, !game.player.dead, game.score, !game.player.dead);
+      }
       // BGM緊張度: ボス=最高潮 / コンボ・残機ピンチで高まる
       Snd.setIntensity(game.bossActive ? 0.92 : 0.32 + Math.min(0.34, game.combo * 0.03) + (game.lives <= 1 ? 0.22 : 0));
       break;

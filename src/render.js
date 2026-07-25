@@ -410,7 +410,7 @@ function roundRect(x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
 
-// === 2人共闘: ロビー ===
+// === ふたりでプレイ: ロビー ===
 function drawCoopLobby() {
   const time = game.titleAnim, ja = getLang() === 'ja';
   const grad = ctx.createLinearGradient(0, 0, 0, H);
@@ -418,41 +418,99 @@ function drawCoopLobby() {
   ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
   for (const s of game.stars) { ctx.fillStyle = `rgba(255,255,255,${(s.b * 0.6).toFixed(2)})`; ctx.fillRect(s.x, s.y, s.size, s.size); }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = `${Math.round(40 * UI)}px serif`; ctx.fillText('👥', W / 2, H * 0.16);
-  label(t('coop'), W / 2, H * 0.24, '#4ad6a0', 26 * UI);
-  label(ja ? '同じボスを二人で削り切る' : 'Beat one boss together', W / 2, H * 0.29, '#bfe8d8', 12 * UI);
+  const host = Coop.role === 'host';
+  ctx.font = `${Math.round(36 * UI)}px serif`; ctx.fillText('👥', W / 2, H * 0.135);
+  label(t('coop'), W / 2, H * 0.205, '#4ad6a0', 24 * UI);
+  label(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, H * 0.25, '#bfe8d8', 11.5 * UI);
 
-  label(ja ? 'あいことば' : 'ROOM CODE', W / 2, H * 0.375, '#8fb0c8', 12 * UI);
-  label(Coop.code || '------', W / 2, H * 0.435, '#ffffff', 46 * UI);
-  label(ja ? 'このコードを友達に送って参加してもらう' : 'Send this code to your friend', W / 2, H * 0.495, '#9fb6d8', 11 * UI);
+  label(ja ? 'あいことば' : 'ROOM CODE', W / 2, H * 0.315, '#8fb0c8', 11.5 * UI);
+  label(Coop.code || '------', W / 2, H * 0.37, '#ffffff', 42 * UI);
+  label(host ? (ja ? '友達に送って「参加」で入力してもらう' : 'Send it — your friend taps Join & enters it')
+    : (ja ? 'このあいことばで参加しています' : 'Joining with this code'), W / 2, H * 0.425, '#9fb6d8', 10.5 * UI);
 
   game.menuBtns = [];
-  const bw = Math.min(W * 0.78, 340), bx = (W - bw) / 2;
-  // あそぶ面をえらぶ(オリジナル / AI生成)
-  const half = (bw - 10 * UI) / 2, my = H * 0.545;
-  const chip = (id, x, txt, sel, col) => {
-    ctx.fillStyle = sel ? col : 'rgba(8,12,26,0.62)'; roundRect(x, my, half, 40 * UI, 12); ctx.fill();
-    if (!sel) { ctx.globalAlpha = 0.6; ctx.strokeStyle = col; ctx.lineWidth = 1.5; roundRect(x, my, half, 40 * UI, 12); ctx.stroke(); ctx.globalAlpha = 1; }
-    label(txt, x + half / 2, my + 20 * UI, sel ? '#10231c' : col, 12.5 * UI);
-    game.menuBtns.push({ id, x, y: my, w: half, h: 40 * UI });
-  };
-  chip('coopModeStory', bx, ja ? '📖 オリジナル面' : '📖 Original', Coop.mode === 'story', '#8fd3ff');
-  chip('coopModeAi', bx + half + 10 * UI, ja ? '✨ AI生成面' : '✨ AI stage', Coop.mode === 'ai', '#b967ff');
-
-  let by = H * 0.64;
-  if (!Coop.connected) {
-    ctx.globalAlpha = 0.55 + 0.45 * Math.sin(time * 4);
-    label(ja ? '📡 相方の参加を待っています…' : '📡 waiting for partner…', W / 2, by - 16 * UI, '#ffd27f', 12 * UI);
-    ctx.globalAlpha = 1;
-    drawBtnSub('coopJoin', bx, by, bw, 56 * UI, ja ? '▶ フレンドを参加(デモ)' : '▶ Join a friend (demo)', ja ? 'Phase 0: オフライン検証用' : 'Phase 0: offline preview', '#4ad6a0');
-    by += 56 * UI + 14 * UI;
-  } else {
-    label(ja ? `✅ ${Coop.partner.name} が参加!` : `✅ ${Coop.partner.name} joined!`, W / 2, by - 16 * UI, '#7CFC00', 14 * UI);
-    const blink = Math.floor(time * 2) % 2 === 0;
-    drawBtn('coopStart', bx, by, bw, 60 * UI, ja ? '▶ 共闘スタート' : '▶ START CO-OP', '#ffffff', blink, false, 20 * UI);
-    by += 60 * UI + 14 * UI;
+  const bw = Math.min(W * 0.8, 340), bx = (W - bw) / 2;
+  // あそぶ面(ホストが選択)
+  if (host) {
+    const half = (bw - 10 * UI) / 2, my = H * 0.475;
+    const chip = (id, x, txt, sel, col) => {
+      ctx.fillStyle = sel ? col : 'rgba(8,12,26,0.62)'; roundRect(x, my, half, 38 * UI, 12); ctx.fill();
+      if (!sel) { ctx.globalAlpha = 0.6; ctx.strokeStyle = col; ctx.lineWidth = 1.5; roundRect(x, my, half, 38 * UI, 12); ctx.stroke(); ctx.globalAlpha = 1; }
+      label(txt, x + half / 2, my + 19 * UI, sel ? '#10231c' : col, 12 * UI);
+      game.menuBtns.push({ id, x, y: my, w: half, h: 38 * UI });
+    };
+    chip('coopModeStory', bx, ja ? '📖 オリジナル面' : '📖 Original', Coop.mode === 'story', '#8fd3ff');
+    chip('coopModeAi', bx + half + 10 * UI, ja ? '✨ AI生成面' : '✨ AI stage', Coop.mode === 'ai', '#b967ff');
   }
-  drawBtn('coopBack', bx, by, bw, 46 * UI, ja ? '← 戻る' : '← Back', '#5577aa');
+
+  // 接続ステータス
+  const sy = H * 0.575;
+  if (Coop.connected) {
+    label((ja ? `✅ ${Coop.partner.name} と接続中` : `✅ Connected: ${Coop.partner.name}`) + (Coop.p2p ? '  ⚡P2P' : '  🤖DEMO'), W / 2, sy, '#7CFC00', 13 * UI);
+  } else if (Coop.status === 'signal_off') {
+    label(ja ? '🔌 オンライン部屋は未設定(デモで体験できます)' : '🔌 Online rooms not set up (try the demo)', W / 2, sy, '#ffb37f', 11 * UI);
+  } else if (Coop.status === 'failed') {
+    label(ja ? '⚠ 接続できませんでした(デモで体験できます)' : '⚠ Connection failed (try the demo)', W / 2, sy, '#ff9d9d', 11 * UI);
+  } else {
+    ctx.globalAlpha = 0.55 + 0.45 * Math.sin(time * 4);
+    label(ja ? '📡 相方を待っています…' : '📡 waiting for your partner…', W / 2, sy, '#ffd27f', 12 * UI);
+    ctx.globalAlpha = 1;
+  }
+
+  // ボタン列(必ず画面内に収まるコンパクト設計)
+  let by = H * 0.625;
+  const bh = 46 * UI, gap = 9 * UI;
+  if (Coop.connected) {
+    if (host) {
+      const blink = Math.floor(time * 2) % 2 === 0;
+      drawBtn('coopStart', bx, by, bw, 54 * UI, ja ? '▶ いっしょにスタート' : '▶ START TOGETHER', '#ffffff', blink, false, 19 * UI);
+      by += 54 * UI + gap;
+    } else {
+      ctx.globalAlpha = 0.55 + 0.45 * Math.sin(time * 4);
+      label(ja ? '🕐 ホストの開始を待っています…' : '🕐 waiting for host to start…', W / 2, by + 12 * UI, '#8fd3ff', 12 * UI);
+      ctx.globalAlpha = 1;
+      by += 34 * UI;
+    }
+  } else {
+    drawBtn('coopEnter', bx, by, bw, bh, ja ? '🔑 あいことばで参加する' : '🔑 Join with a code', '#ffd23f'); by += bh + gap;
+    drawBtn('coopDemo', bx, by, bw, bh, ja ? '🤖 ひとりでデモを試す' : '🤖 Try the demo solo', '#4ad6a0'); by += bh + gap;
+  }
+  drawBtn('coopBack', bx, by, bw, 42 * UI, ja ? '← 戻る' : '← Back', '#5577aa');
+}
+
+// === ふたりでプレイ: 相方の機体(自分の画面に相方が飛ぶ) ===
+let pShots = [], pShotT = 0, pLastT = 0;
+function drawPartner() {
+  if (!game.coop || !Coop.connected) return;
+  const p = Coop.partner;
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - (pLastT || now)) / 1000); pLastT = now;
+  const px = p.x * W, py = p.y * H;
+  const a = Math.atan2(dirDef().fy, dirDef().fx);
+  // 相方の弾(コスメ・当たり判定なし。撃ってる感を出す)
+  pShotT -= dt;
+  if (p.firing && p.alive && pShotT <= 0) {
+    pShotT = 0.13;
+    pShots.push({ x: px + Math.cos(a) * 22, y: py + Math.sin(a) * 22, born: now });
+  }
+  pShots = pShots.filter(s => now - s.born < 1000);
+  for (const s of pShots) {
+    const d = (now - s.born) / 1000 * 540;
+    const bx = s.x + Math.cos(a) * d, byy = s.y + Math.sin(a) * d;
+    ctx.fillStyle = 'rgba(255,139,208,0.4)'; ctx.beginPath(); ctx.arc(bx, byy, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffd7ec'; ctx.beginPath(); ctx.arc(bx, byy, 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+  // 機体(ピンクの相方カラー・半透明で「味方」感)
+  ctx.save(); ctx.translate(px, py); ctx.rotate(a + Math.PI / 2);
+  ctx.globalAlpha = p.alive ? 0.92 : 0.3;
+  ctx.fillStyle = 'rgba(255,139,208,0.22)'; ctx.beginPath(); ctx.arc(0, 2, 16, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#e0559f'; ctx.fillRect(-6, -4, 12, 18);
+  ctx.fillStyle = '#ff8bd0'; ctx.fillRect(-4, -2, 8, 14);
+  ctx.fillStyle = '#fff0f8'; ctx.fillRect(-3, -15, 6, 13);
+  ctx.fillStyle = '#ffd23f'; ctx.fillRect(-16, 4, 10, 7); ctx.fillRect(6, 4, 10, 7);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  label(p.name, px, py - 32, '#ff8bd0', 9.5 * UI);
 }
 
 // === 2人共闘: プレイ中の相方パネル ===
@@ -585,7 +643,7 @@ export function draw() {
     case 'play': case 'warn': {
       ctx.save(); ctx.translate(game.shakeX, game.shakeY);
       drawBackground(); drawWeatherFx(); drawBells(); drawEnemies(); drawBoss();
-      drawBullets(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
+      drawBullets(); drawPartner(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
       ctx.restore();
       drawHUD();
       if (game.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, 0.85)})`; ctx.fillRect(0, 0, W, H); }

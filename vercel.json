@@ -2,6 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/ai-stage.js": { "maxDuration": 15 },
-    "api/score.js": { "maxDuration": 10 }
+    "api/score.js": { "maxDuration": 10 },
+    "api/signal.js": { "maxDuration": 10 }
   }
 }
