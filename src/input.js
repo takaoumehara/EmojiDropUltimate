@@ -7,6 +7,7 @@ import { Snd } from './audio.js';
 import { toggleLang, getLang } from './i18n.js';
 import { startRun, requestAIStage, startDaily, togglePause, useBomb, doContinue, toTitle, handleOverTap, openCoopLobby, startCoop } from './engine.js';
 import { Coop } from './coop.js';
+import { shareInvite } from './ui.js';
 
 export const keys = {};
 
@@ -24,6 +25,7 @@ function hitMenu(x, y) {
         if (c) Coop.join(c);
       }
       else if (b.id === 'coopDemo') Coop.mockJoin();
+      else if (b.id === 'coopLink') shareInvite(Coop.inviteUrl(), Coop.code);
       else if (b.id === 'coopStart') { if (Coop.role === 'host') Coop.startGame(); startCoop(); }
       else if (b.id === 'coopBack') toTitle();
       else if (b.id === 'coopModeStory') Coop.mode = 'story';
@@ -74,5 +76,9 @@ canvas.addEventListener('pointermove', e => {
 window.addEventListener('pointerup', () => { dragging = false; });
 window.addEventListener('pointercancel', () => { dragging = false; });
 
-const muteBtn = document.getElementById('muteBtn');
-export function updateMuteIcon(muted) { if (muteBtn) muteBtn.textContent = muted ? '🔇' : '🔊'; }
+// 音量表示は設定パネル側(main.js)が担当。ここは互換のための空フック。
+export function updateMuteIcon(muted) {
+  const v = document.getElementById('setSoundV');
+  if (v) v.textContent = muted ? 'OFF' : 'ON';
+  return muted;
+}

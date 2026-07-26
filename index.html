@@ -17,27 +17,54 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=M+PLUS+Rounded+1c:wght@700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Outfit:wght@400;500;600;800&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#05050f;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;overscroll-behavior:none}
 canvas{display:block;position:fixed;inset:0}
-#scanlines{position:fixed;inset:0;z-index:5;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,0.06) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}
-.gbtn{position:fixed;top:calc(8px + env(safe-area-inset-top));z-index:10;background:rgba(0,0,0,0.45);border:2px solid rgba(255,255,255,0.7);color:#fff;font-size:18px;width:44px;height:40px;cursor:pointer;border-radius:10px;display:none;align-items:center;justify-content:center;line-height:1;-webkit-tap-highlight-color:transparent}
-.gbtn:active{background:rgba(255,255,255,0.25)}
+#scanlines{position:fixed;inset:0;z-index:5;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,0.05) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}
+
+/* 上部チrome: 小さく・控えめ・くっきり(ゲームの邪魔をしない) */
+.gbtn{position:fixed;top:calc(9px + env(safe-area-inset-top));z-index:10;
+  width:38px;height:38px;border-radius:11px;cursor:pointer;
+  display:none;align-items:center;justify-content:center;line-height:1;
+  background:rgba(9,13,28,.55);border:1px solid rgba(255,255,255,.20);color:#fff;
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  font-size:15px;font-family:'Outfit',system-ui,sans-serif;font-weight:600;
+  opacity:.5;transition:opacity .18s ease,transform .12s ease;-webkit-tap-highlight-color:transparent}
+.gbtn:active{opacity:1;transform:scale(.92);background:rgba(255,255,255,.16)}
+@media (hover:hover){.gbtn:hover{opacity:1}}
 #pauseBtn{right:calc(10px + env(safe-area-inset-right))}
-#muteBtn{right:calc(60px + env(safe-area-inset-right))}
-#homeBtn{right:calc(110px + env(safe-area-inset-right))}
-#langBtn{left:calc(10px + env(safe-area-inset-left));font-size:12px;font-weight:800;width:52px;font-family:system-ui,sans-serif}
+#homeBtn{right:calc(56px + env(safe-area-inset-right))}
+#setBtn{right:calc(10px + env(safe-area-inset-right));opacity:.62}
+
+/* 設定パネル(音・言語をここに集約 → タイトルの絵文字と被らない) */
+#setPanel{position:fixed;z-index:12;display:none;
+  top:calc(54px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));
+  width:210px;padding:7px;border-radius:15px;
+  background:rgba(10,15,32,.94);border:1px solid rgba(255,255,255,.14);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  box-shadow:0 18px 48px rgba(0,0,0,.6);
+  font-family:'Outfit',system-ui,sans-serif;
+  transform-origin:top right;animation:setIn .16s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes setIn{from{opacity:0;transform:scale(.9) translateY(-6px)}to{opacity:1;transform:none}}
+#setPanel.show{display:block}
+.setRow{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:11px 12px;border-radius:10px;cursor:pointer;color:#e7edf9;font-size:13.5px;font-weight:500}
+.setRow:active{background:rgba(255,255,255,.09)}
+.setRow b{font-weight:600;color:#ffd23f;font-size:13px}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="scanlines"></div>
 <button id="homeBtn" class="gbtn" aria-label="title">⌂</button>
-<button id="muteBtn" class="gbtn" aria-label="mute">🔊</button>
 <button id="pauseBtn" class="gbtn" aria-label="pause">❚❚</button>
-<button id="langBtn" class="gbtn" aria-label="language">EN</button>
+<button id="setBtn" class="gbtn" aria-label="settings">⚙</button>
+<div id="setPanel">
+  <div class="setRow" id="setSound"><span id="setSoundL">サウンド</span><b id="setSoundV">ON</b></div>
+  <div class="setRow" id="setLang"><span id="setLangL">言語</span><b id="setLangV">日本語</b></div>
+</div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

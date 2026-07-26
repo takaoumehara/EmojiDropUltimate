@@ -22,6 +22,14 @@ export const Weather = {
       place = `N${lat.toFixed(1)} E${lon.toFixed(1)}`;
     } catch (e) { /* 位置情報なし */ }
     this.place = place;
+    // 都市名(キー不要の逆ジオコーディング)。失敗しても座標表示のまま続行。
+    try {
+      const gl = getLang() === 'ja' ? 'ja' : 'en';
+      const gr = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=${gl}`);
+      const gj = await gr.json();
+      const city = gj.city || gj.locality || gj.principalSubdivision;
+      if (city) this.place = city;
+    } catch (e) { /* 都市名なしでも動く */ }
     try {
       const ctrl = new AbortController();
       const to = setTimeout(() => ctrl.abort(), 6000);

@@ -42,7 +42,7 @@ export const STAGES = [
     ],
     boss: { emoji: '👑', name: 'クラウドキング', en: 'CLOUD KING', hp: 70 },
     ship: '#7fd0ff', shot: '#8fe3ff',
-    dur: 38000, bpm: 128, scale: [60, 64, 67, 69, 71],
+    dur: 62000, bpm: 128, scale: [60, 64, 67, 69, 71],
   },
   {
     name: 'ディープダイブ', en: 'DEEP DIVE', emoji: '🌊', dir: 'right',
@@ -56,7 +56,7 @@ export const STAGES = [
     ],
     boss: { emoji: '🐙', name: 'クラーケン', en: 'KRAKEN', hp: 95 },
     ship: '#3fe0d0', shot: '#5fe6ff',
-    dur: 40000, bpm: 132, scale: [62, 65, 69, 72, 74],
+    dur: 68000, bpm: 132, scale: [62, 65, 69, 72, 74],
   },
   {
     name: 'フリーフォール', en: 'FREE FALL', emoji: '🕳️', dir: 'down',
@@ -70,7 +70,7 @@ export const STAGES = [
     ],
     boss: { emoji: '🕸️', name: 'スパイダークイーン', en: 'SPIDER QUEEN', hp: 115 },
     ship: '#c17bff', shot: '#d29bff',
-    dur: 40000, bpm: 138, scale: [57, 60, 62, 64, 67],
+    dur: 70000, bpm: 138, scale: [57, 60, 62, 64, 67],
   },
   {
     name: 'ネオンシティ', en: 'NEON CITY', emoji: '🏙️', dir: 'left',
@@ -84,7 +84,7 @@ export const STAGES = [
     ],
     boss: { emoji: '🖥️', name: 'メインフレーム', en: 'MAINFRAME', hp: 135 },
     ship: '#57e6ff', shot: '#7cf0ff',
-    dur: 42000, bpm: 144, scale: [60, 63, 65, 67, 70],
+    dur: 74000, bpm: 144, scale: [60, 63, 65, 67, 70],
   },
   {
     name: 'マグマコア', en: 'MAGMA CORE', emoji: '🌋', dir: 'up',
@@ -98,7 +98,7 @@ export const STAGES = [
     ],
     boss: { emoji: '🐉', name: 'ヘルドラゴン', en: 'HELL DRAGON', hp: 160 },
     ship: '#ff7a3c', shot: '#ffb03c',
-    dur: 42000, bpm: 152, scale: [64, 65, 67, 69, 71],
+    dur: 76000, bpm: 152, scale: [64, 65, 67, 69, 71],
   },
   {
     name: 'ギャラクシーエッジ', en: 'GALAXY EDGE', emoji: '🌌', dir: 'up',
@@ -112,7 +112,7 @@ export const STAGES = [
     ],
     boss: { emoji: '🛸', name: 'マザーシップ', en: 'MOTHERSHIP', hp: 200 },
     ship: '#b98cff', shot: '#e879f9',
-    dur: 44000, bpm: 160, scale: [57, 59, 60, 64, 65],
+    dur: 80000, bpm: 160, scale: [57, 59, 60, 64, 65],
   },
 ];
 
@@ -138,32 +138,32 @@ export const BOSS_PHASES = [
 // === ボススタイル(ステージ毎に弾幕と色が変わる) ===
 // 攻撃type: aimed(狙撃) spread(扇) ring(全方位) spiral(渦) wall(壁+隙間) summon(召喚) charge(突進)
 export const BOSS_STYLES = {
-  king: { col: '#ffe14d', phases: [
+  king: { shape: 'star', col: '#ffe14d', phases: [
     { attacks: [{ type: 'spread', interval: 1100, speed: 200, count: 5, arc: 0.6 }, { type: 'ring', interval: 1700, speed: 170, count: 10 }] },
     { attacks: [{ type: 'spread', interval: 900, speed: 220, count: 7, arc: 0.7 }, { type: 'aimed', interval: 700, speed: 250, count: 2 }] },
     { attacks: [{ type: 'ring', interval: 900, speed: 200, count: 14, spin: 0.4 }, { type: 'aimed', interval: 500, speed: 280, count: 3 }, { type: 'summon', interval: 3800, minion: 0 }] },
   ]},
-  kraken: { col: '#3fe0d0', phases: [
+  kraken: { shape: 'bubble', col: '#3fe0d0', phases: [
     { attacks: [{ type: 'spiral', interval: 180, speed: 175, count: 2, spin: 0.45 }, { type: 'aimed', interval: 1200, speed: 230, count: 1 }] },
     { attacks: [{ type: 'spiral', interval: 150, speed: 190, count: 3, spin: 0.5 }, { type: 'summon', interval: 4200, minion: 0 }] },
     { attacks: [{ type: 'spiral', interval: 120, speed: 200, count: 3, spin: -0.55 }, { type: 'ring', interval: 1600, speed: 180, count: 12 }, { type: 'aimed', interval: 600, speed: 260, count: 2 }] },
   ]},
-  spider: { col: '#c17bff', phases: [
+  spider: { shape: 'diamond', col: '#c17bff', phases: [
     { attacks: [{ type: 'wall', interval: 1900, speed: 150, count: 11 }, { type: 'aimed', interval: 900, speed: 220, count: 1 }] },
     { attacks: [{ type: 'wall', interval: 1550, speed: 170, count: 13 }, { type: 'summon', interval: 3600, minion: 0 }] },
     { attacks: [{ type: 'wall', interval: 1250, speed: 190, count: 15 }, { type: 'spread', interval: 800, speed: 210, count: 7, arc: 0.6 }, { type: 'summon', interval: 3000, minion: 1 }] },
   ]},
-  mainframe: { col: '#57e6ff', phases: [
+  mainframe: { shape: 'chip', col: '#57e6ff', phases: [
     { attacks: [{ type: 'wall', interval: 1600, speed: 205, count: 12 }, { type: 'aimed', interval: 520, speed: 270, count: 1 }] },
     { attacks: [{ type: 'aimed', interval: 360, speed: 300, count: 2 }, { type: 'wall', interval: 1400, speed: 225, count: 14 }] },
     { attacks: [{ type: 'aimed', interval: 300, speed: 320, count: 3 }, { type: 'wall', interval: 1150, speed: 245, count: 16 }, { type: 'ring', interval: 1500, speed: 200, count: 12 }] },
   ]},
-  dragon: { col: '#ff7a3c', phases: [
+  dragon: { shape: 'flame', col: '#ff7a3c', phases: [
     { attacks: [{ type: 'spread', interval: 900, speed: 230, count: 7, arc: 0.9 }, { type: 'charge', interval: 5000 }] },
     { attacks: [{ type: 'spread', interval: 760, speed: 250, count: 9, arc: 1.0 }, { type: 'ring', interval: 1400, speed: 200, count: 12 }, { type: 'charge', interval: 4200 }] },
     { attacks: [{ type: 'spread', interval: 620, speed: 270, count: 11, arc: 1.1 }, { type: 'aimed', interval: 400, speed: 300, count: 3 }, { type: 'charge', interval: 3400 }, { type: 'ring', interval: 1200, speed: 220, count: 14, spin: 0.5 }] },
   ]},
-  mothership: { col: '#7CFC00', phases: [
+  mothership: { shape: 'orb', col: '#7CFC00', phases: [
     { attacks: [{ type: 'ring', interval: 1200, speed: 180, count: 12 }, { type: 'summon', interval: 3800, minion: 0 }] },
     { attacks: [{ type: 'ring', interval: 1000, speed: 200, count: 16, spin: 0.35 }, { type: 'spiral', interval: 160, speed: 190, count: 2, spin: 0.5 }] },
     { attacks: [{ type: 'ring', interval: 850, speed: 210, count: 18, spin: 0.4 }, { type: 'aimed', interval: 450, speed: 290, count: 3 }, { type: 'summon', interval: 2800, minion: 1 }, { type: 'charge', interval: 5000 }] },

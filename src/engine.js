@@ -208,7 +208,7 @@ function spawnBoss() {
     hp, maxHp: hp, phase: 0,
     atkT: 900, atkIdx: 0, flash: 0, entering: true,
     charging: false, chargeTo: null, returning: false, x: -999, y: -999,
-    style: styleKey, col: style.col, phases: style.phases, ringAng: 0, spiralAng: 0,
+    style: styleKey, col: style.col, shape: style.shape, phases: style.phases, ringAng: 0, spiralAng: 0,
   };
   if (game.coop) Coop.initBoss(hp);
   game.bossActive = true;
@@ -256,7 +256,7 @@ function updateBoss(dt) {
 }
 
 function ebPush(b, x, y, a, speed, size) {
-  game.eBullets.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size, boss: true, col: b.col });
+  game.eBullets.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size, boss: true, col: b.col, shape: b.shape, spin: Math.random() * 6.28 });
 }
 function bossAttack(b, atk) {
   switch (atk.type) {
@@ -578,7 +578,7 @@ export function startCoop() {
   let st;
   if (Coop.mode === 'story') st = JSON.parse(JSON.stringify(STAGES[Math.floor(rng() * STAGES.length)]));
   else st = proceduralStage(rng);
-  st.dur = 16000; // 共闘は短時間セッション: 早めにボスへ
+  st.dur = 34000; // 共闘は短めセッション(ソロより早くボスへ)
   game.coop = true; game.aiMode = Coop.mode !== 'story';
   game.stages = [st];
   startStage(0);

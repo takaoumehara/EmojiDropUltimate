@@ -75,6 +75,9 @@ export const Coop = {
     this.bossShared = 0; this.bossSharedMax = 0; this.localDmg = 0;
   },
 
+  // 招待リンク(QR・テキスト共有用)。開くと自動で参加する。
+  inviteUrl() { return location.origin + location.pathname + '?join=' + (this.code || ''); },
+
   // ホスト: スタート合図(種とモードを相方へ)
   startGame() { this.send({ t: 'start', seed: this.seed, mode: this.mode }); },
 

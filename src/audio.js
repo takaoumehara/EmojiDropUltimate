@@ -62,7 +62,16 @@ export const Snd = {
     this.tone(880, 'square', 0.05, 0.05, 0, 500);
   },
   hit()      { this.tone(300, 'square', 0.05, 0.07); },
-  kill()     { this.noise(0.12, 0.12); this.tone(660, 'triangle', 0.1, 0.09, 0.02, 120); },
+  // 撃破音: エンベロープは全ステージ共通(混乱しない)。音程だけステージの
+  //   スケール/音色に合わせて色づけする → テーマごとに"らしさ"が出る。
+  kill() {
+    const st = this.bgmStage, pal = this.bgmPalette || { lead: 'triangle' };
+    const scale = (st && st.scale) || [60, 64, 67, 69, 71];
+    const root = scale[0] + 12;
+    this.noise(0.11, 0.11);
+    this.tone(midiFreq(root + 7), pal.lead, 0.1, 0.085, 0.01, midiFreq(root - 12));
+    this.tone(midiFreq(root + 12), 'triangle', 0.07, 0.05, 0.03);
+  },
   bell()     { this.tone(1320, 'triangle', 0.07, 0.1); },
   power()    { [660, 880, 1100, 1320].forEach((f, i) => this.tone(f, 'triangle', 0.1, 0.1, i * 0.08)); },
   death()    { this.tone(440, 'sawtooth', 0.55, 0.14, 0, 50); this.noise(0.45, 0.14, 0.1, true); },

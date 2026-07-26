@@ -16,8 +16,14 @@ import { toggleLang, getLang } from './i18n.js';
 window.EDU = { get game() { return game; }, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue, toTitle, openCoopLobby, startCoop, Coop, Weather, Save };
 
 // URL ?seed=xxxx で同じステージを再現(共有リンク用)
-const _seed = new URLSearchParams(location.search).get('seed');
+const _q = new URLSearchParams(location.search);
+const _seed = _q.get('seed');
 if (_seed) { setTimeout(() => startFromSeed(_seed), 400); }
+// URL ?join=CODE(QR/招待リンク)で、そのままロビーに合流する
+const _join = (_q.get('join') || '').toUpperCase().replace(/[^A-Z2-9]/g, '');
+if (_join.length === 6) {
+  setTimeout(() => { game.state = 'coop'; game.splashT = 0; Coop.join(_join); }, 500);
+}
 
 // 起動スプラッシュ(数秒でタイトルへ。タップでスキップ可)
 game.state = 'splash'; game.splashT = 2000;
@@ -37,25 +43,36 @@ Weather.load();
 
 // 上部ボタン
 const pauseBtn = document.getElementById('pauseBtn');
-const muteBtn = document.getElementById('muteBtn');
 const homeBtn = document.getElementById('homeBtn');
-const langBtn = document.getElementById('langBtn');
+const setBtn = document.getElementById('setBtn');
+const setPanel = document.getElementById('setPanel');
 pauseBtn.addEventListener('click', () => { Snd.init(); togglePause(); });
-muteBtn.addEventListener('click', () => { Snd.init(); updateMuteIcon(Snd.toggleMute()); });
 homeBtn.addEventListener('click', () => { if (game.state !== 'title') toTitle(); });
-// 言語ボタン: 「切り替え先」を表示(JA表示中→「EN」)
-function syncLangBtn() { langBtn.textContent = getLang() === 'ja' ? 'EN' : '日本語'; }
-langBtn.addEventListener('click', () => { Snd.init(); toggleLang(); syncLangBtn(); });
-syncLangBtn();
+
+// === 設定パネル(音・言語をタイトルの絵文字と被らない位置へ集約) ===
+function syncSettings() {
+  const ja = getLang() === 'ja';
+  document.getElementById('setSoundL').textContent = ja ? 'サウンド' : 'Sound';
+  document.getElementById('setSoundV').textContent = Snd.muted ? 'OFF' : 'ON';
+  document.getElementById('setLangL').textContent = ja ? '言語' : 'Language';
+  document.getElementById('setLangV').textContent = ja ? '日本語' : 'English';
+}
+setBtn.addEventListener('click', e => { e.stopPropagation(); Snd.init(); setPanel.classList.toggle('show'); syncSettings(); });
+document.getElementById('setSound').addEventListener('click', () => { Snd.init(); updateMuteIcon(Snd.toggleMute()); syncSettings(); });
+document.getElementById('setLang').addEventListener('click', () => { Snd.init(); toggleLang(); syncSettings(); });
+document.addEventListener('pointerdown', e => {
+  if (setPanel.classList.contains('show') && !setPanel.contains(e.target) && e.target !== setBtn) setPanel.classList.remove('show');
+}, true);
+syncSettings();
 
 function syncButtons() {
   const s = game.state;
   const title = s === 'title';
   const playing = s === 'play' || s === 'warn' || s === 'pause';
-  muteBtn.style.display = s === 'splash' ? 'none' : 'flex';
-  langBtn.style.display = title ? 'flex' : 'none';
+  setBtn.style.display = title ? 'flex' : 'none';
   homeBtn.style.display = (title || s === 'splash') ? 'none' : 'flex';
   pauseBtn.style.display = playing ? 'flex' : 'none';
+  if (!title && setPanel.classList.contains('show')) setPanel.classList.remove('show');
 }
 
 document.addEventListener('visibilitychange', () => { if (document.hidden && (game.state === 'play' || game.state === 'warn')) togglePause(); });
