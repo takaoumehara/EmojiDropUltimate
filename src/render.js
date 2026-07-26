@@ -470,8 +470,9 @@ function drawTitle() {
 // 2段ボタン(見出し + 意味の説明)。枠は 2px の実線でクッキリ。
 function drawBtnSub(id, x, y, w, h, main, sub, color) {
   surface(x, y, w, h, { r: 14, fill: 'rgba(13,19,40,0.82)', border: color, lw: 2 });
-  txt(main, x + w / 2, y + h * 0.37, { size: 14.5 * UI, weight: 700, color });
-  txt(sub, x + w / 2, y + h * 0.71, { size: 10 * UI, weight: 500, color: COL.sub });
+  const pad = 14 * UI;
+  txt(main, x + w / 2, y + h * 0.37, { size: 14.5 * UI, weight: 700, color, maxW: w - pad });
+  txt(sub, x + w / 2, y + h * 0.71, { size: 10 * UI, weight: 500, color: COL.sub, maxW: w - pad });
   game.menuBtns.push({ id, x, y, w, h });
 }
 function drawBtn(id, x, y, w, h, text, color, glow, spinner = false, fs = 15 * UI) {
@@ -482,9 +483,9 @@ function drawBtn(id, x, y, w, h, text, color, glow, spinner = false, fs = 15 * U
     ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath();
     ctx.arc(x + 28, y + h / 2, 10, a, a + Math.PI * 1.4); ctx.stroke();
     ctx.restore();
-    txt(text, x + w / 2 + 12, y + h / 2, { size: 13 * UI, weight: 600, color });
+    txt(text, x + w / 2 + 12, y + h / 2, { size: 13 * UI, weight: 600, color, maxW: w - 56 * UI });
   } else {
-    txt(text, x + w / 2, y + h / 2, { size: fs, weight: 700, color });
+    txt(text, x + w / 2, y + h / 2, { size: fs, weight: 700, color, maxW: w - 16 * UI });
   }
   if (id !== 'none') game.menuBtns.push({ id, x, y, w, h });
 }
@@ -564,31 +565,32 @@ function drawCoopLobby() {
     txt((ja ? `${Coop.partner.name} と接続` : `Connected: ${Coop.partner.name}`) + (Coop.p2p ? '  ⚡' : '  🤖'),
       W / 2, sy, { size: 13 * UI, weight: 700, color: '#7CFC00' });
   } else if (Coop.status === 'signal_off') {
-    txt(ja ? 'オンライン部屋は未設定 — デモで体験できます' : 'Online rooms off — try the demo', W / 2, sy, { size: 10.5 * UI, weight: 500, color: '#ffb37f' });
+    txt(ja ? 'オンライン部屋は未設定 — デモで体験できます' : 'Online rooms off — try the demo', W / 2, sy, { size: 10.5 * UI, weight: 500, color: '#ffb37f', maxW: bw });
   } else if (Coop.status === 'failed') {
-    txt(ja ? '接続できませんでした — デモで体験できます' : 'Connection failed — try the demo', W / 2, sy, { size: 10.5 * UI, weight: 500, color: '#ff9d9d' });
+    txt(ja ? '接続できませんでした — もう一度お試しください' : 'Connection failed — try again', W / 2, sy, { size: 10.5 * UI, weight: 500, color: '#ff9d9d', maxW: bw });
   } else {
-    txt(ja ? '相方を待っています…' : 'waiting for your partner…', W / 2, sy,
+    txt(host ? (ja ? '相方の参加を待っています…' : 'waiting for your partner…')
+      : (ja ? 'ホストに接続中…' : 'connecting to host…'), W / 2, sy,
       { size: 11.5 * UI, weight: 500, color: COL.gold, alpha: 0.55 + 0.45 * Math.sin(time * 4) });
   }
 
   let by = H * 0.645;
   const bh = 44 * UI, gap = 8 * UI;
   if (Coop.connected) {
-    if (host) {
-      drawBtn('coopStart', bx, by, bw, 52 * UI, ja ? 'いっしょにスタート' : 'START TOGETHER', '#ffffff', true, false, 18 * UI);
-      by += 52 * UI + gap;
-    } else {
-      txt(ja ? 'ホストの開始を待っています…' : 'waiting for host to start…', W / 2, by + 14 * UI,
-        { size: 11.5 * UI, weight: 500, color: COL.sky, alpha: 0.55 + 0.45 * Math.sin(time * 4) });
-      by += 36 * UI;
-    }
+    // つながったら「どちらの端末でも」開始できる(ホスト待ちで詰まらない)
+    drawBtn('coopStart', bx, by, bw, 52 * UI, ja ? 'いっしょにスタート' : 'START TOGETHER', '#ffffff', true, false, 18 * UI);
+    by += 52 * UI + gap;
+    if (!host) txt(ja ? 'どちらが押してもふたり同時に始まります' : 'either player can start', W / 2, by + 2 * UI,
+      { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
+    if (!host) by += 16 * UI;
   } else if (host) {
     drawBtn('coopLink', bx, by, bw, bh, ja ? '🔗 リンクを友達に送る' : '🔗 Send invite link', COL.mint); by += bh + gap;
-    drawBtn('coopEnter', bx, by, bw, bh, ja ? '🔑 あいことばで参加' : '🔑 Join with a code', COL.gold); by += bh + gap;
+    drawBtn('coopEnter', bx, by, bw, bh, ja ? '🔑 友達の部屋に入る' : "🔑 Join a friend's room", COL.gold); by += bh + gap;
     drawBtn('coopDemo', bx, by, bw, bh, ja ? '🤖 ひとりでデモ' : '🤖 Try the demo', COL.sub); by += bh + gap;
   } else {
-    by += 6 * UI;
+    // ゲストが繋がらない時に手詰まりにならないよう、必ず次の手を出す
+    drawBtn('coopRetry', bx, by, bw, bh, ja ? '🔄 もう一度つなぐ' : '🔄 Reconnect', COL.gold); by += bh + gap;
+    drawBtn('coopDemo', bx, by, bw, bh, ja ? '🤖 ひとりでデモ' : '🤖 Try the demo', COL.sub); by += bh + gap;
   }
   drawBtn('coopBack', bx, by, bw, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
 }

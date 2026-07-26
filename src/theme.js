@@ -34,10 +34,19 @@ export function font(size, weight = 600, family = FONT_UI) {
 // UI テキスト(パネル上・フチなし・くっきり)
 export function txt(s, x, y, {
   size = 14, color = COL.ink, weight = 600, align = 'center',
-  family = FONT_UI, baseline = 'middle', alpha = 1, track = 0, shadow = 0,
+  family = FONT_UI, baseline = 'middle', alpha = 1, track = 0, shadow = 0, maxW = 0,
 } = {}) {
   ctx.save();
   font(size, weight, family);
+  // maxW 指定時は収まるまで縮小(言語や端末幅が変わってもはみ出さない)
+  if (maxW > 0) {
+    let w = ctx.measureText(s).width + track * Math.max(0, [...s].length - 1);
+    if (w > maxW) {
+      size = Math.max(7, size * (maxW / w));
+      track *= maxW / w;
+      font(size, weight, family);
+    }
+  }
   ctx.textAlign = track ? 'left' : align;
   ctx.textBaseline = baseline;
   ctx.globalAlpha = alpha;

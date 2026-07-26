@@ -78,7 +78,13 @@ export const Coop = {
   // 招待リンク(QR・テキスト共有用)。開くと自動で参加する。
   inviteUrl() { return location.origin + location.pathname + '?join=' + (this.code || ''); },
 
-  // ホスト: スタート合図(種とモードを相方へ)
+  // スタート。どちらが押しても始まる(種はホストのものを正とする)。
+  //   ゲストが押した場合はホストに依頼し、ホストが全員へ号令をかける。
+  requestStart() {
+    if (this.role === 'host') { this.send({ t: 'start', seed: this.seed, mode: this.mode }); return true; }
+    this.send({ t: 'reqStart' });
+    return false; // 自分ではまだ開始しない(ホストの号令を待つ)
+  },
   startGame() { this.send({ t: 'start', seed: this.seed, mode: this.mode }); },
 
   // === プロトコル ===
@@ -93,6 +99,12 @@ export const Coop = {
       case 'start': // ゲスト: ホストと同じ種・モードで即開始
         if (this.role === 'guest') {
           this.seed = o.seed >>> 0; this.mode = o.mode === 'ai' ? 'ai' : 'story';
+          if (this.onStartGame) this.onStartGame();
+        }
+        break;
+      case 'reqStart': // ゲストからの開始依頼 → ホストが号令をかけて自分も開始
+        if (this.role === 'host') {
+          this.startGame();
           if (this.onStartGame) this.onStartGame();
         }
         break;
