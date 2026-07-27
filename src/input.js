@@ -27,7 +27,7 @@ function hitMenu(x, y) {
       else if (b.id === 'coopDemo') Coop.mockJoin();
       else if (b.id === 'coopLink') shareInvite(Coop.inviteUrl(), Coop.code);
       else if (b.id === 'coopStart') { if (Coop.requestStart()) startCoop(); }
-      else if (b.id === 'coopRetry') Coop.join(Coop.code);
+      else if (b.id === 'coopRetry') { if (Coop.role === 'host') openCoopLobby(); else Coop.join(Coop.code); }
       else if (b.id === 'coopBack') toTitle();
       else if (b.id === 'coopModeStory') Coop.mode = 'story';
       else if (b.id === 'coopModeAi') Coop.mode = 'ai';

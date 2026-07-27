@@ -53,9 +53,12 @@ export const Coop = {
   },
   _connect(tr) {
     this.transport = tr; this.status = 'connecting';
-    tr.init().catch(() => {
-      if (this.transport !== tr) return;
-      this.status = tr.sigDown ? 'signal_off' : 'failed';
+    tr.init().catch(e => {
+      if (this.transport !== tr || tr.open) return;
+      const m = String(e && e.message || '');
+      this.status = tr.sigDown ? 'signal_off'
+        : m === 'timeout' ? (this.role === 'guest' ? 'no_room' : 'timeout')
+          : this.status === 'p2p_failed' ? 'p2p_failed' : 'failed';
     });
   },
   // オフラインのデモ相方(サーバー無しでも試せる)
@@ -160,32 +163,51 @@ class RtcTransport {
   }
   async init() {
     this.pc = new RTCPeerConnection(ICE);
+    // 直通が張れない回線(厳しいNAT)を検知して、原因が分かる形で失敗させる
+    this.pc.oniceconnectionstatechange = () => {
+      const s = this.pc && this.pc.iceConnectionState;
+      if ((s === 'failed' || s === 'disconnected') && !this.open && !this.disposed) this.fail('p2p_failed');
+    };
     if (this.role === 'host') {
       this.setup(this.pc.createDataChannel('coop'));
       await this.pc.setLocalDescription(await this.pc.createOffer());
       await this.gathered();
       await this.post('offer', this.pc.localDescription.sdp);
-      const ans = await this.poll('answer');
+      // 相手が来るまで長く待つ(以前は約2分で監視をやめてしまい、
+      // その後にQRを読まれても永久に繋がらなかった)
+      const ans = await this.poll('answer', 600);
       if (this.disposed) return;
       await this.pc.setRemoteDescription({ type: 'answer', sdp: ans });
+      this.watchdog();
     } else {
       this.pc.ondatachannel = e => this.setup(e.channel);
-      const off = await this.poll('offer');
+      const off = await this.poll('offer', 60);
       if (this.disposed) return;
       await this.pc.setRemoteDescription({ type: 'offer', sdp: off });
       await this.pc.setLocalDescription(await this.pc.createAnswer());
       await this.gathered();
       await this.post('answer', this.pc.localDescription.sdp);
+      this.watchdog();
     }
+  }
+  // 握手後、一定時間で開通しなければ「回線の問題」として諦める(無限待ちを防ぐ)
+  watchdog() {
+    clearTimeout(this._wd);
+    this._wd = setTimeout(() => { if (!this.open && !this.disposed) this.fail('p2p_failed'); }, 20000);
+  }
+  fail(reason) {
+    if (this.disposed || this.open) return;
+    this.c.status = reason;
   }
   setup(dc) {
     this.dc = dc;
     dc.onopen = () => {
-      this.open = true; this.c.p2p = true;
+      clearTimeout(this._wd);
+      this.open = true; this.c.p2p = true; this.c.status = '';
       this.send({ t: 'hello', name: Save.name() });
     };
     dc.onmessage = e => { try { this.c.onMsg(JSON.parse(e.data)); } catch (err) {} };
-    dc.onclose = () => { this.open = false; if (!this.disposed) this.c.status = 'failed'; };
+    dc.onclose = () => { this.open = false; if (!this.disposed) this.c.status = 'closed'; };
   }
   gathered() {
     const pc = this.pc;
@@ -200,8 +222,8 @@ class RtcTransport {
     if (r.status === 503) { this.sigDown = true; throw new Error('signal_off'); }
     if (!r.ok) throw new Error('signal ' + r.status);
   }
-  async poll(kind) {
-    for (let i = 0; i < 90; i++) { // 最長 ~2分待つ
+  async poll(kind, tries = 90) {
+    for (let i = 0; i < tries; i++) {
       if (this.disposed) throw new Error('disposed');
       const r = await fetch(`${SIG}?code=${this.code}&want=${kind}`);
       if (r.status === 503) { this.sigDown = true; throw new Error('signal_off'); }
@@ -211,7 +233,7 @@ class RtcTransport {
     throw new Error('timeout');
   }
   send(o) { if (this.open && this.dc) { try { this.dc.send(JSON.stringify(o)); } catch (e) {} } }
-  dispose() { this.disposed = true; try { if (this.dc) this.dc.close(); if (this.pc) this.pc.close(); } catch (e) {} }
+  dispose() { this.disposed = true; clearTimeout(this._wd); try { if (this.dc) this.dc.close(); if (this.pc) this.pc.close(); } catch (e) {} }
 }
 
 // === デモ: オフラインのモック相方(サーバー不要の体験用) ===

@@ -564,13 +564,21 @@ function drawCoopLobby() {
   if (Coop.connected) {
     txt((ja ? `${Coop.partner.name} と接続` : `Connected: ${Coop.partner.name}`) + (Coop.p2p ? '  ⚡' : '  🤖'),
       W / 2, sy, { size: 13 * UI, weight: 700, color: '#7CFC00' });
-  } else if (Coop.status === 'signal_off') {
-    txt(ja ? 'オンライン対戦サーバーが未接続です' : 'Online play server not connected', W / 2, sy - 8 * UI,
-      { size: 11.5 * UI, weight: 700, color: '#ffb37f', maxW: bw });
-    txt(ja ? '(Vercel に Upstash Redis を接続すると有効になります)' : '(connect Upstash Redis on Vercel to enable)', W / 2, sy + 9 * UI,
-      { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
-  } else if (Coop.status === 'failed') {
-    txt(ja ? '接続できませんでした — もう一度お試しください' : 'Connection failed — try again', W / 2, sy, { size: 10.5 * UI, weight: 500, color: '#ff9d9d', maxW: bw });
+  } else if (Coop.status && Coop.status !== 'connecting') {
+    // 失敗の理由を具体的に出す(原因が自分で分かるように)
+    const S = {
+      signal_off: [ja ? '対戦サーバーが未接続です' : 'Play server not connected',
+        ja ? 'Vercel に Upstash Redis を接続 → 再デプロイ' : 'Connect Upstash Redis on Vercel, then redeploy'],
+      no_room: [ja ? 'この部屋が見つかりません' : 'Room not found',
+        ja ? '相手がロビーを開き直して、新しいQRを出してもらってください' : 'Ask your friend to reopen the lobby for a fresh QR'],
+      timeout: [ja ? '時間内に相手が来ませんでした' : 'Nobody joined in time',
+        ja ? '「もう一度つなぐ」で新しい部屋を作れます' : 'Reconnect to open a fresh room'],
+      p2p_failed: [ja ? '直接つながれませんでした' : "Couldn't link the devices",
+        ja ? '同じWi-Fiに繋ぐと成功しやすくなります' : 'Try putting both phones on the same Wi-Fi'],
+      closed: [ja ? '接続が切れました' : 'Connection lost', ja ? 'もう一度つないでください' : 'Please reconnect'],
+    }[Coop.status] || [ja ? '接続できませんでした' : 'Connection failed', ja ? 'もう一度お試しください' : 'Please try again'];
+    txt(S[0], W / 2, sy - 8 * UI, { size: 11.5 * UI, weight: 700, color: '#ffb37f', maxW: bw });
+    txt(S[1], W / 2, sy + 9 * UI, { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
   } else {
     txt(host ? (ja ? '相方の参加を待っています…' : 'waiting for your partner…')
       : (ja ? 'ホストに接続中…' : 'connecting to host…'), W / 2, sy,
@@ -587,7 +595,9 @@ function drawCoopLobby() {
       { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
     if (!host) by += 16 * UI;
   } else if (host) {
-    drawBtn('coopLink', bx, by, bw, bh, ja ? '🔗 リンクを友達に送る' : '🔗 Send invite link', COL.mint); by += bh + gap;
+    const broke = Coop.status && Coop.status !== 'connecting';
+    if (broke) { drawBtn('coopRetry', bx, by, bw, bh, ja ? '🔄 新しい部屋を作る' : '🔄 Open a fresh room', COL.gold); by += bh + gap; }
+    else { drawBtn('coopLink', bx, by, bw, bh, ja ? '🔗 リンクを友達に送る' : '🔗 Send invite link', COL.mint); by += bh + gap; }
     drawBtn('coopEnter', bx, by, bw, bh, ja ? '🔑 友達の部屋に入る' : "🔑 Join a friend's room", COL.gold); by += bh + gap;
     drawBtn('coopDemo', bx, by, bw, bh, ja ? '🤖 ひとりでデモ' : '🤖 Try the demo', COL.sub); by += bh + gap;
   } else {
