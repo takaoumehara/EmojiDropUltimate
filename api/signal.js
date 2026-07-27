@@ -21,11 +21,39 @@ async function redis(cmd) {
 const okCode = c => /^[A-Z2-9]{6}$/.test(c || '');
 const okKind = k => k === 'offer' || k === 'answer';
 
+// WebRTC の接続先候補(STUN=自分の外側アドレス発見 / TURN=直通不可時の中継)。
+//   携帯回線や厳しいNAT同士だと STUN だけでは直通が張れないため TURN が要る。
+//   独自の TURN を使う場合は Vercel に TURN_URLS / TURN_USERNAME / TURN_CREDENTIAL を設定。
+//   未設定なら公開の無料 TURN(ベストエフォート)にフォールバックする。
+function iceServers() {
+  const list = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+  ];
+  const urls = (process.env.TURN_URLS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (urls.length && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+    list.push({ urls, username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL });
+  } else {
+    list.push({
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelayproject', credential: 'openrelayproject',
+    });
+  }
+  return list;
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(204).end();
+  // ICE 設定はストア不要なので、KV 未設定でも先に返す
+  if (req.method === 'GET' && req.query.want === 'ice') {
+    return res.status(200).json({ iceServers: iceServers() });
+  }
   if (!URL_BASE || !TOKEN) {
     return res.status(503).json({
       error: 'no_kv',

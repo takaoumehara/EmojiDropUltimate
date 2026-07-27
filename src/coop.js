@@ -16,7 +16,21 @@ function makeCode() {
   return s;
 }
 const SIG = '/api/signal';
-const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+// 既定(サーバーから設定を取れなかった場合の保険)
+const ICE_FALLBACK = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'],
+    username: 'openrelayproject', credential: 'openrelayproject' },
+];
+let iceCache = null;
+async function iceConfig() {
+  if (iceCache) return iceCache;
+  try {
+    const r = await fetch(`${SIG}?want=ice`);
+    if (r.ok) { const j = await r.json(); if (j.iceServers && j.iceServers.length) iceCache = j.iceServers; }
+  } catch (e) { /* 取得失敗時は既定を使う */ }
+  return (iceCache = iceCache || ICE_FALLBACK);
+}
 
 export const Coop = {
   active: false,          // ロビー/共闘モード中か
@@ -162,11 +176,12 @@ class RtcTransport {
     this.disposed = false; this.sigDown = false;
   }
   async init() {
-    this.pc = new RTCPeerConnection(ICE);
+    this.pc = new RTCPeerConnection({ iceServers: await iceConfig(), iceCandidatePoolSize: 2 });
     // 直通が張れない回線(厳しいNAT)を検知して、原因が分かる形で失敗させる
+    //   'disconnected' は一時的に起きて自力回復することがあるので失敗扱いにしない
     this.pc.oniceconnectionstatechange = () => {
       const s = this.pc && this.pc.iceConnectionState;
-      if ((s === 'failed' || s === 'disconnected') && !this.open && !this.disposed) this.fail('p2p_failed');
+      if (s === 'failed' && !this.open && !this.disposed) this.fail('p2p_failed');
     };
     if (this.role === 'host') {
       this.setup(this.pc.createDataChannel('coop'));
@@ -193,7 +208,7 @@ class RtcTransport {
   // 握手後、一定時間で開通しなければ「回線の問題」として諦める(無限待ちを防ぐ)
   watchdog() {
     clearTimeout(this._wd);
-    this._wd = setTimeout(() => { if (!this.open && !this.disposed) this.fail('p2p_failed'); }, 20000);
+    this._wd = setTimeout(() => { if (!this.open && !this.disposed) this.fail('p2p_failed'); }, 30000);
   }
   fail(reason) {
     if (this.disposed || this.open) return;
@@ -209,12 +224,26 @@ class RtcTransport {
     dc.onmessage = e => { try { this.c.onMsg(JSON.parse(e.data)); } catch (err) {} };
     dc.onclose = () => { this.open = false; if (!this.disposed) this.c.status = 'closed'; };
   }
+  // ICE候補の収集。ここを早く打ち切ると「自宅LAN内アドレスしか無いSDP」を
+  // 送ってしまい、別回線の相手とは直通が張れない。外向き候補(srflx/relay)が
+  // 取れるまで待ち、最大12秒で打ち切る。
   gathered() {
     const pc = this.pc;
     if (pc.iceGatheringState === 'complete') return Promise.resolve();
     return new Promise(res => {
-      const t = setTimeout(res, 2500); // 候補収集は最大2.5秒で打ち切り(十分)
-      pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } };
+      let got = false;
+      const done = () => { clearTimeout(hard); clearTimeout(soft); pc.onicecandidate = null; res(); };
+      const hard = setTimeout(done, 12000);
+      let soft = null;
+      pc.onicecandidate = e => {
+        if (!e.candidate) return done();                       // 収集完了
+        const c = e.candidate.candidate || '';
+        if (/typ (srflx|relay)/.test(c) && !got) {
+          got = true;                                          // 外から見えるアドレスを確保
+          soft = setTimeout(done, 1500);                       // 少しだけ追加候補を待つ
+        }
+      };
+      pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') done(); };
     });
   }
   async post(kind, sdp) {
