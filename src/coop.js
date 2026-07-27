@@ -134,9 +134,11 @@ export const Coop = {
       case 'dmg': this.applyPartnerDamage(o.d | 0); break;
       case 'w': this.snap = o; this.snapAt = performance.now(); break;   // ゲスト: ワールド状態を受信
       case 'hit': if (this.onPartnerHit) this.onPartnerHit(o.id, o.d | 0); break; // ホスト: 相方の命中を反映
+      case 'died': if (this.onPartnerDied) this.onPartnerDied(); break;           // ホスト: 共有残機を減らす
+      case 'over': if (this.onGameOver) this.onGameOver(); break;                 // ゲスト: 二人まとめて終了
     }
   },
-  onPartnerHit: null,   // engine が設定
+  onPartnerHit: null, onPartnerDied: null, onGameOver: null,   // engine が設定
 
   // ホスト → ゲスト: ワールド状態(敵・弾・ベル・ボス)を一定間隔で送る
   _lastSnap: 0,

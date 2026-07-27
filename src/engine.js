@@ -36,39 +36,52 @@ function buildSnap() {
     l: game.bells.map(x => [Math.round(x.x), Math.round(x.y), x.idx, x.size]),
     s: b ? [Math.round(b.x), Math.round(b.y), Math.round(b.hp), b.entering ? 1 : 0, b.phase] : null,
     w: Math.round(game.warnT),
+    lv: game.lives,
   };
 }
 
-// ゲスト: 受け取った状態を自分の世界へ反映(位置はなめらかに補間)
-function applySnap(dt) {
-  const s = Coop.snap;
-  if (!s) return;
+// ゲスト: 受け取った状態を反映。
+//   重要: 作り直すのは「新しく届いた時だけ」。毎フレーム同じ内容を貼り直すと
+//   位置もHPも巻き戻り、敵と弾が凍りつき、自分で与えたダメージも即座に消える。
+let lastSnapAt = -1;
+function rebuildFromSnap(s) {
   const st = stage();
   const prev = new Map(game.enemies.map(e => [e.id, e]));
   game.enemies = s.e.map(([id, x, y, ti, hp, maxHp]) => {
     const o = prev.get(id);
+    if (o) { o.tx = x; o.ty = y; o.hp = hp; return o; }   // 目標位置だけ更新(実座標は補間)
     const type = st.enemies[ti] || st.enemies[0];
-    if (o) { // 既知の敵は補間して滑らかに
-      o.x += (x - o.x) * Math.min(1, dt * 16); o.y += (y - o.y) * Math.min(1, dt * 16);
-      o.hp = hp; if (o.flash > 0) o.flash -= dt * 8;
-      return o;
-    }
-    return { id, x, y, ti, hp, maxHp, size: type.size, emoji: type.emoji, delay: 0, flash: 0 };
+    return { id, x, y, tx: x, ty: y, ti, hp, maxHp, size: type.size, emoji: type.emoji, delay: 0, flash: 0 };
   });
-  // 弾は速度つきで受け取り、次の受信までは自分で進める(通信量を抑えつつ滑らか)
   game.eBullets = s.b.map(([x, y, vx, vy, size, boss]) => ({
     x, y, vx, vy, size, boss: !!boss,
     col: boss && game.boss ? game.boss.col : null, shape: boss && game.boss ? game.boss.shape : null,
   }));
   game.bells = s.l.map(([x, y, idx, size]) => ({ x, y, idx, size, phase: 0, prog: 0, lat: 0, hits: 0 }));
   game.warnT = s.w;
+  if (typeof s.lv === 'number') game.lives = s.lv;        // 残機はチーム共有(ホストが管理)
   if (s.s) {
-    if (!game.boss) spawnBoss();                       // ホストに合わせてボス出現
+    if (!game.boss) spawnBoss();
     const b = game.boss;
-    b.x += (s.s[0] - b.x) * Math.min(1, dt * 12); b.y += (s.s[1] - b.y) * Math.min(1, dt * 12);
-    b.hp = s.s[2]; b.entering = !!s.s[3]; b.phase = s.s[4];
-    if (b.flash > 0) b.flash -= dt * 6;
+    b.tx = s.s[0]; b.ty = s.s[1]; b.hp = s.s[2]; b.entering = !!s.s[3]; b.phase = s.s[4];
   } else if (game.boss && !game.finale) { game.boss = null; game.bossActive = false; }
+}
+function applySnap(dt) {
+  const s = Coop.snap;
+  if (!s) return;
+  if (Coop.snapAt !== lastSnapAt) { lastSnapAt = Coop.snapAt; rebuildFromSnap(s); }
+  // 受信の合間は自分で動かす(15Hzでも滑らかに見せるため)
+  const k = Math.min(1, dt * 14);
+  for (const e of game.enemies) {
+    if (e.tx !== undefined) { e.x += (e.tx - e.x) * k; e.y += (e.ty - e.y) * k; }
+    if (e.flash > 0) e.flash -= dt * 8;
+  }
+  for (const b of game.eBullets) { b.x += b.vx * dt; b.y += b.vy * dt; }
+  const b = game.boss;
+  if (b && b.tx !== undefined) {
+    b.x += (b.tx - b.x) * Math.min(1, dt * 12); b.y += (b.ty - b.y) * Math.min(1, dt * 12);
+    if (b.flash > 0) b.flash -= dt * 6;
+  }
 }
 
 export function rankOf(score) { return score >= 180000 ? 'S' : score >= 120000 ? 'A' : score >= 70000 ? 'B' : 'C'; }
@@ -150,12 +163,19 @@ function killPlayer() {
   Snd.death();
   explosion(p.x, p.y, 9, '#ff6600');
   game.flash = 0.5;
-  game.lives--;
   game.stats.deathTimes.push(performance.now());
   p.dead = true;
   p.power = Math.max(1, p.power - 1);
   p.options = Math.max(0, p.options - 1);
   game.combo = 0; game.comboMul = 1;
+  // 共闘は残機をチームで共有する。ゲストはホストに申告し、復活可否はホストの残機に従う。
+  if (isGuest()) {
+    Coop.send({ t: 'died' });
+    setTimeout(() => { if ((game.state === 'play' || game.state === 'warn') && game.lives > 0) resetPlayer(); }, 500);
+    return;
+  }
+  game.lives--;
+  if (game.coop && game.lives <= 0) Coop.send({ t: 'over' });
   if (game.lives <= 0) {
     setTimeout(() => {
       if (game.state !== 'play' && game.state !== 'warn') return;
@@ -483,13 +503,12 @@ function updateBullets(dt) {
   }
 }
 
-// ゲスト: 自分の弾はローカル、敵弾は受信した速度で前進(次の受信まで滑らかに)
+// ゲスト: 自分の弾だけローカルで動かす(敵弾は applySnap 側で自走させる)
 function updateGuestBullets(dt) {
   for (let i = game.pBullets.length - 1; i >= 0; i--) {
     const b = game.pBullets[i]; b.x += b.vx * dt; b.y += b.vy * dt;
     if (b.x < -25 || b.x > W + 25 || b.y < -25 || b.y > H + 25) game.pBullets.splice(i, 1);
   }
-  for (const b of game.eBullets) { b.x += b.vx * dt; b.y += b.vy * dt; }
 }
 
 function updateBg(dt) {
@@ -662,6 +681,22 @@ Coop.onStartGame = () => startCoop();
 Coop.onPartnerHit = (id, d) => {
   const e = game.enemies.find(x => x.id === id);
   if (e) { damageEnemy(e, d); if (e.hp <= 0) game.enemies = game.enemies.filter(x => x !== e); }
+};
+// ホスト: 相方が被弾 → チーム共有の残機を減らす。尽きたら二人まとめて終了。
+Coop.onPartnerDied = () => {
+  if (!isHost() || game.state === 'over') return;
+  game.lives--;
+  if (game.lives <= 0) {
+    Coop.send({ t: 'over' });
+    recordRunEnd({});
+    game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
+  }
+};
+// ゲスト: ホストから終了の合図
+Coop.onGameOver = () => {
+  if (game.state === 'over' || game.state === 'victory') return;
+  recordRunEnd({});
+  game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
 };
 
 function recordRunEnd({ daily = false } = {}) {
