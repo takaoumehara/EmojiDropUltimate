@@ -565,7 +565,10 @@ function drawCoopLobby() {
     txt((ja ? `${Coop.partner.name} と接続` : `Connected: ${Coop.partner.name}`) + (Coop.p2p ? '  ⚡' : '  🤖'),
       W / 2, sy, { size: 13 * UI, weight: 700, color: '#7CFC00' });
   } else if (Coop.status === 'signal_off') {
-    txt(ja ? 'オンライン部屋は未設定 — デモで体験できます' : 'Online rooms off — try the demo', W / 2, sy, { size: 10.5 * UI, weight: 500, color: '#ffb37f', maxW: bw });
+    txt(ja ? 'オンライン対戦サーバーが未接続です' : 'Online play server not connected', W / 2, sy - 8 * UI,
+      { size: 11.5 * UI, weight: 700, color: '#ffb37f', maxW: bw });
+    txt(ja ? '(Vercel に Upstash Redis を接続すると有効になります)' : '(connect Upstash Redis on Vercel to enable)', W / 2, sy + 9 * UI,
+      { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
   } else if (Coop.status === 'failed') {
     txt(ja ? '接続できませんでした — もう一度お試しください' : 'Connection failed — try again', W / 2, sy, { size: 10.5 * UI, weight: 500, color: '#ff9d9d', maxW: bw });
   } else {

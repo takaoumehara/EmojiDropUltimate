@@ -5,8 +5,11 @@
 //   サーバーは一切経由しない。KV 未設定なら 503(フロントはデモにフォールバック)。
 // ============================================================
 
-const URL_BASE = process.env.KV_REST_API_URL;
-const TOKEN = process.env.KV_REST_API_TOKEN;
+// Vercel KV / Upstash はインテグレーションによって環境変数名が違うので両方受ける。
+//   Vercel KV        : KV_REST_API_URL / KV_REST_API_TOKEN
+//   Upstash(直/市場): UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN
+const URL_BASE = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 const TTL = 300; // 5分で自動消滅
 
 async function redis(cmd) {
@@ -23,7 +26,13 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(204).end();
-  if (!URL_BASE || !TOKEN) return res.status(503).json({ error: 'no_kv' });
+  if (!URL_BASE || !TOKEN) {
+    return res.status(503).json({
+      error: 'no_kv',
+      hint: 'Vercel の Storage で Upstash Redis(KV)を接続してください。KV_REST_API_URL/KV_REST_API_TOKEN または UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN が必要です。',
+      sawUrl: !!URL_BASE, sawToken: !!TOKEN,
+    });
+  }
 
   try {
     if (req.method === 'GET') {
