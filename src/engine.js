@@ -19,6 +19,58 @@ import { Coop } from './coop.js';
 
 const COOP_HP_MUL = 2.2; // 共闘ボスは二人がかり前提で硬くする
 
+// === ふたりでプレイ: ホスト権威型の同期 ===
+//   敵・弾・ベル・ボスは「ホストの計算結果だけ」を正とし、ゲストはそれを映す。
+//   (各端末で別々に乱数・AI難易度調整・天気を回すと必ずズレるため)
+//   自機と自分の弾は各端末でローカルに動かす → 操作は遅延ゼロのまま。
+const isGuest = () => game.coop && Coop.role === 'guest' && Coop.connected;
+const isHost = () => game.coop && Coop.role === 'host' && Coop.connected;
+let nextEid = 1;
+
+function buildSnap() {
+  const b = game.boss;
+  return {
+    t: 'w',
+    e: game.enemies.filter(e => e.delay <= 0).map(e => [e.id, Math.round(e.x), Math.round(e.y), e.ti, e.hp, e.maxHp]),
+    b: game.eBullets.map(x => [Math.round(x.x), Math.round(x.y), Math.round(x.vx), Math.round(x.vy), x.size, x.boss ? 1 : 0]),
+    l: game.bells.map(x => [Math.round(x.x), Math.round(x.y), x.idx, x.size]),
+    s: b ? [Math.round(b.x), Math.round(b.y), Math.round(b.hp), b.entering ? 1 : 0, b.phase] : null,
+    w: Math.round(game.warnT),
+  };
+}
+
+// ゲスト: 受け取った状態を自分の世界へ反映(位置はなめらかに補間)
+function applySnap(dt) {
+  const s = Coop.snap;
+  if (!s) return;
+  const st = stage();
+  const prev = new Map(game.enemies.map(e => [e.id, e]));
+  game.enemies = s.e.map(([id, x, y, ti, hp, maxHp]) => {
+    const o = prev.get(id);
+    const type = st.enemies[ti] || st.enemies[0];
+    if (o) { // 既知の敵は補間して滑らかに
+      o.x += (x - o.x) * Math.min(1, dt * 16); o.y += (y - o.y) * Math.min(1, dt * 16);
+      o.hp = hp; if (o.flash > 0) o.flash -= dt * 8;
+      return o;
+    }
+    return { id, x, y, ti, hp, maxHp, size: type.size, emoji: type.emoji, delay: 0, flash: 0 };
+  });
+  // 弾は速度つきで受け取り、次の受信までは自分で進める(通信量を抑えつつ滑らか)
+  game.eBullets = s.b.map(([x, y, vx, vy, size, boss]) => ({
+    x, y, vx, vy, size, boss: !!boss,
+    col: boss && game.boss ? game.boss.col : null, shape: boss && game.boss ? game.boss.shape : null,
+  }));
+  game.bells = s.l.map(([x, y, idx, size]) => ({ x, y, idx, size, phase: 0, prog: 0, lat: 0, hits: 0 }));
+  game.warnT = s.w;
+  if (s.s) {
+    if (!game.boss) spawnBoss();                       // ホストに合わせてボス出現
+    const b = game.boss;
+    b.x += (s.s[0] - b.x) * Math.min(1, dt * 12); b.y += (s.s[1] - b.y) * Math.min(1, dt * 12);
+    b.hp = s.s[2]; b.entering = !!s.s[3]; b.phase = s.s[4];
+    if (b.flash > 0) b.flash -= dt * 6;
+  } else if (game.boss && !game.finale) { game.boss = null; game.bossActive = false; }
+}
+
 export function rankOf(score) { return score >= 180000 ? 'S' : score >= 120000 ? 'A' : score >= 70000 ? 'B' : 'C'; }
 
 // === パーティクル / ポップアップ ===
@@ -135,6 +187,7 @@ function spawnWave() {
     const tt = it.t;
     const lat = clamp(it.lat, 42, latSpan() - 42);
     game.enemies.push({
+      id: nextEid++, ti: Math.max(0, st.enemies.indexOf(tt)),
       type: tt.type, emoji: tt.emoji,
       hp: tt.hp, maxHp: tt.hp, speed: tt.speed, pts: tt.pts, size: tt.size,
       amp: tt.amp || 60, freq: tt.freq || 2, shootRate: tt.shootRate || 0,
@@ -210,7 +263,8 @@ function spawnBoss() {
     charging: false, chargeTo: null, returning: false, x: -999, y: -999,
     style: styleKey, col: style.col, shape: style.shape, phases: style.phases, ringAng: 0, spiralAng: 0,
   };
-  if (game.coop) Coop.initBoss(hp);
+  // 共有ボスHPの管理はホストが正。ゲストは表示用の最大値だけ合わせる。
+  if (game.coop) { if (isGuest()) Coop.bossSharedMax = hp; else Coop.initBoss(hp); }
   game.bossActive = true;
   BossAI.reset();
   Snd.startBGM(st, game.stageIndex, 'boss');
@@ -429,6 +483,15 @@ function updateBullets(dt) {
   }
 }
 
+// ゲスト: 自分の弾はローカル、敵弾は受信した速度で前進(次の受信まで滑らかに)
+function updateGuestBullets(dt) {
+  for (let i = game.pBullets.length - 1; i >= 0; i--) {
+    const b = game.pBullets[i]; b.x += b.vx * dt; b.y += b.vy * dt;
+    if (b.x < -25 || b.x > W + 25 || b.y < -25 || b.y > H + 25) game.pBullets.splice(i, 1);
+  }
+  for (const b of game.eBullets) { b.x += b.vx * dt; b.y += b.vy * dt; }
+}
+
 function updateBg(dt) {
   const st = stage();
   const a = inAngle();
@@ -477,7 +540,17 @@ function checkCollisions() {
     for (let ei = game.enemies.length - 1; ei >= 0; ei--) {
       const e = game.enemies[ei];
       if (e.delay > 0) continue;
-      if (dist(b, e) < e.size + b.size) { damageEnemy(e, 1); game.pBullets.splice(bi, 1); used = true; if (e.hp <= 0) game.enemies.splice(ei, 1); break; }
+      if (dist(b, e) < e.size + b.size) {
+        if (isGuest()) {          // ゲストの命中はホストへ通知(正はホスト側の計算)
+          Coop.send({ t: 'hit', id: e.id, d: 1 });
+          e.flash = 1; e.hp -= 1; particles(e.x, e.y, 3, '#ffffff');
+          game.stats.hits++;
+          if (e.hp <= 0) { game.enemies.splice(ei, 1); Snd.kill(); particles(e.x, e.y, 12, '#ffd700'); }
+        } else damageEnemy(e, 1);
+        game.pBullets.splice(bi, 1); used = true;
+        if (!isGuest() && e.hp <= 0) game.enemies.splice(ei, 1);
+        break;
+      }
     }
     if (used) continue;
     if (game.boss && !game.boss.entering && dist(b, game.boss) < 42 + b.size) { damageBoss(1); game.pBullets.splice(bi, 1); continue; }
@@ -585,6 +658,11 @@ export function startCoop() {
 }
 // ゲスト: ホストの開始合図(共有種つき)を受けて同時スタート
 Coop.onStartGame = () => startCoop();
+// ホスト: 相方が当てた敵に実ダメージを与える(判定の正はホスト)
+Coop.onPartnerHit = (id, d) => {
+  const e = game.enemies.find(x => x.id === id);
+  if (e) { damageEnemy(e, d); if (e.hp <= 0) game.enemies = game.enemies.filter(x => x !== e); }
+};
 
 function recordRunEnd({ daily = false } = {}) {
   const r = {
@@ -674,11 +752,18 @@ export function update(dt, keys) {
       break;
     case 'play':
     case 'warn':
-      updateStage(dt);
-      updatePlayer(dt, keys);
-      updateEnemies(dt);
-      updateBoss(dt);
-      updateBullets(dt);
+      if (isGuest()) {
+        // ゲスト: 世界はホストの状態を映す。自機と自分の弾だけローカルに動かす。
+        applySnap(dt);
+        updatePlayer(dt, keys);
+        updateGuestBullets(dt);
+      } else {
+        updateStage(dt);
+        updatePlayer(dt, keys);
+        updateEnemies(dt);
+        updateBoss(dt);
+        updateBullets(dt);
+      }
       updateBg(dt);
       updateParticles(dt);
       updatePopups(dt);
@@ -689,6 +774,7 @@ export function update(dt, keys) {
       if (game.coop) {
         Coop.update(dt);
         Coop.sendPos(game.player.x / W, game.player.y / H, !game.player.dead, game.score, !game.player.dead);
+        if (isHost()) Coop.sendSnap(buildSnap);   // ホストがワールドを配信
       }
       // BGM緊張度: ボス=最高潮 / コンボ・残機ピンチで高まる
       Snd.setIntensity(game.bossActive ? 0.92 : 0.32 + Math.min(0.34, game.combo * 0.03) + (game.lives <= 1 ? 0.22 : 0));

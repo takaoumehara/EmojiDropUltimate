@@ -48,6 +48,8 @@ export const Coop = {
   bossShared: 0, bossSharedMax: 0,
   localDmg: 0,
   transport: null,
+  snap: null,             // ゲスト: ホストから届いた最新のワールド状態
+  snapAt: 0,
   onStartGame: null,      // engine が設定: ゲスト側でホストの開始を受けて起動
 
   // === ロビー ===
@@ -130,7 +132,19 @@ export const Coop = {
         if (typeof o.s === 'number') p.score = o.s;
         break;
       case 'dmg': this.applyPartnerDamage(o.d | 0); break;
+      case 'w': this.snap = o; this.snapAt = performance.now(); break;   // ゲスト: ワールド状態を受信
+      case 'hit': if (this.onPartnerHit) this.onPartnerHit(o.id, o.d | 0); break; // ホスト: 相方の命中を反映
     }
+  },
+  onPartnerHit: null,   // engine が設定
+
+  // ホスト → ゲスト: ワールド状態(敵・弾・ベル・ボス)を一定間隔で送る
+  _lastSnap: 0,
+  sendSnap(build) {
+    const now = performance.now();
+    if (now - this._lastSnap < 66) return;   // 約15Hz
+    this._lastSnap = now;
+    this.send(build());
   },
 
   // 自分の機体位置を送る(20Hz スロットル・正規化座標)
