@@ -124,7 +124,7 @@ function updatePlayer(dt, keys) {
   if (keys['ArrowUp'] || keys['w'] || keys['W']) dy -= 1;
   if (keys['ArrowDown'] || keys['s'] || keys['S']) dy += 1;
   if (dx && dy) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
-  const spd = CFG.PLAYER_SPEED * (p.boost ? 1.5 : 1) * dt;
+  const spd = CFG.PLAYER_SPEED * (p.boost ? 1.5 : 1) * Save.char().speed * dt;
   p.x = clamp(p.x + dx * spd, 22, W - 22);
   p.y = clamp(p.y + dy * spd, 40, H - 22);
   p.trail.unshift({ x: p.x, y: p.y });
@@ -132,7 +132,7 @@ function updatePlayer(dt, keys) {
   if (p.inv) { p.invT -= dt * 1000; if (p.invT <= 0) p.inv = false; }
   if (p.boost) { p.boostT -= dt * 1000; if (p.boostT <= 0) p.boost = false; }
   p.fireT -= dt * 1000;
-  if (p.fireT <= 0) { fire(); p.fireT = p.power >= 3 ? 105 : 130; }
+  if (p.fireT <= 0) { fire(); p.fireT = (p.power >= 3 ? 105 : 130) * Save.char().fire; }
   if (p.muzzle > 0) p.muzzle -= dt * 11;
   p.anim += dt * 10;
 }
@@ -143,13 +143,20 @@ function fire() {
   const px = -fy, py = fx;
   p.muzzle = 1;
   Snd.shoot();
+  const ch = Save.char();
   const mk = (ox, spread = 0) => {
-    game.pBullets.push({ x: p.x + fx * 20 + px * ox, y: p.y + fy * 20 + py * ox, vx: fx * CFG.BULLET_SPEED + px * spread, vy: fy * CFG.BULLET_SPEED + py * spread, size: 4 });
+    game.pBullets.push({
+      x: p.x + fx * 20 + px * ox, y: p.y + fy * 20 + py * ox,
+      vx: fx * CFG.BULLET_SPEED + px * spread, vy: fy * CFG.BULLET_SPEED + py * spread,
+      size: ch.size, emoji: ch.shotEmoji, col: ch.shot, pierce: ch.pierce, slow: ch.slow,
+    });
     game.stats.shots++;
   };
   if (p.power === 1) mk(0);
   else if (p.power === 2) { mk(-9); mk(9); }
   else { mk(0); mk(-13, -45); mk(13, 45); }
+  // キャラ特性: 横に広い(ピザ)
+  if (ch.spread) { mk(-20, -95); mk(20, 95); }
   for (let i = 0; i < p.options; i++) {
     const tt = p.trail[Math.min((i + 1) * 14, p.trail.length - 1)];
     if (tt) { game.pBullets.push({ x: tt.x + fx * 16, y: tt.y + fy * 16, vx: fx * CFG.BULLET_SPEED, vy: fy * CFG.BULLET_SPEED, size: 3, opt: true }); game.stats.shots++; }
@@ -168,6 +175,8 @@ function killPlayer() {
   p.power = Math.max(1, p.power - 1);
   p.options = Math.max(0, p.options - 1);
   game.combo = 0; game.comboMul = 1;
+  // 死んだ瞬間に「倒れた」ことを即送る(相方の画面に幽霊機が残らないように)
+  if (game.coop) Coop.sendPos(p.x / W, p.y / H, false, game.score, false, true);
   // 共闘は残機をチームで共有する。ゲストはホストに申告し、復活可否はホストの残機に従う。
   if (isGuest()) {
     Coop.send({ t: 'died' });
@@ -224,7 +233,8 @@ function updateEnemies(dt) {
   for (let i = game.enemies.length - 1; i >= 0; i--) {
     const e = game.enemies[i];
     if (e.delay > 0) { e.delay -= dt * 1000; continue; }
-    const spd = e.speed * wMod.enemySpeed * dt;
+    if (e.slowT > 0) e.slowT -= dt * 1000;               // 💩 で鈍っている間
+    const spd = e.speed * wMod.enemySpeed * (e.slowT > 0 ? 0.45 : 1) * dt;
     switch (e.type) {
       case 'straight': e.prog += spd; break;
       case 'wave': e.prog += spd; e.phase += e.freq * dt * Math.PI; e.lat = e.lat0 + Math.sin(e.phase) * e.amp; break;
@@ -560,15 +570,16 @@ function checkCollisions() {
       const e = game.enemies[ei];
       if (e.delay > 0) continue;
       if (dist(b, e) < e.size + b.size) {
+        if (b.slow) e.slowT = 1400;                      // キャラ特性: ベタッと減速
         if (isGuest()) {          // ゲストの命中はホストへ通知(正はホスト側の計算)
-          Coop.send({ t: 'hit', id: e.id, d: 1 });
+          Coop.send({ t: 'hit', id: e.id, d: 1, sl: b.slow ? 1 : 0 });
           e.flash = 1; e.hp -= 1; particles(e.x, e.y, 3, '#ffffff');
           game.stats.hits++;
           if (e.hp <= 0) { game.enemies.splice(ei, 1); Snd.kill(); particles(e.x, e.y, 12, '#ffd700'); }
         } else damageEnemy(e, 1);
-        game.pBullets.splice(bi, 1); used = true;
+        if (!b.pierce) { game.pBullets.splice(bi, 1); used = true; }   // 貫通弾は消えない
         if (!isGuest() && e.hp <= 0) game.enemies.splice(ei, 1);
-        break;
+        if (!b.pierce) break;
       }
     }
     if (used) continue;
@@ -678,9 +689,9 @@ export function startCoop() {
 // ゲスト: ホストの開始合図(共有種つき)を受けて同時スタート
 Coop.onStartGame = () => startCoop();
 // ホスト: 相方が当てた敵に実ダメージを与える(判定の正はホスト)
-Coop.onPartnerHit = (id, d) => {
+Coop.onPartnerHit = (id, d, sl) => {
   const e = game.enemies.find(x => x.id === id);
-  if (e) { damageEnemy(e, d); if (e.hp <= 0) game.enemies = game.enemies.filter(x => x !== e); }
+  if (e) { if (sl) e.slowT = 1400; damageEnemy(e, d); if (e.hp <= 0) game.enemies = game.enemies.filter(x => x !== e); }
 };
 // ホスト: 相方が被弾 → チーム共有の残機を減らす。尽きたら二人まとめて終了。
 Coop.onPartnerDied = () => {
@@ -778,6 +789,7 @@ export function update(dt, keys) {
       break;
     case 'title':
     case 'coop':
+    case 'chars':
       game.titleAnim += dt;
       break;
     case 'intro':

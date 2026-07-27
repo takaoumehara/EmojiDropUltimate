@@ -2,14 +2,14 @@
 // save.js — アカウント不要のローカルセーブ(localStorage)
 //   統計・ストリーク(連続日数)・ベスト・スキン解禁を保存。
 // ============================================================
-import { SKINS, todayKey } from './config.js';
+import { SKINS, CHARS, todayKey } from './config.js';
 
 const KEY = 'edu_save';
 const DEF = {
   bestScore: 0, bestWorld: 0, bestDailyScore: 0,
   kills: 0, shots: 0, hits: 0, deaths: 0, runs: 0,
   streak: 0, lastPlay: '', dailyPlayed: '', dailyBest: 0,
-  skin: 0, name: '', cid: '',
+  skin: 0, name: '', cid: '', char: 0,
 };
 
 function yesterdayKey() {
@@ -69,6 +69,11 @@ export const Save = {
     this.persist();
     return SKINS[this.data.skin];
   },
+
+  // 自機キャラクター(全員最初から選べる)
+  charIndex() { const i = this.data.char | 0; return i >= 0 && i < CHARS.length ? i : 0; },
+  char() { return CHARS[this.charIndex()]; },
+  setChar(i) { this.data.char = ((i % CHARS.length) + CHARS.length) % CHARS.length; this.persist(); return this.char(); },
 
   accuracy() { return this.data.shots ? Math.round(this.data.hits / this.data.shots * 100) : 0; },
   playedDailyToday() { return this.data.dailyPlayed === todayKey(); },

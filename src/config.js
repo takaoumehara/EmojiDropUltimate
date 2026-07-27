@@ -230,6 +230,32 @@ export const PATTERNS = [
   },
 ];
 
+// === 自機キャラクター(スマブラ方式: 選ぶと見た目・弾・性能が変わる) ===
+//   ここの絵文字は「敵として絶対に使わない」約束。敵側の候補(config の STAGES と
+//   aistage.js の THEMES)と重複させないこと。
+//   speed=移動 / fire=連射(小さいほど速い) / size=弾の大きさ /
+//   spread=追加の横広がり / pierce=貫通 / slow=命中した敵を鈍らせる
+export const CHARS = [
+  { id: 'rocket', emoji: '🚀', name: 'ロケット', en: 'ROCKET', col: '#6cc6ff',
+    shot: '#8fe3ff', shotEmoji: null, speed: 1, fire: 1, size: 4, spread: 0, pierce: 0, slow: 0,
+    tag: 'バランス', tagEn: 'All-round' },
+  { id: 'cat', emoji: '🐱', name: 'ネコ', en: 'CAT', col: '#ffb26b',
+    shot: '#ffd7a8', shotEmoji: '🐾', speed: 1.3, fire: 0.95, size: 3.4, spread: 0, pierce: 0, slow: 0,
+    tag: 'すばやい', tagEn: 'Fastest move' },
+  { id: 'bolt', emoji: '⚡', name: 'カミナリ', en: 'BOLT', col: '#ffe14d',
+    shot: '#fff2a0', shotEmoji: null, speed: 1.05, fire: 0.62, size: 3, spread: 0, pierce: 0, slow: 0,
+    tag: '連射', tagEn: 'Rapid fire' },
+  { id: 'pizza', emoji: '🍕', name: 'ピザ', en: 'PIZZA', col: '#ff8a4d',
+    shot: '#ffc07a', shotEmoji: null, speed: 0.92, fire: 1.12, size: 4.2, spread: 1, pierce: 0, slow: 0,
+    tag: '横に広い', tagEn: 'Wide shot' },
+  { id: 'unicorn', emoji: '🦄', name: 'ユニコーン', en: 'UNICORN', col: '#e879f9',
+    shot: '#f5b8ff', shotEmoji: '✨', speed: 1, fire: 1.25, size: 5.2, spread: 0, pierce: 1, slow: 0,
+    tag: 'つらぬく', tagEn: 'Piercing' },
+  { id: 'poop', emoji: '💩', name: 'ウンチ', en: 'POOP', col: '#a9744f',
+    shot: '#c58a5e', shotEmoji: '💩', speed: 0.95, fire: 1.4, size: 8, spread: 0, pierce: 0, slow: 1,
+    tag: 'ベタッと減速', tagEn: 'Sticky slow' },
+];
+
 // 自機スキン(bestWorld で解禁。見た目のみ・性能に影響しない)
 export const SKINS = [
   { name: 'CLASSIC', body: '#4488ff', body2: '#66aaff', nose: '#ffffff', wing: '#ff4444', trail: '#ffd400', need: 0 },

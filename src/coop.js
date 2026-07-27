@@ -8,6 +8,7 @@
 //   サーバー未設定/接続失敗時はオフラインのデモ相方にフォールバック。
 // ============================================================
 import { Save } from './save.js';
+import { CHARS } from './config.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 紛らわしい文字を除外
 function makeCode() {
@@ -42,7 +43,7 @@ export const Coop = {
   p2p: false,             // 本物のP2P接続か(false=デモ)
   status: '',             // ロビー表示用ステータス('signal_off'|'connecting'|'failed'|'')
   partner: {
-    name: 'FRIEND', score: 0, alive: true, dmg: 0,
+    name: 'FRIEND', score: 0, alive: true, dmg: 0, char: 0, seenAt: 0,
     x: 0.32, y: 0.85, tx: 0.32, ty: 0.85, firing: false, // 正規化座標(0..1)
   },
   bossShared: 0, bossSharedMax: 0,
@@ -90,7 +91,7 @@ export const Coop = {
     this.transport = null;
     this.active = false; this.connected = false; this.p2p = false;
     this.code = ''; this.seed = 0; this.status = '';
-    this.partner = { name: 'FRIEND', score: 0, alive: true, dmg: 0, x: 0.32, y: 0.85, tx: 0.32, ty: 0.85, firing: false };
+    this.partner = { name: 'FRIEND', score: 0, alive: true, dmg: 0, char: 0, seenAt: 0, x: 0.32, y: 0.85, tx: 0.32, ty: 0.85, firing: false };
     this.bossShared = 0; this.bossSharedMax = 0; this.localDmg = 0;
   },
 
@@ -114,6 +115,8 @@ export const Coop = {
       case 'hello':
         this.connected = true; this.status = '';
         if (o.name) p.name = String(o.name).slice(0, 14);
+        if (typeof o.ch === 'number') p.char = o.ch;
+        p.seenAt = performance.now();
         break;
       case 'start': // ゲスト: ホストと同じ種・モードで即開始
         if (this.role === 'guest') {
@@ -129,11 +132,13 @@ export const Coop = {
         break;
       case 'pos':
         p.tx = o.x; p.ty = o.y; p.firing = !!o.f; p.alive = !!o.a;
+        p.seenAt = performance.now();
         if (typeof o.s === 'number') p.score = o.s;
+        if (typeof o.ch === 'number') p.char = o.ch;
         break;
       case 'dmg': this.applyPartnerDamage(o.d | 0); break;
       case 'w': this.snap = o; this.snapAt = performance.now(); break;   // ゲスト: ワールド状態を受信
-      case 'hit': if (this.onPartnerHit) this.onPartnerHit(o.id, o.d | 0); break; // ホスト: 相方の命中を反映
+      case 'hit': if (this.onPartnerHit) this.onPartnerHit(o.id, o.d | 0, o.sl); break; // ホスト: 相方の命中を反映
       case 'died': if (this.onPartnerDied) this.onPartnerDied(); break;           // ホスト: 共有残機を減らす
       case 'over': if (this.onGameOver) this.onGameOver(); break;                 // ゲスト: 二人まとめて終了
     }
@@ -151,12 +156,14 @@ export const Coop = {
 
   // 自分の機体位置を送る(20Hz スロットル・正規化座標)
   _lastPos: 0,
-  sendPos(nx, ny, firing, score, alive) {
+  sendPos(nx, ny, firing, score, alive, force) {
     const now = performance.now();
-    if (now - this._lastPos < 50) return;
+    if (!force && now - this._lastPos < 50) return;
     this._lastPos = now;
-    this.send({ t: 'pos', x: +nx.toFixed(4), y: +ny.toFixed(4), f: firing ? 1 : 0, s: score, a: alive ? 1 : 0 });
+    this.send({ t: 'pos', x: +nx.toFixed(4), y: +ny.toFixed(4), f: firing ? 1 : 0, s: score, a: alive ? 1 : 0, ch: Save.charIndex() });
   },
+  // 相方の情報が途絶えていないか(ホスト落ち等で幽霊機が残るのを防ぐ)
+  partnerFresh() { return this.connected && performance.now() - this.partner.seenAt < 2500; },
 
   // === 共有ボスHP ===
   initBoss(maxHp) {
@@ -235,7 +242,7 @@ class RtcTransport {
     dc.onopen = () => {
       clearTimeout(this._wd);
       this.open = true; this.c.p2p = true; this.c.status = '';
-      this.send({ t: 'hello', name: Save.name() });
+      this.send({ t: 'hello', name: Save.name(), ch: Save.charIndex() });
     };
     dc.onmessage = e => { try { this.c.onMsg(JSON.parse(e.data)); } catch (err) {} };
     dc.onclose = () => { this.open = false; if (!this.disposed) this.c.status = 'closed'; };

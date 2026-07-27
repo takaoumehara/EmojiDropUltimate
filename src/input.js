@@ -7,6 +7,7 @@ import { Snd } from './audio.js';
 import { toggleLang, getLang } from './i18n.js';
 import { startRun, requestAIStage, startDaily, togglePause, useBomb, doContinue, toTitle, handleOverTap, openCoopLobby, startCoop } from './engine.js';
 import { Coop } from './coop.js';
+import { Save } from './save.js';
 import { shareInvite } from './ui.js';
 
 export const keys = {};
@@ -20,6 +21,9 @@ function hitMenu(x, y) {
       else if (b.id === 'ai') requestAIStage();
       else if (b.id === 'daily') startDaily();
       else if (b.id === 'coop') openCoopLobby();
+      else if (b.id === 'chars') game.state = 'chars';
+      else if (b.id.startsWith('char') && /^char\d+$/.test(b.id)) Save.setChar(parseInt(b.id.slice(4), 10));
+      else if (b.id === 'charOk' || b.id === 'charBack') game.state = 'title';
       else if (b.id === 'coopEnter') { // ゲスト: あいことばで参加
         const c = prompt(getLang() === 'ja' ? 'あいことば(6文字)を入力' : 'Enter the 6-char code');
         if (c) Coop.join(c);
@@ -56,7 +60,7 @@ canvas.addEventListener('pointerdown', e => {
   Snd.init();
   const s = game.state, now = performance.now();
   if (s === 'splash') { game.state = 'title'; return; }
-  if (s === 'title' || s === 'coop') { hitMenu(e.clientX, e.clientY); return; }
+  if (s === 'title' || s === 'coop' || s === 'chars') { hitMenu(e.clientX, e.clientY); return; }
   if (s === 'pause') { togglePause(); return; }
   if (s === 'over' || s === 'victory') { handleOverTap(e.clientX, e.clientY); return; }
   if (s === 'play' || s === 'warn') {

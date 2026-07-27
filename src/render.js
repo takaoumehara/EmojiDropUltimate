@@ -1,7 +1,7 @@
 // ============================================================
 // render.js — 描画(読みやすさ優先: 大きめ・視認性の高いサンセリフ)
 // ============================================================
-import { BELLS, clamp, stageTint } from './config.js';
+import { BELLS, clamp, stageTint, CHARS } from './config.js';
 import { W, H, ctx, UI } from './env.js';
 import { game } from './state.js';
 import { stage, dirDef } from './geo.js';
@@ -141,23 +141,34 @@ function drawPlayer() {
     ctx.fillStyle = 'rgba(185,103,255,0.35)'; ctx.beginPath(); ctx.arc(tt.x, tt.y, pulse + 5, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#e3c8ff'; ctx.beginPath(); ctx.arc(tt.x, tt.y, pulse, 0, Math.PI * 2); ctx.fill();
   }
-  const shipCol = rgbCss(curShip || [127, 208, 255]);
+  const ch = Save.char();
+  // 自分だけの目印(共闘中に自分を見失わないように、足元に光る輪)
+  if (game.coop) {
+    ctx.save();
+    ctx.globalAlpha = 0.5 + 0.25 * Math.sin(performance.now() * 0.005);
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 22, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+    txt(getLang() === 'ja' ? 'じぶん' : 'YOU', p.x, p.y + 30, { size: 8.5 * UI, weight: 700, color: '#ffffff', shadow: 0.9 });
+  }
+  const shipCol = ch.col;
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(dirDef().fy, dirDef().fx) + Math.PI / 2);
-  // テーマ連動のエンジン光(自機がステージに馴染む)
-  ctx.globalAlpha = 0.16 + 0.05 * Math.sin(performance.now() * 0.006);
-  ctx.fillStyle = shipCol; ctx.beginPath(); ctx.arc(0, 2, 17, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = 1;
+  // キャラ色の光背。どんな背景でも自機を見失わないよう、しっかり出す。
+  const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, 24);
+  halo.addColorStop(0, shipCol + 'aa'); halo.addColorStop(0.55, shipCol + '55'); halo.addColorStop(1, shipCol + '00');
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI * 2); ctx.fill();
   const th = 9 + Math.sin(p.anim) * 4;
   const tg = ctx.createLinearGradient(0, 13, 0, 13 + th);
   tg.addColorStop(0, '#fff'); tg.addColorStop(0.35, shipCol); tg.addColorStop(1, 'rgba(0,0,0,0)');
-  const sk = Save.currentSkin();
   ctx.fillStyle = tg; ctx.beginPath(); ctx.moveTo(-5, 13); ctx.lineTo(5, 13); ctx.lineTo(1, 13 + th); ctx.lineTo(-1, 13 + th); ctx.fill();
-  ctx.fillStyle = sk.body; ctx.fillRect(-6, -4, 12, 18);
-  ctx.fillStyle = sk.body2; ctx.fillRect(-4, -2, 8, 14);
-  ctx.fillStyle = sk.nose; ctx.fillRect(-3, -15, 6, 13);
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(-2, -13, 4, 11);
-  ctx.fillStyle = sk.wing; ctx.fillRect(-17, 4, 11, 8); ctx.fillRect(6, 4, 11, 8);
-  ctx.fillStyle = '#00ffaa'; ctx.fillRect(-2, -8, 4, 6);
+  // 選んだキャラクターそのものが自機(向きに合わせて回転を戻し、絵文字は常に正立)
+  ctx.save();
+  ctx.rotate(-(Math.atan2(dirDef().fy, dirDef().fx) + Math.PI / 2));
+  ctx.fillStyle = '#ffffff';   // 噴射炎のグラデーションが残ると絵文字が消えるため戻す
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `${Math.round(32 * UI)}px serif`;
+  ctx.fillText(ch.emoji, 0, 0);
+  ctx.restore();
   // 発砲マズルフラッシュ(テーマ色・一瞬)
   const mz = p.muzzle || 0;
   if (mz > 0.02) {
@@ -182,9 +193,23 @@ function drawBullets() {
   const shot = rgbCss(curShot || [143, 227, 255]);
   const shotGlow = rgbCss(curShot || [143, 227, 255], 0.4);
   for (const b of game.pBullets) {
+    if (b.emoji) {   // キャラ固有の弾(🐾 ✨ 💩 など)
+      ctx.save(); ctx.translate(b.x, b.y);
+      // どの背景でも埋もれないよう、キャラ色の光背を敷く
+      const r = b.size * 2;
+      const gl = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+      gl.addColorStop(0, (b.col || '#fff') + 'cc'); gl.addColorStop(1, (b.col || '#fff') + '00');
+      ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `${Math.round(b.size * 3.2)}px serif`;
+      ctx.fillText(b.emoji, 0, 0);
+      ctx.restore();
+      continue;
+    }
+    const col = b.col || shot;
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a + Math.PI / 2);
-    ctx.fillStyle = b.opt ? 'rgba(185,103,255,0.45)' : shotGlow; ctx.fillRect(-2.5, 0, 5, 12);
-    ctx.fillStyle = b.opt ? '#e3c8ff' : shot; ctx.fillRect(-2, -5, 4, 9);
+    ctx.fillStyle = b.opt ? 'rgba(185,103,255,0.45)' : (col + '66'); ctx.fillRect(-b.size * 0.62, 0, b.size * 1.24, 12);
+    ctx.fillStyle = b.opt ? '#e3c8ff' : col; ctx.fillRect(-b.size / 2, -5, b.size, 9);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(-1, -5, 2, 7);
     ctx.restore();
   }
@@ -321,9 +346,10 @@ function drawHUD() {
     label(`${nm} ${t('approach')}`, W / 2, H / 2 + 26, '#ffb0b0', 14 * UI);
   }
   if (game.stageIndex === 0 && game.stageTime < 5200 && game.state === 'play') {
+    // 自機(画面下部)と重ならない高さに出す
     ctx.globalAlpha = clamp((5200 - game.stageTime) / 1000, 0, 0.9);
-    label(t('hint_move'), W / 2, H - 118 * UI, '#fff', 12 * UI);
-    label(t('hint_bomb'), W / 2, H - 100 * UI, '#fff', 12 * UI);
+    label(t('hint_move'), W / 2, H - 196 * UI, '#fff', 12 * UI);
+    label(t('hint_bomb'), W / 2, H - 178 * UI, '#fff', 12 * UI);
     ctx.globalAlpha = 1;
   }
 }
@@ -452,7 +478,17 @@ function drawTitle() {
     drawBtnSub('daily', bx + half + 9 * UI, by, half, h2, t('daily') + (Save.playedDailyToday() ? ' ✓' : ''), t('daily_sub'), COL.gold);
   }
   by += h2 + gap;
-  drawBtnSub('coop', bx, by, bw, h3, t('coop'), t('coop_sub'), COL.mint);
+  const halfB = (bw - 9 * UI) / 2;
+  drawBtnSub('coop', bx, by, halfB, h3, t('coop'), t('coop_sub'), COL.mint);
+  // キャラクター選択(いま選んでいるキャラを見せる)
+  const myc = Save.char();
+  surface(bx + halfB + 9 * UI, by, halfB, h3, { r: 14, fill: 'rgba(13,19,40,0.82)', border: myc.col, lw: 2 });
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `${Math.round(20 * UI)}px serif`;
+  ctx.fillText(myc.emoji, bx + halfB + 9 * UI + halfB / 2 - 26 * UI, by + h3 * 0.42);
+  txt(ja ? 'キャラ' : 'FIGHTER', bx + halfB + 9 * UI + halfB / 2 + 12 * UI, by + h3 * 0.37, { size: 13 * UI, weight: 700, color: myc.col, maxW: halfB - 44 * UI });
+  txt(ja ? myc.name : myc.en, bx + halfB + 9 * UI + halfB / 2, by + h3 * 0.74, { size: 10 * UI, weight: 500, color: COL.sub, maxW: halfB - 14 * UI });
+  game.menuBtns.push({ id: 'chars', x: bx + halfB + 9 * UI, y: by, w: halfB, h: h3 });
   by += h3;
 
   if (streak) {
@@ -493,6 +529,52 @@ function roundRect(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+// === キャラクター選択(スマブラ方式) ===
+function drawCharSelect() {
+  const time = game.titleAnim, ja = getLang() === 'ja';
+  nightSky('#0a0718', '#1d1436');
+  for (const s of game.stars) { ctx.fillStyle = `rgba(255,255,255,${(s.b * 0.45).toFixed(2)})`; ctx.fillRect(s.x, s.y, s.size, s.size); }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  txt(ja ? 'キャラクターをえらぶ' : 'CHOOSE YOUR FIGHTER', W / 2, H * 0.085,
+    { size: 18 * UI, weight: 800, color: COL.gold, family: FONT_DISPLAY, maxW: W * 0.9 });
+
+  game.menuBtns = [];
+  const cur = Save.charIndex();
+  const cols = 3, gap = 9 * UI;
+  const gw = Math.min(W * 0.88, 340), gx = (W - gw) / 2;
+  const cw = (gw - gap * (cols - 1)) / cols, chh = cw * 1.02;
+  const gy = H * 0.16;
+  CHARS.forEach((c, i) => {
+    const x = gx + (i % cols) * (cw + gap), y = gy + Math.floor(i / cols) * (chh + gap);
+    const sel = i === cur;
+    surface(x, y, cw, chh, { r: 14, fill: sel ? c.col : 'rgba(13,19,40,0.82)', border: sel ? '#ffffff' : 'rgba(255,255,255,0.18)', lw: sel ? 3 : 2 });
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(cw * 0.42)}px serif`;
+    ctx.fillText(c.emoji, x + cw / 2, y + chh * 0.42);
+    txt(ja ? c.name : c.en, x + cw / 2, y + chh * 0.79, { size: 10.5 * UI, weight: 700, color: sel ? '#141018' : '#e6efff', maxW: cw - 8 });
+    game.menuBtns.push({ id: 'char' + i, x, y, w: cw, h: chh });
+  });
+
+  // 選択中キャラの説明
+  const c = CHARS[cur];
+  const iy = gy + Math.ceil(CHARS.length / cols) * (chh + gap) + 16 * UI;
+  txt(ja ? c.name : c.en, W / 2, iy, { size: 17 * UI, weight: 800, color: c.col, family: FONT_DISPLAY });
+  txt(ja ? c.tag : c.tagEn, W / 2, iy + 24 * UI, { size: 12 * UI, weight: 600, color: COL.sub, maxW: W * 0.86 });
+
+  const bw = Math.min(W * 0.82, 348), bx = (W - bw) / 2;
+  let by = Math.min(H * 0.78, iy + 44 * UI);
+  const pulse = 1 + Math.sin(time * 3) * 0.01;
+  ctx.save(); ctx.translate(W / 2, by + 28 * UI); ctx.scale(pulse, pulse); ctx.translate(-W / 2, -(by + 28 * UI));
+  const gg = ctx.createLinearGradient(0, by, 0, by + 56 * UI);
+  gg.addColorStop(0, '#ffdf6b'); gg.addColorStop(1, '#f5b429');
+  surface(bx, by, bw, 56 * UI, { r: 16, fill: gg, border: null });
+  txt(ja ? 'これでいく' : 'READY', W / 2, by + 28 * UI, { size: 19 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
+  ctx.restore();
+  game.menuBtns.push({ id: 'charOk', x: bx, y: by, w: bw, h: 56 * UI });
+  by += 56 * UI + 10 * UI;
+  drawBtn('charBack', bx, by, bw, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
 }
 
 // QR をキャンバスに描く(外部ライブラリなし)
@@ -611,12 +693,23 @@ function drawCoopLobby() {
 // === ふたりでプレイ: 相方の機体(自分の画面に相方が飛ぶ) ===
 let pShots = [], pShotT = 0, pLastT = 0;
 function drawPartner() {
-  if (!game.coop || !Coop.connected) return;
+  if (!game.coop || !Coop.partnerFresh()) return;   // 情報が途絶えたら描かない(幽霊機防止)
   const p = Coop.partner;
   const now = performance.now();
   const dt = Math.min(0.05, (now - (pLastT || now)) / 1000); pLastT = now;
   const px = p.x * W, py = p.y * H;
   const a = Math.atan2(dirDef().fy, dirDef().fx);
+  const pch = CHARS[p.char] || CHARS[0];
+  // 倒れている間は機体を消し、復活待ちの印だけ出す(撃ち続ける幽霊機をなくす)
+  if (!p.alive) {
+    pShots = [];
+    ctx.save(); ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now * 0.006);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(20 * UI)}px serif`; ctx.fillText('💫', px, py);
+    ctx.restore();
+    txt(p.name, px, py - 26 * UI, { size: 9 * UI, weight: 600, color: '#8899aa', shadow: 0.8 });
+    return;
+  }
   // 相方の弾(コスメ・当たり判定なし。撃ってる感を出す)
   pShotT -= dt;
   if (p.firing && p.alive && pShotT <= 0) {
@@ -627,20 +720,18 @@ function drawPartner() {
   for (const s of pShots) {
     const d = (now - s.born) / 1000 * 540;
     const bx = s.x + Math.cos(a) * d, byy = s.y + Math.sin(a) * d;
-    ctx.fillStyle = 'rgba(255,139,208,0.4)'; ctx.beginPath(); ctx.arc(bx, byy, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#ffd7ec'; ctx.beginPath(); ctx.arc(bx, byy, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = pch.shot + '66'; ctx.beginPath(); ctx.arc(bx, byy, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(bx, byy, 2.2, 0, Math.PI * 2); ctx.fill();
   }
-  // 機体(ピンクの相方カラー・半透明で「味方」感)
-  ctx.save(); ctx.translate(px, py); ctx.rotate(a + Math.PI / 2);
-  ctx.globalAlpha = p.alive ? 0.92 : 0.3;
-  ctx.fillStyle = 'rgba(255,139,208,0.22)'; ctx.beginPath(); ctx.arc(0, 2, 16, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#e0559f'; ctx.fillRect(-6, -4, 12, 18);
-  ctx.fillStyle = '#ff8bd0'; ctx.fillRect(-4, -2, 8, 14);
-  ctx.fillStyle = '#fff0f8'; ctx.fillRect(-3, -15, 6, 13);
-  ctx.fillStyle = '#ffd23f'; ctx.fillRect(-16, 4, 10, 7); ctx.fillRect(6, 4, 10, 7);
-  ctx.restore();
+  // 相方の機体は「相方が選んだキャラ」で描く → 両方の画面で同じ姿に見える
+  ctx.save(); ctx.translate(px, py);
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = pch.col; ctx.beginPath(); ctx.arc(0, 0, 17, 0, Math.PI * 2); ctx.fill();
   ctx.globalAlpha = 1;
-  label(p.name, px, py - 32, '#ff8bd0', 9.5 * UI);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `${Math.round(26 * UI)}px serif`; ctx.fillText(pch.emoji, 0, 0);
+  ctx.restore();
+  txt(p.name, px, py - 26 * UI, { size: 9 * UI, weight: 600, color: pch.col, shadow: 0.8 });
 }
 
 // === 2人共闘: プレイ中の相方パネル ===
@@ -769,6 +860,7 @@ export function draw() {
     case 'splash': drawSplash(); break;
     case 'title': drawTitle(); break;
     case 'coop': drawCoopLobby(); break;
+    case 'chars': drawCharSelect(); break;
     case 'intro': drawIntro(); break;
     case 'play': case 'warn': {
       ctx.save(); ctx.translate(game.shakeX, game.shakeY);

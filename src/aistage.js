@@ -68,7 +68,7 @@ const THEMES = [
   { name: '恐竜ジャングル', en: 'DINO JUNGLE', emoji: '🦖', sky: ['#2f7d32', '#a5e86a'], night: ['#0f2a12', '#2c5a1e'], bg: ['🌿', '🌴', '🥚', '🦴'], en_list: ['🦕', '🐊', '🦎', '🐍'], boss: ['🦖', 'ティラノキング', 'TYRANNO KING'] },
   { name: '氷結パレス', en: 'FROST PALACE', emoji: '🧊', sky: ['#2c6fb0', '#bfe8ff'], night: ['#0b2036', '#1d4d7a'], bg: ['❄️', '🌨️', '🧊', '⛄'], en_list: ['🐧', '🦭', '❄️', '🐻‍❄️'], boss: ['🧙', 'アイスウィッチ', 'ICE WITCH'] },
   { name: 'お化け屋敷', en: 'HAUNTED HOUSE', emoji: '🏚️', sky: ['#4a2c6b', '#9b6fd4'], night: ['#1a0f2e', '#3a1f5c'], bg: ['🕯️', '🕸️', '⚰️', '🔮'], en_list: ['👻', '🧛', '🦇', '💀'], boss: ['🎃', 'パンプキングド', 'PUMPKIN LORD'] },
-  { name: 'エモジ銀河', en: 'EMOJI GALAXY', emoji: '🌠', sky: ['#1b0b3a', '#6d3bd6'], night: ['#08041a', '#2a1466'], bg: ['🪐', '⭐', '🌙', '☄️'], en_list: ['🛸', '👽', '🌟', '🚀'], boss: ['🌞', 'ソーラータイタン', 'SOLAR TITAN'] },
+  { name: 'エモジ銀河', en: 'EMOJI GALAXY', emoji: '🌠', sky: ['#1b0b3a', '#6d3bd6'], night: ['#08041a', '#2a1466'], bg: ['🪐', '⭐', '🌙', '☄️'], en_list: ['🛸', '👽', '🌟', '☄️'], boss: ['🌞', 'ソーラータイタン', 'SOLAR TITAN'] },
 ];
 
 // rng を渡すと決定論的(デイリー/URLシードで全員同じステージ)。省略時は Math.random。
