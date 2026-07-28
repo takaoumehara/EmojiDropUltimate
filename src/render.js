@@ -2,7 +2,7 @@
 // render.js — 描画(読みやすさ優先: 大きめ・視認性の高いサンセリフ)
 // ============================================================
 import { BELLS, clamp, stageTint, CHARS, STAGES } from './config.js';
-import { W, H, ctx, UI, SAFE } from './env.js';
+import { W, H, ctx, UI, SAFE, DPR } from './env.js';
 import { game } from './state.js';
 import { stage, dirDef } from './geo.js';
 import { t, getLang } from './i18n.js';
@@ -19,6 +19,12 @@ import { qrMatrix } from './qr.js';
 //   iPhone のようにダイナミックアイランドとホームバーがある端末では、
 //   H の割合で置くと上下の要素がそのまま縁の下に潜って読めなくなる。
 const vy = f => SAFE.top + (H - SAFE.top - SAFE.bottom) * f;
+
+// カラー絵文字は fillStyle の「アルファ」を掛けられて描かれる(RGBは無視される)。
+//   直前に半透明の塗りやグラデーションを使っていると、絵文字そのものが薄く滲んで
+//   「ぼやけた玉」になる。🍌 が読めなかった原因はこれ。絵文字を描く直前は必ずここを通す。
+function inkEmoji(a = 1) { ctx.fillStyle = a >= 1 ? '#ffffff' : `rgba(255,255,255,${a})`; }
+
 
 // 既定の UI 書体は幾何学サンセリフ。丸ゴシックはロゴ・祝祭表現に限定する。
 const SANS = FONT_UI;
@@ -228,18 +234,21 @@ function drawBullets() {
   const shotGlow = rgbCss(curShot || [143, 227, 255], 0.4);
   for (const b of game.pBullets) {
     if (b.emoji) {   // キャラ固有の弾(💧 🥖 🍌 など)
-      ctx.save(); ctx.translate(b.x, b.y);
-      // 絵文字弾は小さいと何を撃っているのか分からない。下限を決めて必ず読める大きさにする。
       const fs = Math.max(30, b.size * 4.2);   // 何を投げているか読める最低限の大きさ
-      // どの背景でも埋もれないよう、キャラ色の光背を敷く
-      const r = fs * 0.62;
-      const gl = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-      gl.addColorStop(0, (b.col || '#fff') + 'cc'); gl.addColorStop(1, (b.col || '#fff') + '00');
-      ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.save();
+      // 絵文字はビットマップなので、端数座標のまま描くと拡大縮小で滲む。画素に載せる。
+      ctx.translate(Math.round(b.x * DPR) / DPR, Math.round(b.y * DPR) / DPR);
+      // 下地。以前はキャラ色の光背だったが、🍌 のように弾と同系色の絵文字は
+      //   背景と同化して読めなくなる。暗い皿と細い色リングにして、絵柄の色は殺さない。
+      const r = fs * 0.58;                     // 絵柄を横切らないよう外側に回す
+      ctx.fillStyle = 'rgba(6,8,20,0.30)';
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = (b.col || '#fff') + 'aa'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      if (b.boom) ctx.rotate(b.spin || 0);      // 回っていないとブーメランに見えない
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `${Math.round(fs)}px serif`;
-      ctx.shadowColor = 'rgba(0,0,0,0.75)'; ctx.shadowBlur = 4;
-      if (b.boom) ctx.rotate(b.spin || 0);      // 回っていないとブーメランに見えない
+      inkEmoji();                                // 皿の半透明を絵文字に持ち越さない
       ctx.fillText(b.emoji, 0, 0);
       ctx.restore();
       continue;
@@ -342,6 +351,7 @@ function drawEnemies() {
   for (const e of game.enemies) {
     if (e.delay > 0) continue;
     ctx.save(); ctx.translate(e.x, e.y); ctx.font = `${e.size * 2}px serif`;
+    inkEmoji();
     if (e.blink > 0) ctx.globalAlpha = 0.25 + 0.75 * (1 - e.blink / 0.35);
     ctx.fillText(e.emoji, 0, 0);
     if (e.flash > 0) { ctx.globalAlpha = clamp(e.flash, 0, 1); ctx.fillText('✨', 0, 0); ctx.globalAlpha = 1; }
@@ -369,6 +379,7 @@ function drawBoss() {
   }
   ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(0, 0, 48, 0, Math.PI * 2); ctx.fill();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '68px serif';
+  inkEmoji();                              // オーラの半透明が乗るとボスが透けて見える
   if (b.dying > 0) ctx.globalAlpha = 0.35 + 0.4 * Math.abs(Math.sin(performance.now() * 0.02));
   ctx.fillText(stage().boss.emoji, 0, 0);
   if (b.revived) {                       // 蘇った印。同じ絵文字でも別物だと分かる
@@ -418,7 +429,9 @@ function drawBells() {
     const bt = BELLS[bl.idx];
     ctx.save(); ctx.translate(bl.x, bl.y + Math.sin(bl.phase) * 3);
     ctx.fillStyle = bt.color + '55'; ctx.beginPath(); ctx.arc(0, 0, bl.size + 5, 0, Math.PI * 2); ctx.fill();
-    ctx.font = `${bl.size * 2}px serif`; ctx.textAlign = 'center'; ctx.fillText('🔔', 0, 0);
+    ctx.font = `${bl.size * 2}px serif`; ctx.textAlign = 'center';
+    inkEmoji();                            // 光背の 55(=33%) がベルに乗って薄くなっていた
+    ctx.fillText('🔔', 0, 0);
     const locked = !game.player.dead && Math.hypot(bl.x - game.player.x, bl.y - game.player.y) < BELL_LOCK_R;
     ctx.strokeStyle = bt.color; ctx.lineWidth = locked ? 3 : 2;
     if (!locked) ctx.setLineDash([4, 4]);          // 未確定は破線、確定したら実線
@@ -918,7 +931,7 @@ function drawPartner() {
   ctx.fillStyle = pch.col; ctx.beginPath(); ctx.arc(0, 0, 17, 0, Math.PI * 2); ctx.fill();
   ctx.globalAlpha = 1;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = `${Math.round(26 * UI)}px serif`; ctx.fillText(pch.emoji, 0, 0);
+  ctx.font = `${Math.round(26 * UI)}px serif`; inkEmoji(); ctx.fillText(pch.emoji, 0, 0);   // 薄さは globalAlpha 側で付ける
   ctx.restore();
   txt(p.name, px, py - 26 * UI, { size: 9 * UI, weight: 600, color: pch.col, shadow: 0.8 });
 }
