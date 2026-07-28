@@ -1,7 +1,7 @@
 // ============================================================
 // engine.js — ゲームロジック(更新・生成・当たり判定・状態遷移)
 // ============================================================
-import { CFG, BELLS, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, MOVE_BY_EMOJI, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
+import { CFG, BELLS, MAX_LIFE_BELL, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, MOVE_BY_EMOJI, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
 import { W, H, SAFE } from './env.js';
 import { game, newGame, setGame } from './state.js';
 import { stage, dirDef, fwAngle, inAngle, isVert, latSpan, fwSpan, posFromPL, invPL, latOf, playerHome } from './geo.js';
@@ -166,6 +166,7 @@ function updatePlayer(dt, keys) {
   if (p.boost) { p.boostT -= dt * 1000; if (p.boostT <= 0) p.boost = false; }
   // ベル武装は時限式。取り続けないと維持できないので、強いまま居座らない。
   if (p.boomT > 0) p.boomT -= dt * 1000;
+  if (p.swiftT > 0) p.swiftT -= dt * 1000;
   if (p.rearT > 0) p.rearT -= dt * 1000;
   if (p.sideT > 0) p.sideT -= dt * 1000;
   p.fireT -= dt * 1000;
@@ -182,7 +183,7 @@ function fire() {
   p.muzzle = 1;
   Snd.shoot();
   const ch = Save.char();
-  const spd = CFG.BULLET_SPEED * (ch.bspeed || 1);   // 重い物ほど遅く飛ぶ = 何を投げたか見える
+  const spd = CFG.BULLET_SPEED * (ch.bspeed || 1) * (p.swiftT > 0 ? 1.5 : 1);   // 重い物ほど遅く飛ぶ = 何を投げたか見える
   const boom = p.boomT > 0;
   // dx,dy = 飛ばす向き(単位ベクトル)。うしろ撃ち・よこ撃ちはここを差し替えるだけ。
   const mk = (ox, spread = 0, dx = fx, dy = fy, smul = 1, ssize = 1) => {
@@ -194,6 +195,11 @@ function fire() {
       pierce: boom ? 1 : ch.pierce, slow: ch.slow, dmg: ch.dmg || 1,
       // 折り返す時刻を少しずらす。揃っていると団子になって1個に見える。
       boom: boom ? 1 : 0, bt: boom ? rand(0, 0.1) : 0, spin: rand(0, 6.28),
+      // キャラ固有の飛び方。ブーメラン中は飛び方を上書きしない(両立させると読めない)。
+      traj: boom ? 'straight' : (ch.traj || 'straight'),
+      bx: p.x + dx * 20 + sx * ox, by: p.y + dy * 20 + sy * ox, tt: 0,
+      side: (p.shotSide = -(p.shotSide || -1)),   // 曲がる系は1発ごとに左右を入れ替える
+      spMax: spd * smul * 2.0, beam: ch.traj === 'beam' ? 1 : 0, size0: ch.size * ssize,
     });
     game.stats.shots++;
   };
@@ -352,6 +358,15 @@ function updateEnemies(dt) {
         break;
     }
     if (e.move) applyPersonality(e, dt, e.prog - prog0);
+    // 🥖 の匂いに釣られる。まとめて集められるが、そのぶん敵はこちらへ近づいてくる。
+    for (const pb of game.pBullets) {
+      if (pb.traj !== 'lure') continue;
+      const dx = pb.x - e.x, dy = pb.y - e.y, d2 = dx * dx + dy * dy;
+      if (d2 > 150 * 150 || d2 < 1) continue;
+      const d = Math.sqrt(d2), pull = (1 - d / 150) * 120 * dt;
+      const inv = invPL(e.x + dx / d * pull, e.y + dy / d * pull);
+      e.prog = inv.prog; e.lat = inv.lat;
+    }
     const pos = posFromPL(e.prog, e.lat);
     e.x = pos.x; e.y = pos.y;
     if (e.flash > 0) e.flash -= dt * 8;
@@ -401,11 +416,12 @@ function spawnBoss() {
     phases: style.phases.map(ph => ({ attacks: shuffled(ph.attacks) })),
     ringAng: 0, spiralAng: 0,
     scale: game.coop ? 2.15 : 1,   // ふたりで挑む時は画面を圧するサイズに
-    // 「倒した」と思わせてから、一回り大きくなって蘇る。章の最後は必ず、他は約1/4。
-    //   ステージ名から決めるので、デイリーでも共闘でも全員に同じ番が回る。
-    revives: (game.stageIndex >= game.stages.length - 1
-      || hashStr('rev:' + st.name + ':' + game.stageIndex) % 100 < 26) ? 1 : 0,
+    // 「倒した」と思わせてから蘇る。1面だけで起きて2面3面で起きないと
+    //   「たまたま」に見えて驚きにならないので、**全ボスが必ず一度は蘇る**。
+    revives: 1,
     dying: 0, revived: false,
+    // 突進の予備動作。蘇ってから使う。
+    dashT: 0, dashing: 0, dashVx: 0, dashVy: 0,
   };
   // 共有ボスHPの管理はホストが正。ゲストは表示用の最大値だけ合わせる。
   if (game.coop) { if (isGuest()) Coop.bossSharedMax = hp; else Coop.initBoss(hp); }
@@ -419,6 +435,32 @@ function updateBoss(dt) {
   if (!b) return;
   BossAI.observe(dt);
   if (game.bossRevealT > 0) game.bossRevealT -= dt * 1000;
+  // 蘇ったボスの奇襲。ふつうの左右移動の途中で、いきなり高速で突っ込んでくる。
+  //   攻撃パターンを覚えても「読み切った」状態にさせないための一手。
+  if (b.revived && !b.entering && b.dying <= 0) {
+    if (b.dashing > 0) {
+      b.dashing -= dt * 1000;
+      b.x += b.dashVx * dt; b.y += b.dashVy * dt;
+      const lim = latSpan();
+      const inv = invPL(b.x, b.y);
+      b.prog = clamp(inv.prog, 40, fwSpan() * 0.62);
+      b.lat = clamp(inv.lat, 50, lim - 50);
+      if (Math.random() < dt * 24) particles(b.x, b.y, 2, b.col);
+      if (b.dashing <= 0) { b.returning = true; b.dashT = rand(3200, 5200); }
+      const pos = posFromPL(b.prog, b.lat); b.x = pos.x; b.y = pos.y;
+      return;
+    }
+    b.dashT -= dt * 1000;
+    if (b.dashT <= 0) {
+      // 自機の少し先を狙って突っ込む(完全な追尾にすると避けられない)
+      const a = Math.atan2(game.player.y - b.y, game.player.x - b.x) + rand(-0.35, 0.35);
+      const v = 900;
+      b.dashVx = Math.cos(a) * v; b.dashVy = Math.sin(a) * v;
+      b.dashing = 420; b.charging = false;
+      game.shake = Math.min(game.shake + 6, CFG.MAX_SHAKE);
+      Snd.zap();
+    }
+  }
   if (b.dying > 0) {                       // 倒したと思わせている最中
     b.dying -= dt * 1000;
     b.flash = 1;
@@ -556,9 +598,10 @@ function bossRevive() {
   b.revives--; b.revived = true; b.dying = 0;
   // 大きくなるぶん、定位置を奥へ押し下げる。そうしないとHPバーとホームボタンに
   // 頭がめり込む。共闘は元から2.15倍なので、上限を決めて画面を潰さない。
-  b.scale = Math.min((b.scale || 1) * 1.55, game.coop ? 2.7 : 1.7);
-  b.targetProg += 78; b.returning = true;
-  b.maxHp = Math.round(b.maxHp * 1.15); b.hp = b.maxHp;
+  b.scale = Math.min((b.scale || 1) * 1.75, game.coop ? 2.9 : 1.95);
+  b.targetProg += 86; b.returning = true;
+  b.maxHp = Math.round(b.maxHp * 1.45); b.hp = b.maxHp;
+  b.dashT = rand(2600, 4200);
   b.col = '#ff3b5c';
   b.phase = 2; b.atkT = 700; b.atkIdx = 0;      // いきなり最終フェーズの攻撃から
   b.phases = (b.phases || BOSS_PHASES).map(ph => ({ attacks: shuffled(ph.attacks) }));
@@ -604,6 +647,28 @@ function bossDefeated() {
 
 // === ベル ===
 const MAX_BELLS = 3;                    // 画面に溜めない。溜まると結局「無料の火力」になる
+// 追い詰められている時だけ、ベルの方から来てくれる。
+//   ボス戦で丸腰のまま殴られ続けるのは「難しい」ではなく「詰み」なので、
+//   1ステージ2回までだけ救いを入れる。取れる位置に出し、色も最初から役に立つものにする。
+const MERCY_MAX = 2, MERCY_GAP = 12000;
+function inTrouble() {
+  const p = game.player;
+  return game.lives <= 1 || (game.bossActive && p.power <= 1 && !p.shield);
+}
+function updateMercyBell(dt) {
+  if (isGuest()) return;
+  if ((game.mercyUsed || 0) >= MERCY_MAX || !inTrouble()) return;
+  game.mercyT = (game.mercyT || 0) + dt * 1000;
+  if (game.mercyT < MERCY_GAP) return;
+  game.mercyT = 0; game.mercyUsed = (game.mercyUsed || 0) + 1;
+  // 残機が本当に危ない時は LIFE、そうでなければ SHIELD から始める
+  const want = game.lives <= 1 ? 'life' : 'shield';
+  const idx = Math.max(0, BELLS.findIndex(b => b.effect === want));
+  const lat = clamp(latOf(game.player), 60, latSpan() - 60);
+  game.bells.push({ prog: 60, lat, idx, hits: 0, phase: rand(0, Math.PI * 2),
+    size: 16, x: -999, y: -999, lockFlash: 0, mercy: 1 });
+  popup(game.player.x, game.player.y - 54, getLang() === 'ja' ? '🔔 たすけ!' : '🔔 HELP!', '#ffd700');
+}
 function spawnBell() {
   if (game.bells.length >= MAX_BELLS) return;
   game.bells.push({ prog: 60, lat: rand(50, latSpan() - 50), idx: 0, hits: 0, phase: rand(0, Math.PI * 2), size: 16, x: -999, y: -999, lockFlash: 0 });
@@ -654,6 +719,8 @@ function collectBell(bell) {
     case 'shield': p.shield = true; break;
     case 'bomb': game.bombs = Math.min(game.bombs + 1, CFG.MAX_BOMBS); break;
     case 'boomerang': p.boomT = bt.duration; break;
+    case 'swift': p.swiftT = bt.duration; break;                              // 弾が速くなる
+    case 'life': game.lives = Math.min(game.lives + 1, MAX_LIFE_BELL); break;  // ボス戦の救済
     case 'rear': p.rearT = bt.duration; break;
     case 'side': p.sideT = bt.duration; break;
   }
@@ -667,6 +734,7 @@ function startStage(i) {
   game.stageTime = rs ? rs.time : 0;
   game.waveIdx = rs ? rs.wave : 0;
   game.lastBellDrop = -9999;   // ステージを跨いで持ち越さない
+  game.mercyUsed = 0; game.mercyT = 0;
   game.bossActive = false; game.warnT = 0;
   game.nextWave = 1400; game.nextBell = 6500;
   game.enemies = []; game.eBullets = []; game.pBullets = [];
@@ -685,6 +753,7 @@ function updateStage(dt) {
       const base = (2900 - game.stageIndex * 260) * Director.spawnMul / Weather.mods.spawnMul;
       game.nextWave = Math.max(1000, base + rand(-400, 400));
     }
+    updateMercyBell(dt);
     game.nextBell -= dt * 1000;
     if (game.nextBell <= 0) {
       spawnBell();
@@ -701,12 +770,120 @@ function updateStage(dt) {
   if (game.warnT > 0) { game.warnT -= dt * 1000; if (game.warnT <= 0) spawnBoss(); }
 }
 
+// 一番近い敵(半径内)。ネコの追尾に使う。
+function nearestEnemy(x, y, r) {
+  let best = null, bd = r * r;
+  for (const e of game.enemies) {
+    if (e.delay > 0) continue;
+    const dx = e.x - x, dy = e.y - y, d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+
+// キャラ固有の弾道。ここで位置まで決めるので、呼んだ側は前進させない。
+//   false を返したら寿命切れ(ピザの近距離弾など)。
+function applyTraj(b, dt) {
+  b.tt += dt;
+  const sp = Math.hypot(b.vx, b.vy);
+  switch (b.traj) {
+    case 'accel':                                   // 🚀 出は遅く、じわじわ伸びる
+      if (sp < b.spMax) { const k = 1 + dt * 2.6; b.vx *= k; b.vy *= k; }
+      break;
+    case 'grow':                                    // ✨ 進むほど大きくなる(当たり判定も)
+      b.size = Math.min(b.size0 * 2.2, b.size + dt * b.size0 * 1.5);
+      break;
+    case 'decel':                                   // 💩 重くて失速する。遠くへは届かない。
+      b.vx *= 1 - dt * 1.35; b.vy *= 1 - dt * 1.35;
+      if (sp < 90) return false;
+      break;
+    case 'scatter': {                               // 🥕 手投げなので少しずつ散る
+      const a = Math.atan2(b.vy, b.vx) + Math.sin(b.tt * 6 + b.side * 2.1) * 0.9 * dt;
+      b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
+      break;
+    }
+    case 'seek': {                                  // 🐾 近くの敵へ少しだけ曲がる
+      const t = nearestEnemy(b.x, b.y, 240);
+      if (t) {
+        const want = Math.atan2(t.y - b.y, t.x - b.x), cur = Math.atan2(b.vy, b.vx);
+        let d = want - cur;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        const na = cur + clamp(d, -2.6 * dt, 2.6 * dt);
+        b.vx = Math.cos(na) * sp; b.vy = Math.sin(na) * sp;
+      }
+      break;
+    }
+    case 'curve': {                                 // 🍌 弧を描く。まっすぐは飛ばない。
+      const a = Math.atan2(b.vy, b.vx) + 1.9 * dt * b.side;
+      b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
+      break;
+    }
+    case 'drift': {                                 // 🍃 風に流されて横へ広がる
+      const a = Math.atan2(b.vy, b.vx) + 1.15 * dt * b.side;
+      b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
+      break;
+    }
+    case 'bounce': {                                // 🦴 画面の端で跳ね返る
+      // 真上に撃つと壁に当たらず、跳ね返りが一生見えない。最初に斜めへ蹴り出す。
+      if (!b.kicked) {
+        b.kicked = 1;
+        const a0 = Math.atan2(b.vy, b.vx) + 0.30 * b.side;
+        b.vx = Math.cos(a0) * sp; b.vy = Math.sin(a0) * sp;
+      }
+      if ((b.x < 16 && b.vx < 0) || (b.x > W - 16 && b.vx > 0)) { b.vx = -b.vx; b.bounced = 1; }
+      if ((b.y < 16 && b.vy < 0) || (b.y > H - 16 && b.vy > 0)) { b.vy = -b.vy; b.bounced = 1; }
+      break;
+    }
+    case 'short':                                   // 🍕 途中で落ちる(近距離特化)
+      if (b.tt > 0.62) return false;
+      break;
+    case 'split':                                   // 🥚 割れて二手に
+      if (b.tt > 0.40) {
+        const a = Math.atan2(b.vy, b.vx);
+        for (const k of [-0.30, 0.30]) {
+          game.pBullets.push({
+            ...b, x: b.x, y: b.y, bx: b.x, by: b.y, tt: 0, traj: 'straight',
+            vx: Math.cos(a + k) * sp, vy: Math.sin(a + k) * sp,
+            size: b.size * 0.72, dmg: Math.max(1, (b.dmg || 1) - 1),
+          });
+        }
+        Snd.hit();
+        return false;
+      }
+      break;
+    case 'wave': {                                  // 💧 左右に波打ちながら貫く
+      b.bx += b.vx * dt; b.by += b.vy * dt;
+      const a = Math.atan2(b.vy, b.vx), px = -Math.sin(a), py = Math.cos(a);
+      const off = Math.sin(b.tt * 12) * 17;
+      b.x = b.bx + px * off; b.y = b.by + py * off;
+      return true;
+    }
+    case 'spiral': {                                // ❄️ 渦を巻いて進む
+      b.bx += b.vx * dt; b.by += b.vy * dt;
+      const a = Math.atan2(b.vy, b.vx), px = -Math.sin(a), py = Math.cos(a);
+      const w = b.tt * 8.5 * b.side, r = 21;
+      b.x = b.bx + px * Math.cos(w) * r + Math.cos(a) * Math.sin(w) * r * 0.4;
+      b.y = b.by + py * Math.cos(w) * r + Math.sin(a) * Math.sin(w) * r * 0.4;
+      return true;
+    }
+    // 'lure'(🥖) は敵側で処理する。弾そのものはまっすぐ飛ぶ。
+  }
+  b.x += b.vx * dt; b.y += b.vy * dt;
+  return true;
+}
+
 function updateBullets(dt) {
   const wind = Weather.mods.windLat;
   const a = fwAngle();
   const px = -Math.sin(a), py = Math.cos(a);
   for (let i = game.pBullets.length - 1; i >= 0; i--) {
     const b = game.pBullets[i];
+    if (b.traj && b.traj !== 'straight' && !b.boom) {
+      if (!applyTraj(b, dt)) { game.pBullets.splice(i, 1); continue; }
+      if (b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40) game.pBullets.splice(i, 1);
+      continue;
+    }
     if (b.boom) {
       b.bt += dt; b.spin += dt * 13;
       // 行きが終わったら折り返す。帰り道にも当たるので、前に出て撃つ価値が生まれる。

@@ -8,6 +8,7 @@ import { toggleLang, getLang } from './i18n.js';
 import { startRun, requestAIStage, startDaily, togglePause, useBomb, doContinue, toTitle, handleOverTap, openCoopLobby, startCoop } from './engine.js';
 import { Coop } from './coop.js';
 import { Save } from './save.js';
+import { CHARS } from './config.js';
 import { shareInvite } from './ui.js';
 
 // === あいことば入力(ページ内フォーム。ブラウザの prompt は使わない) ===
@@ -44,7 +45,7 @@ if (jf()) {
 
 export const keys = {};
 
-let dragging = false, last = null, lastTapT = 0;
+let dragging = false, last = null, lastTapT = 0, charSwipe = null;
 
 function hitMenu(x, y) {
   for (const b of game.menuBtns) {
@@ -56,8 +57,17 @@ function hitMenu(x, y) {
       else if (b.id === 'daily') startDaily();
       else if (b.id === 'coop') openCoopLobby();
       else if (b.id === 'chars') game.state = 'chars';
-      else if (b.id.startsWith('char') && /^char\d+$/.test(b.id)) Save.setChar(parseInt(b.id.slice(4), 10));
-      else if (b.id === 'charOk' || b.id === 'charBack') game.state = 'title';
+      else if (b.id.startsWith('char') && /^char\d+$/.test(b.id)) {
+        Save.setChar(parseInt(b.id.slice(4), 10));
+        game.charView = 'card';           // 一覧で選んだら、そのキャラのカードを見せる
+      }
+      else if (b.id === 'clearChar') { game.charReturn = 'clear'; game.charView = 'card'; game.state = 'chars'; }
+      else if (b.id === 'charGrid') game.charView = 'grid';
+      else if (b.id === 'charOk') { game.charView = 'card'; game.state = game.charReturn || 'title'; game.charReturn = null; }
+      else if (b.id === 'charBack') {
+        if (game.charView === 'grid') game.charView = 'card';
+        else { game.state = game.charReturn || 'title'; game.charReturn = null; }
+      }
       else if (b.id === 'coopEnter') openJoinForm();
       else if (b.id === 'coopJoinCancel') closeJoinForm();
       else if (b.id === 'coopDemo') Coop.mockJoin();
@@ -92,6 +102,13 @@ canvas.addEventListener('pointerdown', e => {
   Snd.init();
   const s = game.state, now = performance.now();
   if (s === 'splash') { game.state = 'title'; return; }
+  if (s === 'chars' && game.charView !== 'grid') {
+    // カードは横スワイプでめくる。指を離した時点で、動いた量が小さければタップ扱い。
+    charSwipe = { x0: e.clientX, y0: e.clientY, moved: 0 };
+    game.charDrag = 0;
+    return;
+  }
+  if (s === 'clear') { hitMenu(e.clientX, e.clientY); return; }
   if (s === 'title' || s === 'coop' || s === 'chars') { hitMenu(e.clientX, e.clientY); return; }
   if (s === 'pause') { togglePause(); return; }
   if (s === 'over' || s === 'victory') { handleOverTap(e.clientX, e.clientY); return; }
@@ -102,6 +119,11 @@ canvas.addEventListener('pointerdown', e => {
   dragging = true; last = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };
 });
 canvas.addEventListener('pointermove', e => {
+  if (charSwipe) {
+    game.charDrag = e.clientX - charSwipe.x0;
+    charSwipe.moved = Math.max(charSwipe.moved, Math.hypot(e.clientX - charSwipe.x0, e.clientY - charSwipe.y0));
+    return;
+  }
   if (!dragging || !last) return;
   const p = game.player;
   if ((game.state === 'play' || game.state === 'warn') && !p.dead) {
@@ -111,7 +133,21 @@ canvas.addEventListener('pointermove', e => {
   }
   last.x = e.clientX; last.y = e.clientY;
 });
-window.addEventListener('pointerup', () => { dragging = false; });
+window.addEventListener('pointerup', e => {
+  if (charSwipe) {
+    const dx = game.charDrag || 0;
+    if (Math.abs(dx) > 48) {                       // めくる
+      const n = CHARS.length;
+      Save.setChar(((Save.charIndex() + (dx < 0 ? 1 : -1)) % n + n) % n);
+    } else if (charSwipe.moved < 12) {             // 動いていなければタップ
+      hitMenu(e.clientX, e.clientY);
+    }
+    game.charDrag = 0; charSwipe = null;
+    dragging = false;
+    return;
+  }
+  dragging = false;
+});
 window.addEventListener('pointercancel', () => { dragging = false; });
 
 // 音量表示は設定パネル側(main.js)が担当。ここは互換のための空フック。

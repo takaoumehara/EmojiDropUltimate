@@ -81,7 +81,8 @@ function syncButtons() {
   const title = s === 'title';
   const playing = s === 'play' || s === 'warn' || s === 'pause';
   setBtn.style.display = title ? 'flex' : 'none';
-  homeBtn.style.display = (title || s === 'splash') ? 'none' : 'flex';
+  // キャラ選択はカード自身が「戻る」を持っているので、ホームボタンは隠す(カードに被る)
+  homeBtn.style.display = (title || s === 'splash' || s === 'chars') ? 'none' : 'flex';
   pauseBtn.style.display = playing ? 'flex' : 'none';
   if (!title && setPanel.classList.contains('show')) setPanel.classList.remove('show');
 }

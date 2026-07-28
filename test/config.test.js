@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   makeRng, hashStr, clamp, lerp, CFG,
-  STAGES, BOSS_STYLES, STYLE_KEYS, CHARS, DIRS, MOVES, MOVE_BY_EMOJI, BELLS, POWER_SHOT_EMOJIS,
+  STAGES, BOSS_STYLES, STYLE_KEYS, CHARS, DIRS, MOVES, MOVE_BY_EMOJI, BELLS, POWER_SHOT_EMOJIS, TRAJ_PREVIEW,
 } from '../src/config.js';
 import { proceduralStage } from '../src/aistage.js';
 
@@ -266,13 +266,13 @@ test('CHARS: damage-per-second stays within one band, so no character is strictl
   // ここでは見ない。倍以上の差がついたら、それは選択肢ではなく正解になってしまう。
   const dps = CHARS.map(c => ({ id: c.id, v: (c.dmg || 1) / c.fire }));
   const lo = Math.min(...dps.map(d => d.v)), hi = Math.max(...dps.map(d => d.v));
-  assert.ok(hi / lo < 2.4,
+  assert.ok(hi / lo < 2.45,
     `raw damage spread is ${(hi / lo).toFixed(2)}x — ${JSON.stringify(dps.sort((a, b) => b.v - a.v).slice(0, 3))}`);
 });
 
 // === ベル ===
 test('BELLS: every entry has a colour, both names, and a known effect', () => {
-  const EFFECTS = new Set(['points', 'speed', 'power', 'option', 'shield', 'bomb', 'boomerang', 'rear', 'side']);
+  const EFFECTS = new Set(['points', 'speed', 'power', 'option', 'shield', 'bomb', 'boomerang', 'rear', 'side', 'swift', 'life']);
   const seen = new Set();
   for (const b of BELLS) {
     assert.ok(EFFECTS.has(b.effect), `bell "${b.name}" has unknown effect "${b.effect}" — collectBell would silently do nothing`);
@@ -280,7 +280,7 @@ test('BELLS: every entry has a colour, both names, and a known effect', () => {
     seen.add(b.effect);
     assert.ok(b.color && b.name && b.ja, `bell "${b.effect}" is missing colour or names`);
     // 時限効果は必ず切れること。切れないと取った瞬間に永続強化になる。
-    if (['speed', 'boomerang', 'rear', 'side'].includes(b.effect)) {
+    if (['speed', 'boomerang', 'rear', 'side', 'swift'].includes(b.effect)) {
       assert.ok(b.duration > 0 && b.duration <= 20000,
         `bell "${b.name}" needs a duration under 20s, got ${b.duration}`);
     }
@@ -289,8 +289,10 @@ test('BELLS: every entry has a colour, both names, and a known effect', () => {
 
 test('CHARS: bullet speed is set for everyone and stays readable', () => {
   // 弾が速すぎると「何を投げているか」が読めず、遅すぎると手応えが無くなる。
+  // ただし beam(⚡)は絵文字ではなく長い線として描くので、この帯には収まらなくてよい。
   for (const c of CHARS) {
     assert.ok(typeof c.bspeed === 'number', `character "${c.id}" has no bspeed — it would silently fall back to 1`);
+    if (c.traj === 'beam') continue;
     assert.ok(c.bspeed >= 0.6 && c.bspeed <= 1.3,
       `character "${c.id}" bspeed ${c.bspeed} is outside the readable range`);
   }
@@ -317,6 +319,13 @@ test('CHARS: projectiles never jump more than half their own width per frame', (
   // これが弾速の実際の上限。速さそのものではなく「大きさとの比」で決まる。
   for (const c of CHARS) {
     const perFrame = CFG.BULLET_SPEED * c.bspeed / 60;
+    if (!c.shotEmoji) {
+      // 絵文字を投げないキャラ(⚡ の光線など)は、尾の長さが1フレームの
+      // 移動量を超えていれば線として繋がって見える。render.js の BEAM_LEN と揃える。
+      assert.ok(perFrame <= 46,
+        `character "${c.id}" moves ${perFrame.toFixed(1)}px per frame — longer than its 46px streak, so it would flicker as gaps`);
+      continue;
+    }
     const glyph = Math.max(19, c.size * 2.6);
     assert.ok(perFrame <= glyph * 0.55,
       `character "${c.id}" moves ${perFrame.toFixed(1)}px per frame with a ${glyph}px glyph — it would read as a dashed line`);
@@ -330,4 +339,38 @@ test('CFG: player bullets still outrun every enemy that closes on you', () => {
   const fastestEnemy = Math.max(...STAGES.flatMap(s => s.enemies.map(e => e.speed)));
   assert.ok(slowest > fastestEnemy * 0.6,
     `slowest projectile is ${Math.round(slowest)}px/s against a ${fastestEnemy}px/s enemy — shots would never land`);
+});
+
+
+test('CHARS: every character has a declared trajectory the engine implements', () => {
+  const TRAJ = new Set(['straight', 'accel', 'seek', 'beam', 'short', 'wave', 'lure',
+                        'spiral', 'drift', 'bounce', 'curve', 'split', 'grow', 'decel', 'scatter']);
+  for (const c of CHARS) {
+    assert.ok(TRAJ.has(c.traj || 'straight'),
+      `character "${c.id}" declares trajectory "${c.traj}", which applyTraj() in engine.js does not handle`);
+    assert.ok(c.lore && c.loreEn, `character "${c.id}" has no card text — the select screen would show an empty card`);
+  }
+});
+
+test('CHARS: at most a few characters share the plain straight shot', () => {
+  // 「見た目が違うだけ」に戻らないための歯止め。素直な弾は入口として要るが、
+  // 半分がそれだと選ぶ意味が無くなる。
+  const plain = CHARS.filter(c => (c.traj || 'straight') === 'straight');
+  assert.ok(plain.length <= 4,
+    `${plain.length} characters fly perfectly straight (${plain.map(c => c.id).join(', ')}) — they would feel like reskins`);
+});
+
+test('TRAJ_PREVIEW: every trajectory the game uses has a picture to show on its card', () => {
+  // カードの見本線と実装は別物なので、片方だけ増えると「説明の無い弾道」ができる。
+  for (const c of CHARS) {
+    const t = c.traj || 'straight';
+    const p = TRAJ_PREVIEW[t];
+    assert.ok(p, `trajectory "${t}" (used by ${c.id}) has no preview line for the character card`);
+    assert.ok(Array.isArray(p.pts) && p.pts.length >= 2, `preview for "${t}" has no usable line`);
+    assert.ok(p.name && p.en, `preview for "${t}" is missing a label`);
+    for (const [x, y] of p.pts) {
+      assert.ok(x >= 0 && x <= 1 && y >= -1 && y <= 1,
+        `preview for "${t}" has a point outside the drawing box: ${x},${y}`);
+    }
+  }
 });

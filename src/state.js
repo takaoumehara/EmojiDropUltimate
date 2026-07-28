@@ -39,6 +39,7 @@ export function newGame() {
     titleAnim: 0, aiLoading: false, aiMsg: null, focusHintT: 0,
     stats: { shots: 0, hits: 0, kills: 0, deathTimes: [], killTimes: [] },
     overBtns: [], menuBtns: [],
+    charView: 'card', charDrag: 0, charReturn: null,   // キャラ選択: カード/一覧・スワイプ量・戻り先
   };
 }
 

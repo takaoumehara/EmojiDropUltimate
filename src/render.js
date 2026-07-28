@@ -1,7 +1,7 @@
 // ============================================================
 // render.js — 描画(読みやすさ優先: 大きめ・視認性の高いサンセリフ)
 // ============================================================
-import { BELLS, clamp, stageTint, CHARS, STAGES } from './config.js';
+import { BELLS, clamp, stageTint, CHARS, STAGES, TRAJ_PREVIEW } from './config.js';
 import { W, H, ctx, UI, SAFE, DPR } from './env.js';
 import { game } from './state.js';
 import { stage, dirDef } from './geo.js';
@@ -19,11 +19,42 @@ import { qrMatrix } from './qr.js';
 //   iPhone のようにダイナミックアイランドとホームバーがある端末では、
 //   H の割合で置くと上下の要素がそのまま縁の下に潜って読めなくなる。
 const vy = f => SAFE.top + (H - SAFE.top - SAFE.bottom) * f;
+export const BEAM_LEN = 46;   // ⚡ の尾の長さ。1フレームの移動量より長くないと点線に見える。
 
 // カラー絵文字は fillStyle の「アルファ」を掛けられて描かれる(RGBは無視される)。
 //   直前に半透明の塗りやグラデーションを使っていると、絵文字そのものが薄く滲んで
 //   「ぼやけた玉」になる。🍌 が読めなかった原因はこれ。絵文字を描く直前は必ずここを通す。
 function inkEmoji(a = 1) { ctx.fillStyle = a >= 1 ? '#ffffff' : `rgba(255,255,255,${a})`; }
+
+// 絵文字を「絵の中心」で置く。textAlign='center' が合わせるのは字送りの中心で、
+//   🧑‍🍳 のような合字は端末によって絵の位置が字送りの中に偏る(iOSで右寄りになる)。
+//   実際に描かれる範囲(actualBoundingBox)を測って、そのぶんずらす。
+const inkCache = new Map();
+function emojiCentered(text, x, y, size, alpha = 1) {
+  const key = text + '@' + Math.round(size);
+  let m = inkCache.get(key);
+  if (!m) {
+    ctx.save();
+    ctx.font = `${Math.round(size)}px serif`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    const t = ctx.measureText(text);
+    const l = t.actualBoundingBoxLeft, r = t.actualBoundingBoxRight;
+    const a = t.actualBoundingBoxAscent, d = t.actualBoundingBoxDescent;
+    m = (Number.isFinite(l) && Number.isFinite(r) && Number.isFinite(a) && Number.isFinite(d) && (r + l) > 0)
+      ? { dx: (l - r) / 2, dy: (a - d) / 2 }      // 絵の中心が原点に来るずらし量
+      : null;                                     // 測れない環境では従来どおり
+    inkCache.set(key, m || 'none');
+    ctx.restore();
+  }
+  if (m === 'none') m = null;
+  ctx.save();
+  ctx.font = `${Math.round(size)}px serif`;
+  inkEmoji(alpha);
+  if (m) { ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(text, x + m.dx, y + m.dy); }
+  else { ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y); }
+  ctx.restore();
+}
+
 
 
 // 既定の UI 書体は幾何学サンセリフ。丸ゴシックはロゴ・祝祭表現に限定する。
@@ -211,13 +242,9 @@ function drawPlayer() {
     // 絵文字。face を持つものは絵柄が向いている角度ぶん回して機首を進行方向へ。
     if (ch.face != null) ctx.rotate(-Math.PI / 2 - ch.face);
     else ctx.rotate(-(Math.atan2(dirDef().fy, dirDef().fx) + Math.PI / 2));  // 正立のまま
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    // 🧑‍🍳 のような細かい絵柄は小さいと潰れる。大きめ＋濃い影で輪郭を立てる。
+    // 🧑‍🍳 のような細かい絵柄は小さいと潰れるので大きめに。
     //   当たり判定は hitR=7 固定なので、絵を大きくしても不利にならない。
-    ctx.font = `${Math.round(42 * UI)}px serif`;
-    ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 7;
-    ctx.fillText(ch.emoji, 0, 0);
-    ctx.shadowBlur = 0;
+    emojiCentered(ch.emoji, 0, 0, 42 * UI);
   }
   ctx.restore();
   // 発砲マズルフラッシュ(テーマ色・一瞬)
@@ -264,14 +291,21 @@ function drawBullets() {
       ctx.closePath(); ctx.fill();
       ctx.restore();
       if (b.boom) ctx.rotate(b.spin || 0);      // 回っていないとブーメランに見えない
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = `${Math.round(fs)}px serif`;
-      inkEmoji();                                // 尾のグラデーションを絵文字に持ち越さない
-      ctx.fillText(b.emoji, 0, 0);
+      emojiCentered(b.emoji, 0, 0, fs);
       ctx.restore();
       continue;
     }
     const col = b.col || shot;
+    if (b.beam) {                    // ⚡ 一直線の光。点ではなく長い線として描く。
+      const ang = Math.atan2(b.vy, b.vx);
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(ang);
+      const g2 = ctx.createLinearGradient(-BEAM_LEN, 0, 6, 0);
+      g2.addColorStop(0, col + '00'); g2.addColorStop(0.55, col + 'cc'); g2.addColorStop(1, '#ffffff');
+      ctx.fillStyle = g2; ctx.fillRect(-BEAM_LEN, -2.2, BEAM_LEN + 6, 4.4);
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(-4, -1, 10, 2);
+      ctx.restore();
+      continue;
+    }
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a + Math.PI / 2);
     ctx.fillStyle = b.opt ? 'rgba(185,103,255,0.45)' : (col + '66'); ctx.fillRect(-b.size * 0.62, 0, b.size * 1.24, 12);
     ctx.fillStyle = b.opt ? '#e3c8ff' : col; ctx.fillRect(-b.size / 2, -5, b.size, 9);
@@ -633,20 +667,28 @@ function drawTitle() {
 
   // 制覇マップ: 6つの世界のうちどこまで進んだかを一目で(=目標が見える)
   const done = Save.clearedCount(), res = Save.resumeStage();
-  const mw = Math.min(bw, 300), mx = (W - mw) / 2, my = by - 38 * UI;
+  // 19px では何のステージか読めなかったので、幅いっぱいを使って大きくする。
+  const mw = Math.min(bw, 340), mx = (W - mw) / 2, my = by - 46 * UI;
+  const cell = mw / STAGES.length;
+  const icon = Math.min(30 * UI, cell * 0.72);
   STAGES.forEach((s, i) => {
-    const cx = mx + (i + 0.5) * (mw / STAGES.length);
+    const cx = mx + (i + 0.5) * cell;
     const got = Save.isCleared(i);
+    const here = !got && i === res;
+    // 済み/現在地/未踏がひと目で分かるよう、下地を敷いて区別する
+    surface(cx - cell * 0.42, my - icon * 0.62, cell * 0.84, icon * 1.24, {
+      r: 9, fill: got ? 'rgba(124,252,0,0.13)' : here ? 'rgba(255,215,0,0.14)' : 'rgba(255,255,255,0.05)',
+      border: got ? 'rgba(124,252,0,0.5)' : here ? 'rgba(255,215,0,0.65)' : 'rgba(255,255,255,0.12)', lw: 1.5,
+    });
     ctx.save();
-    ctx.globalAlpha = got ? 1 : 0.28;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `${Math.round(19 * UI)}px serif`;
-    ctx.fillText(s.emoji, cx, my);
+    ctx.globalAlpha = got ? 1 : here ? 0.95 : 0.4;
+    emojiCentered(s.emoji, cx, my, icon);
     ctx.restore();
-    if (got) txt('✓', cx + 9 * UI, my + 8 * UI, { size: 8 * UI, weight: 800, color: '#7CFC00' });
+    if (got) txt('✓', cx + cell * 0.28, my + icon * 0.5, { size: 10 * UI, weight: 800, color: '#7CFC00' });
   });
-  txt((ja ? `第${Save.chapter() + 1}章 ・ 世界 ${done}/${STAGES.length} 制覇` : `CHAPTER ${Save.chapter() + 1} · ${done}/${STAGES.length} conquered`),
-    W / 2, my + 20 * UI, { size: 9.5 * UI, weight: 600, color: done ? COL.mint : COL.mute, track: 1, maxW: bw });
+  txt((ja ? `第${Save.chapter() + 1}章 ・ 世界 ${done}/${STAGES.length} 制覇 ・ 自動セーブ`
+          : `CHAPTER ${Save.chapter() + 1} · ${done}/${STAGES.length} conquered · autosaves`),
+    W / 2, my + icon * 0.95, { size: 9.5 * UI, weight: 600, color: done ? COL.mint : COL.mute, track: 1, maxW: bw });
 
   // 主役: 単色ゴールドの実体ボタン(迷いようがない)
   const pulse = 1 + Math.sin(time * 3) * 0.01;
@@ -743,24 +785,185 @@ function roundRect(x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
 
-// === キャラクター選択(スマブラ方式) ===
-function drawCharSelect() {
-  const time = game.titleAnim, ja = getLang() === 'ja';
-  nightSky('#0a0718', '#1d1436');
-  for (const s of game.stars) { ctx.fillStyle = `rgba(255,255,255,${(s.b * 0.45).toFixed(2)})`; ctx.fillRect(s.x, s.y, s.size, s.size); }
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  txt(ja ? 'キャラクターをえらぶ' : 'CHOOSE YOUR FIGHTER', W / 2, vy(0.085),
-    { size: 18 * UI, weight: 800, color: COL.gold, family: FONT_DISPLAY, maxW: W * 0.9 });
+// === キャラクター選択 ===
+//   一覧(16マス)と、1体ずつのカードの2画面。カードは横スワイプでめくる。
+//   「見た目が違うだけ」に見えないよう、投げる物・飛び方・数値をカードで明示する。
 
+// 4つの数値を 0..1 に正規化する。絶対値ではなく「16体の中での位置」で見せる。
+function statsOf(c) {
+  const dmgs = CHARS.map(x => (x.dmg || 1) / x.fire);
+  const rate = CHARS.map(x => 1 / x.fire);
+  const move = CHARS.map(x => x.speed);
+  const bsp = CHARS.map(x => x.bspeed);
+  const norm = (v, arr) => {
+    const lo = Math.min(...arr), hi = Math.max(...arr);
+    return hi === lo ? 0.5 : (v - lo) / (hi - lo);
+  };
+  return [
+    { ja: 'ちから', en: 'POWER', v: norm((c.dmg || 1) / c.fire, dmgs) },
+    { ja: 'れんしゃ', en: 'RATE', v: norm(1 / c.fire, rate) },
+    { ja: 'いどう', en: 'MOVE', v: norm(c.speed, move) },
+    { ja: 'たまそく', en: 'SHOT', v: norm(c.bspeed, bsp) },
+  ];
+}
+
+// 弾道の見本線。カードの中に「どう飛ぶか」を実際の線で描く。
+function drawTrajPreview(c, x, y, w, h) {
+  const tp = TRAJ_PREVIEW[c.traj || 'straight'];
+  if (!tp) return;
+  const ja = getLang() === 'ja';
+  surface(x, y, w, h, { r: 12, fill: 'rgba(6,10,24,0.55)', border: 'rgba(255,255,255,0.14)', lw: 1.5 });
+  const pad = 14 * UI;
+  const x0 = x + pad, x1 = x + w - pad, cy = y + h / 2, amp = (h / 2 - pad);
+  const P = ([px, py]) => [x0 + (x1 - x0) * px, cy + amp * py];
+  const t = performance.now() * 0.001;
+  const line = (pts, alpha) => {
+    ctx.globalAlpha = alpha; ctx.strokeStyle = c.shot; ctx.lineWidth = 2.5;
+    ctx.setLineDash(tp.fade ? [5, 4] : []);
+    ctx.beginPath();
+    pts.forEach((p, i) => { const [ax, ay] = P(p); i ? ctx.lineTo(ax, ay) : ctx.moveTo(ax, ay); });
+    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  };
+  line(tp.pts, 0.9);
+  if (tp.split) for (const seg of tp.split) line(seg, 0.9);
+  // 線の上を弾が走る(止め絵だと「飛び方」が伝わらない)
+  const k = (t % 2) / 2;
+  const walk = (pts) => {
+    let total = 0; const segs = [];
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, ay] = P(pts[i - 1]), [bx, by] = P(pts[i]);
+      const d = Math.hypot(bx - ax, by - ay); segs.push({ ax, ay, bx, by, d }); total += d;
+    }
+    let want = total * k;
+    for (const sg of segs) {
+      if (want <= sg.d) return [sg.ax + (sg.bx - sg.ax) * (want / sg.d), sg.ay + (sg.by - sg.ay) * (want / sg.d)];
+      want -= sg.d;
+    }
+    return P(pts[pts.length - 1]);
+  };
+  const drawDot = (pts) => {
+    const [dx, dy] = walk(pts);
+    const sz = tp.grow ? 13 + k * 13 : 15;
+    if (c.shotEmoji) emojiCentered(c.shotEmoji, dx, dy, sz * UI * 0.9);
+    else { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(dx, dy, 3.5, 0, Math.PI * 2); ctx.fill(); }
+  };
+  drawDot(tp.pts);
+  if (tp.split && k > 0.45) for (const seg of tp.split) drawDot(seg);
+  txt(ja ? tp.name : tp.en, x + 10 * UI, y + 11 * UI,
+    { size: 10 * UI, weight: 700, color: c.shot, align: 'left', maxW: w - 20 });
+}
+
+function drawCharCard() {
+  const ja = getLang() === 'ja';
+  const cur = Save.charIndex();
+  const drag = game.charDrag || 0;
+  const bottom = H - SAFE.bottom;
+  // 前後のカードも端だけ覗かせて「めくれる」ことを伝える
+  for (const off of [-1, 0, 1]) {
+    const i = (cur + off + CHARS.length) % CHARS.length;
+    const dx = off * W + drag;
+    if (Math.abs(dx) > W) continue;
+    ctx.save(); ctx.translate(dx, 0);
+    ctx.globalAlpha = off === 0 ? 1 : 0.45;
+    drawOneCard(CHARS[i], ja, bottom);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+  // ページ点
+  const dotY = bottom - 128 * UI;
+  const dw = Math.min(W * 0.9, 320), dx0 = (W - dw) / 2;
+  CHARS.forEach((c, i) => {
+    const x = dx0 + (dw / (CHARS.length - 1)) * i;
+    ctx.fillStyle = i === cur ? c.col : 'rgba(255,255,255,0.28)';
+    ctx.beginPath(); ctx.arc(x, dotY, i === cur ? 3.6 : 2.2, 0, Math.PI * 2); ctx.fill();
+  });
+  txt(ja ? '← スワイプでキャラを見る →' : '← swipe to browse →', W / 2, dotY - 16 * UI,
+    { size: 10 * UI, weight: 600, color: COL.mute, maxW: W * 0.9 });
+
+  // 下部のボタン(指の届く位置にまとめる)
+  game.menuBtns = [];
+  const bw = Math.min(W * 0.86, 360), bx = (W - bw) / 2;
+  let by = bottom - 112 * UI;
+  const gg = ctx.createLinearGradient(0, by, 0, by + 54 * UI);
+  gg.addColorStop(0, '#ffdf6b'); gg.addColorStop(1, '#f5b429');
+  surface(bx, by, bw, 54 * UI, { r: 16, fill: gg, border: null });
+  txt(ja ? 'これでいく' : 'READY', W / 2, by + 27 * UI,
+    { size: 19 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
+  game.menuBtns.push({ id: 'charOk', x: bx, y: by, w: bw, h: 54 * UI });
+  by += 54 * UI + 8 * UI;
+  const half = (bw - 8 * UI) / 2;
+  drawBtn('charGrid', bx, by, half, 40 * UI, ja ? '一覧で見る' : 'See all', '#61748f');
+  drawBtn('charBack', bx + half + 8 * UI, by, half, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
+}
+
+function drawOneCard(c, ja, bottom) {
+  const cw = Math.min(W * 0.9, 380), cx = (W - cw) / 2;
+  // 中身の高さぶんだけにする。余らせると間延びして読みにくい。
+  const room = bottom - 148 * UI - (SAFE.top + 8 * UI);
+  const ch2 = Math.min(room, 408 * UI);
+  // 下のボタン群のすぐ上に接地させる(上に浮かせると宙ぶらりんに見える)
+  const top = SAFE.top + 8 * UI + Math.max(0, room - ch2);
+  surface(cx, top, cw, ch2, { r: 22, fill: 'rgba(12,17,36,0.9)', border: c.col, lw: 2.5 });
+  // 上半分: 大きな絵文字と名前
+  const gy = top + ch2 * 0.045;
+  const glow = ctx.createRadialGradient(W / 2, gy + 44 * UI, 4, W / 2, gy + 44 * UI, 62 * UI);
+  glow.addColorStop(0, c.col + '55'); glow.addColorStop(1, c.col + '00');
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(W / 2, gy + 44 * UI, 62 * UI, 0, Math.PI * 2); ctx.fill();
+  emojiCentered(c.emoji, W / 2, gy + 44 * UI, 72 * UI);
+  txt(ja ? c.name : c.en, W / 2, gy + 104 * UI,
+    { size: 22 * UI, weight: 800, color: c.col, family: FONT_DISPLAY, maxW: cw - 30 });
+  txt(ja ? c.tag : c.tagEn, W / 2, gy + 130 * UI,
+    { size: 12 * UI, weight: 700, color: COL.sub, maxW: cw - 30 });
+  txt(ja ? c.lore : c.loreEn, W / 2, gy + 154 * UI,
+    { size: 11 * UI, weight: 500, color: COL.mute, maxW: cw - 40 });
+
+  // 投げる物
+  const iy = gy + 182 * UI;
+  txt(ja ? 'なげるもの' : 'THROWS', cx + 18 * UI, iy, { size: 9.5 * UI, weight: 700, color: COL.mute, align: 'left', track: 1.4 });
+  if (c.shotEmoji) emojiCentered(c.shotEmoji, cx + 32 * UI, iy + 24 * UI, 26 * UI);
+  else {
+    ctx.fillStyle = c.shot;
+    ctx.fillRect(cx + 26 * UI, iy + 14 * UI, 12 * UI, 20 * UI);
+  }
+  // 弾道の見本
+  const pw2 = cw - 82 * UI;
+  drawTrajPreview(c, cx + 62 * UI, iy + 6 * UI, pw2, 62 * UI);
+
+  // 数値
+  const sy = iy + 84 * UI;
+  statsOf(c).forEach((st, i) => {
+    const ry = sy + i * 21 * UI;
+    txt(ja ? st.ja : st.en, cx + 18 * UI, ry, { size: 9.5 * UI, weight: 700, color: COL.mute, align: 'left' });
+    const bx2 = cx + 78 * UI, bw2 = cw - 96 * UI;
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    roundRect(bx2, ry - 5 * UI, bw2, 9 * UI, 4.5 * UI); ctx.fill();
+    ctx.fillStyle = c.col;
+    roundRect(bx2, ry - 5 * UI, Math.max(9 * UI, bw2 * (0.08 + st.v * 0.92)), 9 * UI, 4.5 * UI); ctx.fill();
+  });
+  // 特記(貫通/減速/広がり)
+  const marks = [c.pierce ? (ja ? 'つらぬく' : 'PIERCE') : '', c.slow ? (ja ? 'おそくする' : 'SLOW') : '',
+                 c.spread ? (ja ? 'ひろがる' : 'WIDE') : ''].filter(Boolean);
+  if (marks.length) {
+    txt(marks.join(' · '), W / 2, sy + 4 * 21 * UI + 6 * UI,
+      { size: 10 * UI, weight: 700, color: c.shot, maxW: cw - 30 });
+  }
+}
+
+function drawCharGrid() {
+  const time = game.titleAnim, ja = getLang() === 'ja';
+  txt(ja ? 'キャラクターをえらぶ' : 'CHOOSE YOUR FIGHTER', W / 2, vy(0.075),
+    { size: 18 * UI, weight: 800, color: COL.gold, family: FONT_DISPLAY, maxW: W * 0.9 });
+  txt(ja ? 'タップでカードを見る · ステージのあいだで変えられます'
+         : 'Tap for the card · you can switch between stages',
+    W / 2, vy(0.115), { size: 10.5 * UI, weight: 600, color: COL.mute, maxW: W * 0.92 });
   game.menuBtns = [];
   const cur = Save.charIndex();
-  // キャラが増えても画面からはみ出さないよう、列数とマス目を人数から決める。
-  //   縦に入る大きさで頭打ちにするので、下の説明とボタンを押しつぶさない。
   const gap = 8 * UI;
   const cols = CHARS.length > 9 ? 4 : 3;
   const rows = Math.ceil(CHARS.length / cols);
-  const gy = vy(0.145);
-  const avail = vy(0.60) - gy;
+  const gy = vy(0.165);
+  const bottom = H - SAFE.bottom;
+  const avail = (bottom - 118 * UI) - gy;
   const cw = Math.min((Math.min(W * 0.94, 392) - gap * (cols - 1)) / cols,
                       (avail - gap * (rows - 1)) / rows / 1.02);
   const chh = cw * 1.02;
@@ -769,31 +972,30 @@ function drawCharSelect() {
     const x = gx + (i % cols) * (cw + gap), y = gy + Math.floor(i / cols) * (chh + gap);
     const sel = i === cur;
     surface(x, y, cw, chh, { r: 14, fill: sel ? c.col : 'rgba(13,19,40,0.82)', border: sel ? '#ffffff' : 'rgba(255,255,255,0.18)', lw: sel ? 3 : 2 });
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `${Math.round(cw * 0.5)}px serif`;
-    ctx.fillText(c.emoji, x + cw / 2, y + chh * 0.40);
+    emojiCentered(c.emoji, x + cw / 2, y + chh * 0.40, cw * 0.5);
     txt(ja ? c.name : c.en, x + cw / 2, y + chh * 0.82, { size: 10 * UI, weight: 700, color: sel ? '#141018' : '#e6efff', maxW: cw - 6 });
     game.menuBtns.push({ id: 'char' + i, x, y, w: cw, h: chh });
   });
-
-  // 選択中キャラの説明
-  const c = CHARS[cur];
-  const iy = gy + rows * (chh + gap) + 16 * UI;
-  txt(ja ? c.name : c.en, W / 2, iy, { size: 17 * UI, weight: 800, color: c.col, family: FONT_DISPLAY });
-  txt(ja ? c.tag : c.tagEn, W / 2, iy + 24 * UI, { size: 12 * UI, weight: 600, color: COL.sub, maxW: W * 0.86 });
-
-  const bw = Math.min(W * 0.82, 348), bx = (W - bw) / 2;
-  let by = Math.min(vy(0.78), iy + 44 * UI);
-  const pulse = 1 + Math.sin(time * 3) * 0.01;
-  ctx.save(); ctx.translate(W / 2, by + 28 * UI); ctx.scale(pulse, pulse); ctx.translate(-W / 2, -(by + 28 * UI));
-  const gg = ctx.createLinearGradient(0, by, 0, by + 56 * UI);
+  // ボタンは一番下に固定して、16マスぶんの高さを稼ぐ
+  const bw = Math.min(W * 0.86, 360), bx = (W - bw) / 2;
+  let by = bottom - 100 * UI;
+  const gg = ctx.createLinearGradient(0, by, 0, by + 52 * UI);
   gg.addColorStop(0, '#ffdf6b'); gg.addColorStop(1, '#f5b429');
-  surface(bx, by, bw, 56 * UI, { r: 16, fill: gg, border: null });
-  txt(ja ? 'これでいく' : 'READY', W / 2, by + 28 * UI, { size: 19 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
+  const pulse = 1 + Math.sin(time * 3) * 0.008;
+  ctx.save(); ctx.translate(W / 2, by + 26 * UI); ctx.scale(pulse, pulse); ctx.translate(-W / 2, -(by + 26 * UI));
+  surface(bx, by, bw, 52 * UI, { r: 16, fill: gg, border: null });
+  txt(ja ? 'これでいく' : 'READY', W / 2, by + 26 * UI, { size: 19 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
   ctx.restore();
-  game.menuBtns.push({ id: 'charOk', x: bx, y: by, w: bw, h: 56 * UI });
-  by += 56 * UI + 10 * UI;
-  drawBtn('charBack', bx, by, bw, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
+  game.menuBtns.push({ id: 'charOk', x: bx, y: by, w: bw, h: 52 * UI });
+  by += 52 * UI + 8 * UI;
+  drawBtn('charBack', bx, by, bw, 36 * UI, ja ? '戻る' : 'Back', '#61748f');
+}
+
+function drawCharSelect() {
+  nightSky('#0a0718', '#1d1436');
+  for (const s of game.stars) { ctx.fillStyle = `rgba(255,255,255,${(s.b * 0.45).toFixed(2)})`; ctx.fillRect(s.x, s.y, s.size, s.size); }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (game.charView === 'grid') drawCharGrid(); else drawCharCard();
 }
 
 // QR をキャンバスに描く(外部ライブラリなし)
@@ -988,6 +1190,19 @@ function drawClear() {
   drawBackground(); drawParticles();
   ctx.fillStyle = 'rgba(0,0,10,0.5)'; ctx.fillRect(0, 0, W, H);
   label(t('stage_clear'), W / 2, vy(0.40), '#ffd700', 26 * UI);
+  // ステージの合間はキャラを変えられる。言わないと誰も気づかない。
+  {
+    const ja2 = getLang() === 'ja';
+    const c = CHARS[Save.charIndex()];
+    txt(ja2 ? `つぎのステージまでにキャラを変えられます` : 'You can switch fighter before the next stage',
+      W / 2, vy(0.66), { size: 11 * UI, weight: 600, color: COL.mute, maxW: W * 0.86 });
+    const bw2 = Math.min(W * 0.7, 300), bx2 = (W - bw2) / 2, by2 = vy(0.70);
+    surface(bx2, by2, bw2, 44 * UI, { r: 14, fill: 'rgba(13,19,40,0.85)', border: c.col, lw: 2 });
+    emojiCentered(c.emoji, bx2 + 26 * UI, by2 + 22 * UI, 22 * UI);
+    txt(ja2 ? 'キャラを変える' : 'Change fighter', bx2 + bw2 / 2 + 12 * UI, by2 + 22 * UI,
+      { size: 13 * UI, weight: 700, color: '#e6efff', maxW: bw2 - 60 * UI });
+    game.menuBtns = [{ id: 'clearChar', x: bx2, y: by2, w: bw2, h: 44 * UI }];
+  }
   label(t('score') + ' ' + game.score, W / 2, vy(0.50), '#fff', 14 * UI);
   const next = game.stages[game.stageIndex + 1];
   if (next) label(`${t('next')}: ${next.emoji} ${next.name}`, W / 2, vy(0.58), '#8fd3ff', 12 * UI);
