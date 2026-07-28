@@ -11,9 +11,9 @@ const DICT = {
   ja: {
     start: 'タップ / SPACE でスタート',
     start_short: 'スタート',
-    endless_ai: '♾️ エンドレスAI',
+    endless_ai: 'エンドレスAI',
     endless_sub: 'AIが無限に生成',
-    daily: '🗓 デイリー',
+    daily: 'デイリー',
     daily_sub: '全員同じ面で競う',
     coop: 'ふたりでプレイ',
     coop_sub: 'あいことばで友達と一緒に',
@@ -68,9 +68,9 @@ const DICT = {
   en: {
     start: 'TAP / SPACE to Start',
     start_short: 'Start',
-    endless_ai: '♾️ Endless AI',
+    endless_ai: 'Endless AI',
     endless_sub: 'Endless AI stages',
-    daily: '🗓 Daily',
+    daily: 'Daily',
     daily_sub: 'Everyone, same stage',
     coop: 'Play together',
     coop_sub: 'Join a friend with a code',

@@ -41,6 +41,7 @@ export const Coop = {
   seed: 0,                // 共有ステージ種(ホストが発行 → startでゲストへ)
   connected: false,       // 相方と繋がったか
   p2p: false,             // 本物のP2P接続か(false=デモ)
+  joinOpen: false,        // あいことば入力フォームを出しているか
   status: '',             // ロビー表示用ステータス('signal_off'|'connecting'|'failed'|'')
   partner: {
     name: 'FRIEND', score: 0, alive: true, dmg: 0, char: 0, seenAt: 0,

@@ -235,10 +235,15 @@ export const PATTERNS = [
 //   aistage.js の THEMES)と重複させないこと。
 //   speed=移動 / fire=連射(小さいほど速い) / size=弾の大きさ /
 //   spread=追加の横広がり / pierce=貫通 / slow=命中した敵を鈍らせる
+//   art:'ship' は幾何学的な戦闘機を描く(進行方向にちゃんと機首が向く)。
+//   face は絵文字が元々向いている角度。指定すると進行方向へ回して描く。
 export const CHARS = [
-  { id: 'rocket', emoji: '🚀', name: 'ロケット', en: 'ROCKET', col: '#6cc6ff',
+  { id: 'fighter', emoji: '🛩️', name: 'ファイター', en: 'FIGHTER', col: '#6cc6ff',
     shot: '#8fe3ff', shotEmoji: null, speed: 1, fire: 1, size: 4, spread: 0, pierce: 0, slow: 0,
-    tag: 'バランス', tagEn: 'All-round' },
+    art: 'ship', tag: 'バランス', tagEn: 'All-round' },
+  { id: 'rocket', emoji: '🚀', name: 'ロケット', en: 'ROCKET', col: '#ff9d5c',
+    shot: '#ffc48f', shotEmoji: null, speed: 1.08, fire: 1.05, size: 4.6, spread: 0, pierce: 0, slow: 0,
+    face: -Math.PI / 4, tag: '加速重視', tagEn: 'Boosted' },
   { id: 'cat', emoji: '🐱', name: 'ネコ', en: 'CAT', col: '#ffb26b',
     shot: '#ffd7a8', shotEmoji: '🐾', speed: 1.3, fire: 0.95, size: 3.4, spread: 0, pierce: 0, slow: 0,
     tag: 'すばやい', tagEn: 'Fastest move' },

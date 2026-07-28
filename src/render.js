@@ -173,13 +173,25 @@ function drawPlayer() {
   const tg = ctx.createLinearGradient(0, 13, 0, 13 + th);
   tg.addColorStop(0, '#fff'); tg.addColorStop(0.35, shipCol); tg.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = tg; ctx.beginPath(); ctx.moveTo(-5, 13); ctx.lineTo(5, 13); ctx.lineTo(1, 13 + th); ctx.lineTo(-1, 13 + th); ctx.fill();
-  // 選んだキャラクターそのものが自機(向きに合わせて回転を戻し、絵文字は常に正立)
+  // 自機の描画。ここは既に「進行方向が上」になるよう回転済みの座標系。
   ctx.save();
-  ctx.rotate(-(Math.atan2(dirDef().fy, dirDef().fx) + Math.PI / 2));
   ctx.fillStyle = '#ffffff';   // 噴射炎のグラデーションが残ると絵文字が消えるため戻す
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = `${Math.round(32 * UI)}px serif`;
-  ctx.fillText(ch.emoji, 0, 0);
+  if (ch.art === 'ship') {
+    // 幾何学的な戦闘機。機首がそのまま進行方向を向く。
+    ctx.fillStyle = ch.col; ctx.fillRect(-6, -4, 12, 18);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(-4, -2, 8, 14);
+    ctx.fillStyle = '#eaf6ff'; ctx.fillRect(-3, -16, 6, 14);
+    ctx.fillStyle = ch.shot; ctx.fillRect(-2, -14, 4, 11);
+    ctx.fillStyle = '#ff5a5a'; ctx.fillRect(-18, 4, 12, 8); ctx.fillRect(6, 4, 12, 8);
+    ctx.fillStyle = '#00ffaa'; ctx.fillRect(-2, -8, 4, 6);
+  } else {
+    // 絵文字。face を持つものは絵柄が向いている角度ぶん回して機首を進行方向へ。
+    if (ch.face != null) ctx.rotate(-Math.PI / 2 - ch.face);
+    else ctx.rotate(-(Math.atan2(dirDef().fy, dirDef().fx) + Math.PI / 2));  // 正立のまま
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(32 * UI)}px serif`;
+    ctx.fillText(ch.emoji, 0, 0);
+  }
   ctx.restore();
   // 発砲マズルフラッシュ(テーマ色・一瞬)
   const mz = p.muzzle || 0;
@@ -498,11 +510,7 @@ function drawTitle() {
   ctx.font = `${Math.round(25 * UI)}px serif`;
   crew.forEach((e, i) => {
     const cx = W / 2 + (i - 2.5) * 40 * UI, cyy = ey + Math.sin(time * 2.2 + i * 0.9) * 6;
-    // 背後の淡い光で絵文字を浮かせる(暗い夜空に埋もれないように)
-    const gl = ctx.createRadialGradient(cx, cyy, 0, cx, cyy, 22 * UI);
-    gl.addColorStop(0, 'rgba(150,180,255,0.20)'); gl.addColorStop(1, 'rgba(150,180,255,0)');
-    ctx.fillStyle = gl; ctx.fillRect(cx - 22 * UI, cyy - 22 * UI, 44 * UI, 44 * UI);
-    ctx.fillText(e, cx, cyy);
+    ctx.fillText(e, cx, cyy);   // 光背は敷かない(絵文字がぼやけて見えるため)
   });
   ctx.restore();
   wordmark(W / 2, H * 0.205);
@@ -569,21 +577,15 @@ function drawTitle() {
   }
   ctx.restore();
   game.menuBtns.push({ id: res ? 'continue' : 'start', x: bx, y: by, w: bw, h: h1 });
-  if (res) {   // 最初からやり直したい人向けの小さな出口
-    txt(ja ? 'はじめから' : 'restart from stage 1', W / 2, by + h1 + 9 * UI,
-      { size: 9.5 * UI, weight: 600, color: COL.mute });
-    game.menuBtns.push({ id: 'restart', x: bx + bw * 0.28, y: by + h1 + 1 * UI, w: bw * 0.44, h: 17 * UI });
-    by += 15 * UI;
-  }
   by += h1 + gap;
 
   // 副: エンドレス / デイリー
   const half = (bw - 9 * UI) / 2;
   if (game.aiLoading) drawBtn('none', bx, by, bw, h2, t('ai_generating'), COL.violet, true, true);
-  else drawBtnSub('ai', bx, by, bw, h2, t('endless_ai'), t('endless_sub'), COL.violet);
+  else drawBtnSub('ai', bx, by, bw, h2, t('endless_ai'), t('endless_sub'), COL.violet, '♾️');
   by += h2 + gap;
   const halfB = (bw - 9 * UI) / 2;
-  drawBtnSub('coop', bx, by, halfB, h3, t('coop'), t('coop_sub'), COL.mint);
+  drawBtnSub('coop', bx, by, halfB, h3, t('coop'), t('coop_sub'), COL.mint, '👥');
   // キャラクター選択(いま選んでいるキャラを見せる)
   const myc = Save.char();
   surface(bx + halfB + 9 * UI, by, halfB, h3, { r: 14, fill: 'rgba(13,19,40,0.82)', border: myc.col, lw: 2 });
@@ -608,11 +610,28 @@ function drawTitle() {
 }
 // アイコン+ラベル(上)とサブ説明(下)の2段ボタン
 // 2段ボタン(見出し + 意味の説明)。枠は 2px の実線でクッキリ。
-function drawBtnSub(id, x, y, w, h, main, sub, color) {
+// icon は絵文字。文字と別フォントで測って「アイコン+文字」をひと塊で中央に置く。
+//   (絵文字を同じ文字列に混ぜると、絵文字の送り幅と実際の描画幅がずれて
+//    見た目が中央からずれる。日本語ラベルで特に目立った。)
+function drawBtnSub(id, x, y, w, h, main, sub, color, icon) {
   surface(x, y, w, h, { r: 14, fill: 'rgba(13,19,40,0.82)', border: color, lw: 2 });
-  const pad = 14 * UI;
-  txt(main, x + w / 2, y + h * 0.37, { size: 14.5 * UI, weight: 700, color, maxW: w - pad });
-  txt(sub, x + w / 2, y + h * 0.71, { size: 10 * UI, weight: 500, color: COL.sub, maxW: w - pad });
+  const pad = 14 * UI, cx = x + w / 2, ty = y + h * 0.37;
+  if (icon) {
+    const fs = 14.5 * UI, is = 15 * UI, gap = 6 * UI;
+    f(fs, 700);
+    const tw = ctx.measureText(main).width;
+    const total = is + gap + tw;
+    const left = cx - total / 2;
+    ctx.save();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(is)}px serif`; ctx.fillStyle = '#fff';
+    ctx.fillText(icon, left, ty);
+    ctx.restore();
+    txt(main, left + is + gap, ty, { size: fs, weight: 700, color, align: 'left' });
+  } else {
+    txt(main, cx, ty, { size: 14.5 * UI, weight: 700, color, maxW: w - pad });
+  }
+  txt(sub, cx, y + h * 0.71, { size: 10 * UI, weight: 500, color: COL.sub, maxW: w - pad });
   game.menuBtns.push({ id, x, y, w, h });
 }
 function drawBtn(id, x, y, w, h, text, color, glow, spinner = false, fs = 15 * UI) {
@@ -710,6 +729,7 @@ function drawCoopLobby() {
   for (const s of game.stars) { ctx.fillStyle = `rgba(255,255,255,${(s.b * 0.5).toFixed(2)})`; ctx.fillRect(s.x, s.y, s.size, s.size); }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const host = Coop.role === 'host';
+  const joining = Coop.joinOpen;   // 合言葉フォーム表示中は QR/コードを隠す
 
   txt(t('coop'), W / 2, H * 0.085, { size: 21 * UI, weight: 800, color: COL.mint, family: FONT_DISPLAY });
   txt(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, H * 0.122, { size: 11 * UI, weight: 500, color: COL.mute });
@@ -717,7 +737,7 @@ function drawCoopLobby() {
   game.menuBtns = [];
   const bw = Math.min(W * 0.82, 348), bx = (W - bw) / 2;
 
-  if (host) {
+  if (host && !joining) {
     // QR(かざすだけ) + あいことば
     const joinUrl = Coop.inviteUrl();
     const box = Math.min(W * 0.40, 142 * UI);
@@ -740,10 +760,12 @@ function drawCoopLobby() {
     };
     chip('coopModeStory', bx, ja ? 'オリジナル' : 'Original', Coop.mode === 'story', COL.sky);
     chip('coopModeAi', bx + half + 9 * UI, ja ? 'AI生成' : 'AI stage', Coop.mode === 'ai', COL.violet);
-  } else {
+  } else if (!joining) {
     txt(ja ? 'あいことば' : 'ROOM CODE', W / 2, H * 0.30, { size: 9.5 * UI, weight: 600, color: COL.mute, track: 1.8 });
     txt(Coop.code || '------', W / 2, H * 0.36, { size: 38 * UI, weight: 800, color: '#fff', track: 5 * UI });
   }
+
+  if (joining) return;   // 以降はHTMLフォームが担当
 
   // 接続ステータス
   const sy = H * 0.60;
@@ -785,11 +807,9 @@ function drawCoopLobby() {
     if (broke) { drawBtn('coopRetry', bx, by, bw, bh, ja ? '🔄 新しい部屋を作る' : '🔄 Open a fresh room', COL.gold); by += bh + gap; }
     else { drawBtn('coopLink', bx, by, bw, bh, ja ? '🔗 リンクを友達に送る' : '🔗 Send invite link', COL.mint); by += bh + gap; }
     drawBtn('coopEnter', bx, by, bw, bh, ja ? '🔑 友達の部屋に入る' : "🔑 Join a friend's room", COL.gold); by += bh + gap;
-    drawBtn('coopDemo', bx, by, bw, bh, ja ? '🤖 ひとりでデモ' : '🤖 Try the demo', COL.sub); by += bh + gap;
   } else {
     // ゲストが繋がらない時に手詰まりにならないよう、必ず次の手を出す
     drawBtn('coopRetry', bx, by, bw, bh, ja ? '🔄 もう一度つなぐ' : '🔄 Reconnect', COL.gold); by += bh + gap;
-    drawBtn('coopDemo', bx, by, bw, bh, ja ? '🤖 ひとりでデモ' : '🤖 Try the demo', COL.sub); by += bh + gap;
   }
   drawBtn('coopBack', bx, by, bw, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
 }

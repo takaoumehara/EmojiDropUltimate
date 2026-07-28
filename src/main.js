@@ -56,10 +56,21 @@ function syncSettings() {
   document.getElementById('setSoundV').textContent = Snd.muted ? 'OFF' : 'ON';
   document.getElementById('setLangL').textContent = ja ? '言語' : 'Language';
   document.getElementById('setLangV').textContent = ja ? '日本語' : 'English';
+  document.getElementById('setResetL').textContent = ja ? '進行データを消す' : 'Clear progress';
+  document.getElementById('setResetV').textContent = ja ? 'リセット' : 'RESET';
 }
 setBtn.addEventListener('click', e => { e.stopPropagation(); Snd.init(); setPanel.classList.toggle('show'); syncSettings(); });
 document.getElementById('setSound').addEventListener('click', () => { Snd.init(); updateMuteIcon(Snd.toggleMute()); syncSettings(); });
 document.getElementById('setLang').addEventListener('click', () => { Snd.init(); toggleLang(); syncSettings(); });
+// 章の進行を消して第1章からやり直す(タイトルの極小ボタンより誤爆しない)
+document.getElementById('setReset').addEventListener('click', () => {
+  const ja = getLang() === 'ja';
+  if (!confirm(ja ? '章の進行をすべて消して、第1章の最初からやり直しますか?' : 'Clear all chapter progress and start over from Chapter 1?')) return;
+  Save.data.cleared = 0; Save.data.resume = 0; Save.data.chapter = 0;
+  Save.persist();
+  setPanel.classList.remove('show');
+  toTitle();
+});
 document.addEventListener('pointerdown', e => {
   if (setPanel.classList.contains('show') && !setPanel.contains(e.target) && e.target !== setBtn) setPanel.classList.remove('show');
 }, true);

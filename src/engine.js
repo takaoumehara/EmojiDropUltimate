@@ -18,6 +18,13 @@ import { openShare } from './ui.js';
 import { Coop } from './coop.js';
 
 // ストレージ無効環境でも落ちないように
+// 配列を複製してシャッフル(元データは壊さない)
+function shuffled(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = randInt(0, i); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
 function trySetHi(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
 const COOP_HP_MUL = 2.2; // 共闘ボスは二人がかり前提で硬くする
@@ -308,7 +315,10 @@ function spawnBoss() {
     hp, maxHp: hp, phase: 0,
     atkT: 900, atkIdx: 0, flash: 0, entering: true,
     charging: false, chargeTo: null, returning: false, x: -999, y: -999,
-    style: styleKey, col: style.col, shape: style.shape, phases: style.phases, ringAng: 0, spiralAng: 0,
+    style: styleKey, col: style.col, shape: style.shape,
+    // 出現ごとに攻撃の並びを混ぜる → 同じボスでも毎回パターンが読めない
+    phases: style.phases.map(ph => ({ attacks: shuffled(ph.attacks) })),
+    ringAng: 0, spiralAng: 0,
     scale: game.coop ? 2.15 : 1,   // ふたりで挑む時は画面を圧するサイズに
   };
   // 共有ボスHPの管理はホストが正。ゲストは表示用の最大値だけ合わせる。
@@ -351,7 +361,7 @@ function updateBoss(dt) {
       if (b.atkT <= 0 && !b.returning) {
         const ph = (b.phases || BOSS_PHASES)[b.phase];
         const atk = ph.attacks[b.atkIdx % ph.attacks.length];
-        b.atkT = atk.interval; b.atkIdx++;
+        b.atkT = atk.interval * rand(0.78, 1.24); b.atkIdx++;   // 間隔をゆらして読ませない
         bossAttack(b, atk);
       }
     }

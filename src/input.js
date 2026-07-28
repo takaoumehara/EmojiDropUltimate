@@ -10,6 +10,38 @@ import { Coop } from './coop.js';
 import { Save } from './save.js';
 import { shareInvite } from './ui.js';
 
+// === あいことば入力(ページ内フォーム。ブラウザの prompt は使わない) ===
+const jf = () => document.getElementById('joinForm');
+export function openJoinForm() {
+  const el = jf(); if (!el) return;
+  Coop.joinOpen = true;
+  const ja = getLang() === 'ja';
+  document.getElementById('jfTitle').textContent = ja ? 'あいことばを入力' : 'Enter the room code';
+  document.getElementById('jfSub').textContent = ja ? '友達の画面に出ている6文字' : "The 6 characters on your friend's screen";
+  document.getElementById('jfGo').textContent = ja ? '参加' : 'Join';
+  document.getElementById('jfCancel').textContent = ja ? 'やめる' : 'Cancel';
+  const inp = document.getElementById('jfInput');
+  inp.value = '';
+  el.classList.add('show');
+  setTimeout(() => inp.focus(), 30);
+}
+export function closeJoinForm() {
+  const el = jf(); if (el) el.classList.remove('show');
+  Coop.joinOpen = false;
+}
+function submitJoinForm() {
+  const inp = document.getElementById('jfInput');
+  const code = String(inp && inp.value || '').toUpperCase().replace(/[^A-Z2-9]/g, '');
+  if (code.length !== 6) { if (inp) { inp.style.borderColor = '#ff6b6b'; setTimeout(() => { inp.style.borderColor = ''; }, 900); } return; }
+  closeJoinForm();
+  Coop.join(code);
+}
+if (jf()) {
+  document.getElementById('jfGo').addEventListener('click', submitJoinForm);
+  document.getElementById('jfCancel').addEventListener('click', closeJoinForm);
+  document.getElementById('jfInput').addEventListener('keydown', e => { if (e.key === 'Enter') submitJoinForm(); });
+}
+
 export const keys = {};
 
 let dragging = false, last = null, lastTapT = 0;
@@ -26,10 +58,8 @@ function hitMenu(x, y) {
       else if (b.id === 'chars') game.state = 'chars';
       else if (b.id.startsWith('char') && /^char\d+$/.test(b.id)) Save.setChar(parseInt(b.id.slice(4), 10));
       else if (b.id === 'charOk' || b.id === 'charBack') game.state = 'title';
-      else if (b.id === 'coopEnter') { // ゲスト: あいことばで参加
-        const c = prompt(getLang() === 'ja' ? 'あいことば(6文字)を入力' : 'Enter the 6-char code');
-        if (c) Coop.join(c);
-      }
+      else if (b.id === 'coopEnter') openJoinForm();
+      else if (b.id === 'coopJoinCancel') closeJoinForm();
       else if (b.id === 'coopDemo') Coop.mockJoin();
       else if (b.id === 'coopLink') shareInvite(Coop.inviteUrl(), Coop.code);
       else if (b.id === 'coopStart') { if (Coop.requestStart()) startCoop(); }
