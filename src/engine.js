@@ -533,11 +533,13 @@ function hitBell(bell) {
   bell.prog -= 26;                     // 撃てば押し戻せるのはそのまま
   if (bellLocked(bell)) {              // ロック中は色を変えない
     bell.lockFlash = 1;
+    Snd.bellLocked();                  // 当たってはいるが色は動かない、を音でも
     particles(bell.x, bell.y, 2, '#ffffff');
     return;
   }
   bell.hits++; bell.idx = (bell.idx + 1) % BELLS.length;
-  Snd.bell(); particles(bell.x, bell.y, 3, BELLS[bell.idx].color);
+  Snd.bell(bell.idx);                  // 色が進むほど音が上がるので、目を離していても耳で追える
+  particles(bell.x, bell.y, 3, BELLS[bell.idx].color);
 }
 function collectBell(bell) {
   const bt = BELLS[bell.idx], p = game.player;
