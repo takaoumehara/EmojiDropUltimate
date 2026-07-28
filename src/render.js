@@ -1,7 +1,7 @@
 // ============================================================
 // render.js — 描画(読みやすさ優先: 大きめ・視認性の高いサンセリフ)
 // ============================================================
-import { BELLS, clamp, stageTint, CHARS } from './config.js';
+import { BELLS, clamp, stageTint, CHARS, STAGES } from './config.js';
 import { W, H, ctx, UI } from './env.js';
 import { game } from './state.js';
 import { stage, dirDef } from './geo.js';
@@ -451,10 +451,27 @@ function drawTitle() {
   let h1 = 64 * UI, h2 = 58 * UI, h3 = 52 * UI, gap = 11 * UI;
   let top = wy + 48 * UI;
   const avail = H * 0.885 - top;
-  const need = h1 + gap + h2 + gap + h3 + (streak ? 26 * UI : 0);
+  const need = h1 + gap + h2 + gap + h3 + (streak ? 26 * UI : 0) + 44 * UI;
   if (need > avail) { const k = avail / need; h1 *= k; h2 *= k; h3 *= k; gap *= k; }
   else top += (avail - need) * 0.4;
   let by = top;
+
+  // 制覇マップ: 6つの世界のうちどこまで進んだかを一目で(=目標が見える)
+  const done = Save.clearedCount(), res = Save.resumeStage();
+  const mw = Math.min(bw, 300), mx = (W - mw) / 2, my = by - 38 * UI;
+  STAGES.forEach((s, i) => {
+    const cx = mx + (i + 0.5) * (mw / STAGES.length);
+    const got = Save.isCleared(i);
+    ctx.save();
+    ctx.globalAlpha = got ? 1 : 0.28;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(19 * UI)}px serif`;
+    ctx.fillText(s.emoji, cx, my);
+    ctx.restore();
+    if (got) txt('✓', cx + 9 * UI, my + 8 * UI, { size: 8 * UI, weight: 800, color: '#7CFC00' });
+  });
+  txt(ja ? `世界 ${done}/${STAGES.length} 制覇` : `${done}/${STAGES.length} worlds conquered`,
+    W / 2, my + 20 * UI, { size: 9.5 * UI, weight: 600, color: done ? COL.mint : COL.mute, track: 1 });
 
   // 主役: 単色ゴールドの実体ボタン(迷いようがない)
   const pulse = 1 + Math.sin(time * 3) * 0.01;
@@ -465,9 +482,21 @@ function drawTitle() {
   gg.addColorStop(0, '#ffdf6b'); gg.addColorStop(1, '#f5b429');
   surface(bx, by, bw, h1, { r: 16, fill: gg, border: null });
   ctx.shadowBlur = 0;
-  txt(t('start_short'), W / 2, by + h1 / 2, { size: 21 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
+  if (res) {   // 続きがある時は「つづきから」を主役に
+    txt(ja ? 'つづきから' : 'CONTINUE', W / 2, by + h1 * 0.38, { size: 19 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
+    txt(ja ? `ステージ ${res + 1}  ${STAGES[res].emoji} ${STAGES[res].name}` : `Stage ${res + 1}  ${STAGES[res].emoji} ${STAGES[res].en}`,
+      W / 2, by + h1 * 0.73, { size: 10.5 * UI, weight: 600, color: 'rgba(32,24,10,0.75)', maxW: bw - 20 * UI });
+  } else {
+    txt(t('start_short'), W / 2, by + h1 / 2, { size: 21 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
+  }
   ctx.restore();
-  game.menuBtns.push({ id: 'start', x: bx, y: by, w: bw, h: h1 });
+  game.menuBtns.push({ id: res ? 'continue' : 'start', x: bx, y: by, w: bw, h: h1 });
+  if (res) {   // 最初からやり直したい人向けの小さな出口
+    txt(ja ? 'はじめから' : 'restart from stage 1', W / 2, by + h1 + 9 * UI,
+      { size: 9.5 * UI, weight: 600, color: COL.mute });
+    game.menuBtns.push({ id: 'restart', x: bx + bw * 0.28, y: by + h1 + 1 * UI, w: bw * 0.44, h: 17 * UI });
+    by += 15 * UI;
+  }
   by += h1 + gap;
 
   // 副: エンドレス / デイリー

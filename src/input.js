@@ -18,6 +18,8 @@ function hitMenu(x, y) {
   for (const b of game.menuBtns) {
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
       if (b.id === 'start') startRun();
+      else if (b.id === 'continue') startRun(Save.resumeStage());
+      else if (b.id === 'restart') startRun(0);
       else if (b.id === 'ai') requestAIStage();
       else if (b.id === 'daily') startDaily();
       else if (b.id === 'coop') openCoopLobby();

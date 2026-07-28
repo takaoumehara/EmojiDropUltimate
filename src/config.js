@@ -246,7 +246,7 @@ export const CHARS = [
     shot: '#fff2a0', shotEmoji: null, speed: 1.05, fire: 0.62, size: 3, spread: 0, pierce: 0, slow: 0,
     tag: '連射', tagEn: 'Rapid fire' },
   { id: 'pizza', emoji: '🍕', name: 'ピザ', en: 'PIZZA', col: '#ff8a4d',
-    shot: '#ffc07a', shotEmoji: null, speed: 0.92, fire: 1.12, size: 4.2, spread: 1, pierce: 0, slow: 0,
+    shot: '#ffc07a', shotEmoji: null, speed: 0.92, fire: 1.45, size: 4.2, spread: 1, pierce: 0, slow: 0,
     tag: '横に広い', tagEn: 'Wide shot' },
   { id: 'unicorn', emoji: '🦄', name: 'ユニコーン', en: 'UNICORN', col: '#e879f9',
     shot: '#f5b8ff', shotEmoji: '✨', speed: 1, fire: 1.25, size: 5.2, spread: 0, pierce: 1, slow: 0,

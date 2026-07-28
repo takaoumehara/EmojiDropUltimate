@@ -10,6 +10,8 @@ const DEF = {
   kills: 0, shots: 0, hits: 0, deaths: 0, runs: 0,
   streak: 0, lastPlay: '', dailyPlayed: '', dailyBest: 0,
   skin: 0, name: '', cid: '', char: 0,
+  cleared: 0,   // 制覇したステージのビットマスク(1<<i)
+  resume: 0,    // 次に挑むステージ番号(つづきから)
 };
 
 function yesterdayKey() {
@@ -69,6 +71,17 @@ export const Save = {
     this.persist();
     return SKINS[this.data.skin];
   },
+
+  // === 進行状況(遊ぶたびに前へ進む実感を残す) ===
+  isCleared(i) { return !!(this.data.cleared & (1 << i)); },
+  clearedCount() { let n = 0; for (let i = 0; i < 6; i++) if (this.isCleared(i)) n++; return n; },
+  markCleared(i, total) {
+    this.data.cleared |= (1 << i);
+    this.data.resume = Math.min(i + 1, total - 1);
+    if (this.clearedCount() >= total) this.data.resume = 0;  // 全制覇したら最初から
+    this.persist();
+  },
+  resumeStage() { const r = this.data.resume | 0; return r > 0 && r < 6 ? r : 0; },
 
   // 自機キャラクター(全員最初から選べる)
   charIndex() { const i = this.data.char | 0; return i >= 0 && i < CHARS.length ? i : 0; },

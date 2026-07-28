@@ -420,6 +420,8 @@ function bossDefeated() {
   game.eBullets = []; game.enemies = [];
   const bonus = Math.round((game.coop ? 8000 : game.endless ? 3000 * game.world : 5000 * (game.stageIndex + 1)) * Weather.mods.scoreMul);
   game.score += bonus; saveHi();
+  // ストーリー(オリジナル)は制覇したステージを記録して、次から続きを遊べる
+  if (!game.aiMode && !game.coop && !game.daily && !game.endless) Save.markCleared(game.stageIndex, game.stages.length);
   let kind;
   if (game.coop) { kind = 'coop'; recordRunEnd({}); }
   else if (game.endless) { kind = 'world'; game.world++; game.pendingStage = scaleStage(proceduralStage(), game.world); }
@@ -624,9 +626,9 @@ function saveHi() {
 }
 function freshGame() { const hi = game.hi; setGame(newGame()); game.hi = hi; Director.reset(); Save.startRun(); }
 
-export function startRun() {
+export function startRun(from = 0) {
   Snd.init(); freshGame();
-  startStage(0);
+  startStage(clamp(from, 0, STAGES.length - 1));
 }
 // エンドレスAI: 第1ワールドはサーバー(Gemini)で生成→以降はローカル手続き生成で無限連戦
 export function requestAIStage() {
