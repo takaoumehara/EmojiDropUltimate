@@ -90,7 +90,10 @@ export function proceduralStage(rng = Math.random, themeIdx = -1) {
     name: th.name, en: th.en, emoji: th.emoji, dir,
     sky: th.sky, night: th.night, bgEmojis: th.bg,
     enemies: [mk(0, 'straight'), mk(1, 'wave'), mk(2, 'shooter'), mk(3, PK(['tank', 'kamikaze']))],
-    boss: { emoji: th.boss[0], name: th.boss[1], en: th.boss[2], hp: RI(150, 210) },
+    // style も rng から決める。ここを省くと normalizeStage が Math.random() に
+    // フォールバックし、同じシードでも人によってボスの弾幕と色が変わってしまう
+    // (デイリーの「全員同じ面」と共闘の「二人に同じ世界」が壊れる)。
+    boss: { emoji: th.boss[0], name: th.boss[1], en: th.boss[2], hp: RI(150, 210), style: PK(STYLE_KEYS) },
     bpm: RI(132, 160),
   });
 }

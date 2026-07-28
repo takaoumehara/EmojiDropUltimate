@@ -1,6 +1,13 @@
 // ============================================================
 // save.js — アカウント不要のローカルセーブ(localStorage)
 //   統計・ストリーク(連続日数)・ベスト・スキン解禁を保存。
+//
+//   耐障害性メモ: Safari プライベートブラウジングやストレージ無効環境では
+//   localStorage への「読み取り」すら例外を投げることがあり(書き込みは
+//   クォータ超過でも例外を投げる)、このモジュールの外へ例外が漏れると
+//   ゲームが起動不能になる。そのため全アクセスを safeGet/safeSet でラップし、
+//   失敗時はメモリ上のフォールバックストアに静かに切り替える(セーブは
+//   永続化されないが、ゲーム自体は最後まで普通に遊べる)。
 // ============================================================
 import { SKINS, CHARS, todayKey } from './config.js';
 
@@ -15,6 +22,24 @@ const DEF = {
   chapter: 0,   // いま挑んでいる章(0=第1章)
 };
 
+// localStorage が使えない/例外を投げる場合の代替(タブ生存中のみ保持)
+const memoryStore = Object.create(null);
+
+// 読み取り: localStorage が丸ごと無い/読めない場合もモジュール外に例外を出さない
+function safeGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    return Object.prototype.hasOwnProperty.call(memoryStore, key) ? memoryStore[key] : null;
+  }
+}
+// 書き込み: メモリには常に反映(以後の safeGet が最新値を返せるように)。
+// 実ストレージへの書き込みが失敗しても静かに無視する。
+function safeSet(key, value) {
+  memoryStore[key] = value;
+  try { localStorage.setItem(key, value); } catch (e) {}
+}
+
 function yesterdayKey() {
   const d = new Date(); d.setDate(d.getDate() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -23,7 +48,7 @@ function yesterdayKey() {
 export const Save = {
   data: load(),
 
-  persist() { try { localStorage.setItem(KEY, JSON.stringify(this.data)); } catch (e) {} },
+  persist() { try { safeSet(KEY, JSON.stringify(this.data)); } catch (e) {} },
 
   // ラン開始時: ストリーク更新
   startRun() {
@@ -116,6 +141,6 @@ export const Save = {
 };
 
 function load() {
-  try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem(KEY) || '{}')); }
+  try { return Object.assign({}, DEF, JSON.parse(safeGet(KEY) || '{}')); }
   catch (e) { return { ...DEF }; }
 }

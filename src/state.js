@@ -4,12 +4,20 @@
 // ============================================================
 import { CFG, STAGES } from './config.js';
 
+// localStorage の読み取りは Safari プライベートブラウジング等で例外を投げうる。
+// ここは newGame() 呼び出し時(モジュール読込時含む)に即実行されるため、
+// 例外を握って安全側(ハイスコア未保存扱い)にフォールバックする。
+function safeHiScore() {
+  try { return parseInt(localStorage.getItem('edu_hiscore') || '0'); }
+  catch (e) { return 0; }
+}
+
 export function newGame() {
   return {
     state: 'title', // splash/title/coop/intro/play/warn/finale/clear/pause/over/victory
     splashT: 0,
     score: 0,
-    hi: parseInt(localStorage.getItem('edu_hiscore') || '0'),
+    hi: safeHiScore(),
     lives: CFG.MAX_LIVES, bombs: 1, continues: CFG.CONTINUES,
     combo: 0, comboMul: 1, lastKill: 0,
     stages: STAGES, aiMode: false, endless: false, daily: false, coop: false,
@@ -28,7 +36,7 @@ export function newGame() {
     particles: [], popups: [], bgFloats: [], stars: [],
     shakeX: 0, shakeY: 0, shake: 0, flash: 0,
     lightT: 7, boltAnim: null,
-    titleAnim: 0, aiLoading: false, aiMsg: null,
+    titleAnim: 0, aiLoading: false, aiMsg: null, focusHintT: 0,
     stats: { shots: 0, hits: 0, kills: 0, deathTimes: [], killTimes: [] },
     overBtns: [], menuBtns: [],
   };

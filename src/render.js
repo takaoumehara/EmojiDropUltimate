@@ -414,6 +414,15 @@ function drawHUD() {
     const nm = getLang() === 'ja' ? stage().boss.name : stage().boss.en;
     label(`${nm} ${t('approach')}`, W / 2, H / 2 + 26, '#ffb0b0', 14 * UI);
   }
+  // 集中モードの発見用ヒント: 初めて踏みとどまった時に一度だけ出す
+  if (game.focusHintT > 0) {
+    const k = Math.min(1, game.focusHintT / 400);
+    ctx.globalAlpha = clamp(game.focusHintT / 900, 0, 1) * 0.95;
+    const p2 = game.player;
+    txt(getLang() === 'ja' ? '止まると集中 — 攻撃力アップ' : 'Hold still to focus — more firepower',
+      W / 2, p2.y - 62 * UI, { size: 12.5 * UI, weight: 700, color: '#ffffff', shadow: 0.95, maxW: W * 0.86 });
+    ctx.globalAlpha = 1;
+  }
   if (game.stageIndex === 0 && game.stageTime < 5200 && game.state === 'play') {
     // 自機(画面下部)と重ならない高さに出す
     ctx.globalAlpha = clamp((5200 - game.stageTime) / 1000, 0, 0.9);

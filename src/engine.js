@@ -17,6 +17,9 @@ import { Leaderboard } from './leaderboard.js';
 import { openShare } from './ui.js';
 import { Coop } from './coop.js';
 
+// ストレージ無効環境でも落ちないように
+function trySetHi(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
 const COOP_HP_MUL = 2.2; // 共闘ボスは二人がかり前提で硬くする
 
 // === ふたりでプレイ: ホスト権威型の同期 ===
@@ -136,6 +139,10 @@ function updatePlayer(dt, keys) {
   const moved = Math.hypot(p.x - px0, p.y - py0) / Math.max(dt, 0.001);
   if (moved < 26) p.stillT = (p.stillT || 0) + dt * 1000; else p.stillT = 0;
   p.focus = p.stillT > 320;
+  // 初回だけヒントを出す(以後は出さない)
+  // 冒頭の操作説明が消えてから出す(重なって両方読めなくなるため)
+  if (p.focus && !Save.data.sawFocus && game.stageTime > 6000) { game.focusHintT = 2600; Save.data.sawFocus = 1; Save.persist(); }
+  if (game.focusHintT > 0) game.focusHintT -= dt * 1000;
   p.focusAnim = lerp(p.focusAnim || 0, p.focus ? 1 : 0, Math.min(1, dt * 9));
   p.trail.unshift({ x: p.x, y: p.y });
   if (p.trail.length > 40) p.trail.pop();
@@ -640,7 +647,7 @@ function updateShake(dt) {
 
 // === 状態遷移 ===
 function saveHi() {
-  if (game.score > game.hi) { game.hi = game.score; localStorage.setItem('edu_hiscore', String(game.hi)); }
+  if (game.score > game.hi) { game.hi = game.score; trySetHi('edu_hiscore', String(game.hi)); }
 }
 function freshGame() { const hi = game.hi; setGame(newGame()); game.hi = hi; Director.reset(); Save.startRun(); }
 

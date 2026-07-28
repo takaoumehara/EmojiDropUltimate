@@ -3,6 +3,10 @@
 //   翻訳文言の追加・修正はこのファイルだけで完結する。
 // ============================================================
 
+// ストレージ無効環境(Safari プライベート等)では読み書きが例外を投げる。
+function safeLang() { try { return localStorage.getItem('edu_lang'); } catch (e) { return null; } }
+function safeSetLang(v) { try { localStorage.setItem('edu_lang', v); } catch (e) {} }
+
 const DICT = {
   ja: {
     start: 'タップ / SPACE でスタート',
@@ -120,12 +124,12 @@ const DICT = {
   },
 };
 
-let lang = localStorage.getItem('edu_lang');
+let lang = safeLang();
 if (lang !== 'ja' && lang !== 'en') {
   lang = (navigator.language || '').toLowerCase().startsWith('ja') ? 'ja' : 'en';
 }
 
 export function getLang() { return lang; }
-export function setLang(l) { lang = l; localStorage.setItem('edu_lang', l); }
+export function setLang(l) { lang = l; safeSetLang(l); }
 export function toggleLang() { setLang(lang === 'ja' ? 'en' : 'ja'); return lang; }
 export function t(key) { return (DICT[lang] && DICT[lang][key]) || (DICT.ja[key] || key); }
