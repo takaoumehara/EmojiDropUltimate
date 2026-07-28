@@ -167,20 +167,31 @@ function drawPlayer() {
   // 集中リング(踏みとどまっている=火力上昇中の合図)
   const fa = p.focusAnim || 0;
   if (fa > 0.02) {
+    // 以前は白い輪を一周させていたが、指を止めている間ずっと出るので
+    //   「自機が丸で囲まれている」状態が常態になっていた。
+    //   溜まる間だけゲージとして一周させ、溜まりきったら上下の短い弧だけ残す。
     ctx.save();
-    ctx.globalAlpha = fa * 0.9;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(p.x, p.y, 30 - fa * 8, 0, Math.PI * 2); ctx.stroke();
-    ctx.globalAlpha = fa * 0.5;
-    ctx.strokeStyle = ch.shot; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(p.x, p.y, 30 - fa * 8, -Math.PI / 2, -Math.PI / 2 + fa * Math.PI * 2); ctx.stroke();
+    const r = 27 - fa * 4;
+    ctx.strokeStyle = ch.shot; ctx.lineWidth = 2.5;
+    ctx.globalAlpha = fa * 0.85;
+    if (fa < 0.96) {
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, -Math.PI / 2, -Math.PI / 2 + fa * Math.PI * 2); ctx.stroke();
+    } else {
+      const w = 0.5, ph = Math.sin(performance.now() * 0.006) * 0.14;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, -Math.PI / 2 - w + ph, -Math.PI / 2 + w + ph); ctx.stroke();
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, Math.PI / 2 - w + ph, Math.PI / 2 + w + ph); ctx.stroke();
+    }
     ctx.restore();
   }
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(dirDef().fy, dirDef().fx) + Math.PI / 2);
-  // キャラ色の光背。どんな背景でも自機を見失わないよう、しっかり出す。
-  const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, 24);
-  halo.addColorStop(0, shipCol + 'aa'); halo.addColorStop(0.55, shipCol + '55'); halo.addColorStop(1, shipCol + '00');
-  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI * 2); ctx.fill();
+  // キャラ色の光背。自機を見失わないためには要るが、真円で強く出すと
+  //   「丸で囲まれている」ようにしか見えない。薄くして、進行方向に伸ばした楕円にする。
+  //   こうすると輪ではなく“噴射の尾”として読めて、位置は同じくらい分かりやすい。
+  ctx.save(); ctx.scale(1, 1.45); ctx.translate(0, 4);
+  const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, 22);
+  halo.addColorStop(0, shipCol + '44'); halo.addColorStop(0.5, shipCol + '1e'); halo.addColorStop(1, shipCol + '00');
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
   const th = 9 + Math.sin(p.anim) * 4;
   const tg = ctx.createLinearGradient(0, 13, 0, 13 + th);
   tg.addColorStop(0, '#fff'); tg.addColorStop(0.35, shipCol); tg.addColorStop(1, 'rgba(0,0,0,0)');
@@ -234,21 +245,28 @@ function drawBullets() {
   const shotGlow = rgbCss(curShot || [143, 227, 255], 0.4);
   for (const b of game.pBullets) {
     if (b.emoji) {   // キャラ固有の弾(💧 🥖 🍌 など)
-      const fs = Math.max(30, b.size * 4.2);   // 何を投げているか読める最低限の大きさ
+      // 18px あれば何の絵文字かは判別できる(実測)。丸で囲うのも大きくするのもやめて、
+      //   ここまで小さくした。読める下限に張り付けるのが一番すっきりする。
+      const fs = Math.max(19, b.size * 2.6);
       ctx.save();
       // 絵文字はビットマップなので、端数座標のまま描くと拡大縮小で滲む。画素に載せる。
       ctx.translate(Math.round(b.x * DPR) / DPR, Math.round(b.y * DPR) / DPR);
-      // 下地。以前はキャラ色の光背だったが、🍌 のように弾と同系色の絵文字は
-      //   背景と同化して読めなくなる。暗い皿と細い色リングにして、絵柄の色は殺さない。
-      const r = fs * 0.58;                     // 絵柄を横切らないよう外側に回す
-      ctx.fillStyle = 'rgba(6,8,20,0.30)';
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = (b.col || '#fff') + 'aa'; ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      // 輪で囲むと「閉じ込められた玉」に見えて、実寸より大きく感じる。
+      //   代わりに進行方向の後ろへ短い尾を引く。飛翔体らしく見え、キャラ色も出せる。
+      const ang = Math.atan2(b.vy, b.vx);
+      ctx.save(); ctx.rotate(ang);
+      const tl = fs * 1.05, tw = fs * 0.2;
+      const gr = ctx.createLinearGradient(-tl, 0, -fs * 0.18, 0);
+      gr.addColorStop(0, (b.col || '#fff') + '00'); gr.addColorStop(1, (b.col || '#fff') + 'bb');
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.moveTo(-tl, 0); ctx.lineTo(-fs * 0.18, -tw); ctx.lineTo(-fs * 0.18, tw);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
       if (b.boom) ctx.rotate(b.spin || 0);      // 回っていないとブーメランに見えない
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `${Math.round(fs)}px serif`;
-      inkEmoji();                                // 皿の半透明を絵文字に持ち越さない
+      inkEmoji();                                // 尾のグラデーションを絵文字に持ち越さない
       ctx.fillText(b.emoji, 0, 0);
       ctx.restore();
       continue;

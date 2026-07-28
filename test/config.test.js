@@ -302,15 +302,24 @@ test('CHARS: bullet speed is set for everyone and stays readable', () => {
 });
 function avg(a) { return a.reduce((x, y) => x + y, 0) / a.length; }
 
-test('CHARS: every projectile stays on screen long enough to be recognised', () => {
-  // 絵文字は「自分の幅を横切る時間」が短すぎると、何が飛んでいるか読めない。
-  // 弾速を上げるときは、この下限を割らないかで判断する。
+test('CHARS: every projectile is drawn big enough to identify', () => {
+  // 「自分の幅を横切る時間」で見ていたが、あれは読めなかった本当の原因
+  // (fillStyle のアルファが絵文字に掛かっていた)を知る前に置いた代用の物差しだった。
+  // 実測すると 18px あれば 🍌 🥛 🥚 🥖 💧 は静止画で判別できる。そこを下限にする。
   for (const c of CHARS) {
-    const v = CFG.BULLET_SPEED * c.bspeed;
-    const glyph = Math.max(30, c.size * 4.2);      // render.js の下限と揃える
-    const ms = glyph / v * 1000;
-    assert.ok(ms >= 80,
-      `character "${c.id}" projectile crosses its own width in ${Math.round(ms)}ms — too fast to read`);
+    const glyph = Math.max(19, c.size * 2.6);    // render.js と揃える
+    assert.ok(glyph >= 18, `character "${c.id}" projectile renders at ${glyph}px — below the identifiable floor`);
+  }
+});
+
+test('CHARS: projectiles never jump more than half their own width per frame', () => {
+  // 1フレームの移動量が絵柄の幅を超えると、連続した物ではなく点線に見える。
+  // これが弾速の実際の上限。速さそのものではなく「大きさとの比」で決まる。
+  for (const c of CHARS) {
+    const perFrame = CFG.BULLET_SPEED * c.bspeed / 60;
+    const glyph = Math.max(19, c.size * 2.6);
+    assert.ok(perFrame <= glyph * 0.55,
+      `character "${c.id}" moves ${perFrame.toFixed(1)}px per frame with a ${glyph}px glyph — it would read as a dashed line`);
   }
 });
 

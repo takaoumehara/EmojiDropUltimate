@@ -169,7 +169,8 @@ function updatePlayer(dt, keys) {
   if (p.rearT > 0) p.rearT -= dt * 1000;
   if (p.sideT > 0) p.sideT -= dt * 1000;
   p.fireT -= dt * 1000;
-  if (p.fireT <= 0) { fire(); p.fireT = (p.power >= 3 ? 120 : 148) * Save.char().fire * (p.focus ? 0.55 : 1); }
+  // 連射をおよそ半分に。画面が自分の弾で埋まると、狙う必要が無くなって手応えが消える。
+  if (p.fireT <= 0) { fire(); p.fireT = (p.power >= 3 ? 235 : 300) * Save.char().fire * (p.focus ? 0.72 : 1); }
   if (p.muzzle > 0) p.muzzle -= dt * 11;
   p.anim += dt * 10;
 }
@@ -202,13 +203,11 @@ function fire() {
   // キャラ特性: 横に広い(ピザ)
   if (ch.spread) { mk(-20, -95); mk(20, 95); }
   // ベルで得た武装。撃つ方向が増えるので、囲まれても抜け道ができる。
-  //   ただし主砲と同じ密度で撒くと、自機も敵弾も自分の弾に埋もれて見えなくなる。
-  //   1発おき・少し速く・少し小さく撃って、あくまで援護に見えるようにする。
-  p.auxTick = (p.auxTick || 0) + 1;
-  if (p.auxTick % 2 === 0) {
-    if (p.rearT > 0) mk(0, 0, -fx, -fy, 1.3, 0.8);
-    if (p.sideT > 0) { mk(0, 0, px, py, 1.3, 0.8); mk(0, 0, -px, -py, 1.3, 0.8); }
-  }
+  //   以前は密度を抑えるため1発おきにしていたが、連射自体を半分にしたので
+  //   その間引きを残すと援護がほとんど出てこない。毎回撃たせる。
+  //   主砲と見分けがつくよう、少し速く・少し小さいままにしておく。
+  if (p.rearT > 0) mk(0, 0, -fx, -fy, 1.3, 0.8);
+  if (p.sideT > 0) { mk(0, 0, px, py, 1.3, 0.8); mk(0, 0, -px, -py, 1.3, 0.8); }
   for (let i = 0; i < p.options; i++) {
     const tt = p.trail[Math.min((i + 1) * 14, p.trail.length - 1)];
     if (tt) { game.pBullets.push({ x: tt.x + fx * 16, y: tt.y + fy * 16, vx: fx * CFG.BULLET_SPEED, vy: fy * CFG.BULLET_SPEED, size: 3, opt: true }); game.stats.shots++; }
