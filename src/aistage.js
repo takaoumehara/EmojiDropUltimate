@@ -3,7 +3,7 @@
 //   まず Vercel サーバーレス関数 /api/ai-stage (Gemini) に問い合わせ、
 //   失敗/未接続時は端末内でユニークなステージを手続き生成する(オフラインOK)。
 // ============================================================
-import { rand, randInt, pick, clamp, STYLE_KEYS } from './config.js';
+import { rand, randInt, pick, clamp, STYLE_KEYS, makeRng, hashStr } from './config.js';
 
 const DIRS_LIST = ['up', 'right', 'down', 'left'];
 const HEX = /^#([0-9a-fA-F]{6})$/;
@@ -72,11 +72,11 @@ const THEMES = [
 ];
 
 // rng を渡すと決定論的(デイリー/URLシードで全員同じステージ)。省略時は Math.random。
-export function proceduralStage(rng = Math.random) {
+export function proceduralStage(rng = Math.random, themeIdx = -1) {
   const R = (a, b) => rng() * (b - a) + a;
   const RI = (a, b) => Math.floor(R(a, b + 1));
   const PK = arr => arr[Math.floor(rng() * arr.length)];
-  const th = PK(THEMES);
+  const th = themeIdx >= 0 ? THEMES[themeIdx % THEMES.length] : PK(THEMES);
   const dir = PK(DIRS_LIST);
   const mk = (i, type) => ({
     type, emoji: th.en_list[i % th.en_list.length],
@@ -93,6 +93,26 @@ export function proceduralStage(rng = Math.random) {
     boss: { emoji: th.boss[0], name: th.boss[1], en: th.boss[2], hp: RI(150, 210) },
     bpm: RI(132, 160),
   });
+}
+
+// === 章(チャプター): 6ステージで1章。制覇したら次の章が開く ===
+//   第1章は手書きの6ステージ。第2章以降はテーマから決定論生成するので、
+//   誰がいつ遊んでも同じ内容になり、章が進むほど手強くなる。
+export function chapterStages(n, baseStages) {
+  if (n <= 0) return JSON.parse(JSON.stringify(baseStages));
+  // テーマが被らないよう、章ごとに決定論シャッフルしてから6つ取る
+  const order = THEMES.map((_, i) => i);
+  const shuf = makeRng(hashStr(`chapter-order-${n}`));
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(shuf() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const out = [];
+  for (let i = 0; i < 6; i++) {
+    const rng = makeRng(hashStr(`chapter-${n}-${i}`));
+    out.push(scaleStage(proceduralStage(rng, order[i]), 1 + n * 2 + i * 0.4));
+  }
+  return out;
 }
 
 // エンドレス用: ワールドが進むほど強く(世界1=等倍)

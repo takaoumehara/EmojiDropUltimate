@@ -10,7 +10,7 @@ import { Weather } from './weather.js';
 import { Director } from './director.js';
 import { BossAI } from './bossai.js';
 import { t, getLang } from './i18n.js';
-import { generateStage, proceduralStage, scaleStage } from './aistage.js';
+import { generateStage, proceduralStage, scaleStage, chapterStages } from './aistage.js';
 import { Save } from './save.js';
 import { SHARE_URL } from './sharecard.js';
 import { Leaderboard } from './leaderboard.js';
@@ -124,15 +124,23 @@ function updatePlayer(dt, keys) {
   if (keys['ArrowUp'] || keys['w'] || keys['W']) dy -= 1;
   if (keys['ArrowDown'] || keys['s'] || keys['S']) dy += 1;
   if (dx && dy) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
-  const spd = CFG.PLAYER_SPEED * (p.boost ? 1.5 : 1) * Save.char().speed * dt;
+  // === 集中モード ===
+  //   その場に踏みとどまると火力が上がる。動き回れば安全だが火力は落ちる。
+  //   指1本のまま「攻めるか避けるか」の判断が生まれる(撃つボタンは不要)。
+  const px0 = p.x, py0 = p.y;
+  const spd = CFG.PLAYER_SPEED * (p.boost ? 1.5 : 1) * Save.char().speed * (p.focus ? 0.55 : 1) * dt;
   p.x = clamp(p.x + dx * spd, 22, W - 22);
   p.y = clamp(p.y + dy * spd, 40, H - 22);
+  const moved = Math.hypot(p.x - px0, p.y - py0) / Math.max(dt, 0.001);
+  if (moved < 26) p.stillT = (p.stillT || 0) + dt * 1000; else p.stillT = 0;
+  p.focus = p.stillT > 320;
+  p.focusAnim = lerp(p.focusAnim || 0, p.focus ? 1 : 0, Math.min(1, dt * 9));
   p.trail.unshift({ x: p.x, y: p.y });
   if (p.trail.length > 40) p.trail.pop();
   if (p.inv) { p.invT -= dt * 1000; if (p.invT <= 0) p.inv = false; }
   if (p.boost) { p.boostT -= dt * 1000; if (p.boostT <= 0) p.boost = false; }
   p.fireT -= dt * 1000;
-  if (p.fireT <= 0) { fire(); p.fireT = (p.power >= 3 ? 105 : 130) * Save.char().fire; }
+  if (p.fireT <= 0) { fire(); p.fireT = (p.power >= 3 ? 105 : 130) * Save.char().fire * (p.focus ? 0.55 : 1); }
   if (p.muzzle > 0) p.muzzle -= dt * 11;
   p.anim += dt * 10;
 }
@@ -420,12 +428,15 @@ function bossDefeated() {
   game.eBullets = []; game.enemies = [];
   const bonus = Math.round((game.coop ? 8000 : game.endless ? 3000 * game.world : 5000 * (game.stageIndex + 1)) * Weather.mods.scoreMul);
   game.score += bonus; saveHi();
-  // ストーリー(オリジナル)は制覇したステージを記録して、次から続きを遊べる
-  if (!game.aiMode && !game.coop && !game.daily && !game.endless) Save.markCleared(game.stageIndex, game.stages.length);
+  // ストーリー(章モード)は制覇を記録。章を全制覇したら勝利演出 → 次章が開く。
+  let chapterDone = false;
+  const story = !game.aiMode && !game.coop && !game.daily && !game.endless;
+  if (story) chapterDone = Save.markCleared(game.stageIndex, game.stages.length);
   let kind;
   if (game.coop) { kind = 'coop'; recordRunEnd({}); }
   else if (game.endless) { kind = 'world'; game.world++; game.pendingStage = scaleStage(proceduralStage(), game.world); }
   else if (game.daily) { kind = 'victory'; recordRunEnd({ daily: true }); }
+  else if (story) { kind = chapterDone ? 'victory' : 'stage'; if (chapterDone) recordRunEnd({}); }
   else if (game.stageIndex >= game.stages.length - 1) { kind = 'victory'; recordRunEnd({}); }
   else kind = 'stage';
   const big = kind === 'victory' || kind === 'coop';
@@ -628,7 +639,9 @@ function freshGame() { const hi = game.hi; setGame(newGame()); game.hi = hi; Dir
 
 export function startRun(from = 0) {
   Snd.init(); freshGame();
-  startStage(clamp(from, 0, STAGES.length - 1));
+  game.stages = chapterStages(Save.chapter(), STAGES);   // 章ごとに6ステージ
+  game.chapter = Save.chapter();
+  startStage(clamp(from, 0, game.stages.length - 1));
 }
 // エンドレスAI: 第1ワールドはサーバー(Gemini)で生成→以降はローカル手続き生成で無限連戦
 export function requestAIStage() {

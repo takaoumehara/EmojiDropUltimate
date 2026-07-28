@@ -152,6 +152,18 @@ function drawPlayer() {
     txt(getLang() === 'ja' ? 'じぶん' : 'YOU', p.x, p.y + 30, { size: 8.5 * UI, weight: 700, color: '#ffffff', shadow: 0.9 });
   }
   const shipCol = ch.col;
+  // 集中リング(踏みとどまっている=火力上昇中の合図)
+  const fa = p.focusAnim || 0;
+  if (fa > 0.02) {
+    ctx.save();
+    ctx.globalAlpha = fa * 0.9;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 30 - fa * 8, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = fa * 0.5;
+    ctx.strokeStyle = ch.shot; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 30 - fa * 8, -Math.PI / 2, -Math.PI / 2 + fa * Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(dirDef().fy, dirDef().fx) + Math.PI / 2);
   // キャラ色の光背。どんな背景でも自機を見失わないよう、しっかり出す。
   const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, 24);
@@ -470,8 +482,8 @@ function drawTitle() {
     ctx.restore();
     if (got) txt('✓', cx + 9 * UI, my + 8 * UI, { size: 8 * UI, weight: 800, color: '#7CFC00' });
   });
-  txt(ja ? `世界 ${done}/${STAGES.length} 制覇` : `${done}/${STAGES.length} worlds conquered`,
-    W / 2, my + 20 * UI, { size: 9.5 * UI, weight: 600, color: done ? COL.mint : COL.mute, track: 1 });
+  txt((ja ? `第${Save.chapter() + 1}章 ・ 世界 ${done}/${STAGES.length} 制覇` : `CHAPTER ${Save.chapter() + 1} · ${done}/${STAGES.length} conquered`),
+    W / 2, my + 20 * UI, { size: 9.5 * UI, weight: 600, color: done ? COL.mint : COL.mute, track: 1, maxW: bw });
 
   // 主役: 単色ゴールドの実体ボタン(迷いようがない)
   const pulse = 1 + Math.sin(time * 3) * 0.01;
@@ -502,10 +514,7 @@ function drawTitle() {
   // 副: エンドレス / デイリー
   const half = (bw - 9 * UI) / 2;
   if (game.aiLoading) drawBtn('none', bx, by, bw, h2, t('ai_generating'), COL.violet, true, true);
-  else {
-    drawBtnSub('ai', bx, by, half, h2, t('endless_ai'), t('endless_sub'), COL.violet);
-    drawBtnSub('daily', bx + half + 9 * UI, by, half, h2, t('daily') + (Save.playedDailyToday() ? ' ✓' : ''), t('daily_sub'), COL.gold);
-  }
+  else drawBtnSub('ai', bx, by, bw, h2, t('endless_ai'), t('endless_sub'), COL.violet);
   by += h2 + gap;
   const halfB = (bw - 9 * UI) / 2;
   drawBtnSub('coop', bx, by, halfB, h3, t('coop'), t('coop_sub'), COL.mint);
@@ -868,7 +877,15 @@ function drawVictory() {
   drawParticles();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(52 * UI)}px serif`;
   ctx.fillText(game.coop ? '👥' : '🏆', W / 2, H * 0.24);
-  label(game.coop ? (getLang() === 'ja' ? `${Coop.partner.name} と共闘クリア!` : `Co-op clear with ${Coop.partner.name}!`) : (game.aiMode ? t('ai_clear') : t('all_clear')), W / 2, H * 0.35, '#ffd700', game.coop ? 18 * UI : 24 * UI);
+  const jaV = getLang() === 'ja';
+  const vTitle = game.coop ? (jaV ? `${Coop.partner.name} と共闘クリア!` : `Co-op clear with ${Coop.partner.name}!`)
+    : game.aiMode ? t('ai_clear')
+      : (jaV ? `第${(game.chapter | 0) + 1}章 制覇!` : `CHAPTER ${(game.chapter | 0) + 1} CONQUERED!`);
+  label(vTitle, W / 2, H * 0.35, '#ffd700', game.coop ? 18 * UI : 22 * UI);
+  if (!game.coop && !game.aiMode) {
+    label(jaV ? `▶ 第${(game.chapter | 0) + 2}章 が開放されました` : `▶ Chapter ${(game.chapter | 0) + 2} unlocked`,
+      W / 2, H * 0.40, '#7CFC00', 13 * UI);
+  }
   label(t('final_score') + ' ' + game.score, W / 2, H * 0.45, '#fff', 14 * UI);
   const rank = game.score >= 180000 ? 'S' : game.score >= 120000 ? 'A' : game.score >= 70000 ? 'B' : 'C';
   label(t('rank') + ' ' + rank, W / 2, H * 0.55, { S: '#ffd700', A: '#ff66aa', B: '#8fd3ff', C: '#99cc99' }[rank], 38 * UI);

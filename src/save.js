@@ -10,8 +10,9 @@ const DEF = {
   kills: 0, shots: 0, hits: 0, deaths: 0, runs: 0,
   streak: 0, lastPlay: '', dailyPlayed: '', dailyBest: 0,
   skin: 0, name: '', cid: '', char: 0,
-  cleared: 0,   // 制覇したステージのビットマスク(1<<i)
+  cleared: 0,   // 現在の章で制覇したステージのビットマスク(1<<i)
   resume: 0,    // 次に挑むステージ番号(つづきから)
+  chapter: 0,   // いま挑んでいる章(0=第1章)
 };
 
 function yesterdayKey() {
@@ -72,14 +73,18 @@ export const Save = {
     return SKINS[this.data.skin];
   },
 
-  // === 進行状況(遊ぶたびに前へ進む実感を残す) ===
+  // === 進行状況: 6ステージ = 1章。章を制覇すると次の章が開く ===
+  chapter() { return this.data.chapter | 0; },
   isCleared(i) { return !!(this.data.cleared & (1 << i)); },
   clearedCount() { let n = 0; for (let i = 0; i < 6; i++) if (this.isCleared(i)) n++; return n; },
+  // ステージ制覇を記録。章を全制覇したら true を返す(勝利演出→次章解放)
   markCleared(i, total) {
     this.data.cleared |= (1 << i);
-    this.data.resume = Math.min(i + 1, total - 1);
-    if (this.clearedCount() >= total) this.data.resume = 0;  // 全制覇したら最初から
+    const done = this.clearedCount() >= total;
+    if (done) { this.data.chapter = this.chapter() + 1; this.data.cleared = 0; this.data.resume = 0; }
+    else this.data.resume = Math.min(i + 1, total - 1);
     this.persist();
+    return done;
   },
   resumeStage() { const r = this.data.resume | 0; return r > 0 && r < 6 ? r : 0; },
 
