@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   makeRng, hashStr, clamp, lerp,
-  STAGES, BOSS_STYLES, STYLE_KEYS, CHARS, DIRS,
+  STAGES, BOSS_STYLES, STYLE_KEYS, CHARS, DIRS, MOVES, MOVE_BY_EMOJI,
 } from '../src/config.js';
 import { proceduralStage } from '../src/aistage.js';
 
@@ -150,4 +150,57 @@ test('design rule: no CHARS emoji is ever used as an enemy or boss emoji in aist
     assert.ok(!charEmojis.has(stage.boss.emoji),
       `aistage theme #${themeIdx} ("${stage.name}") reuses player character emoji "${stage.boss.emoji}" as its boss`);
   }
+});
+
+// === 敵の性格(MOVES) ===
+// engine.js の applyPersonality が switch で受けるキーと、config 側の表が
+// ずれると「タグは付いているのに何も起きない敵」が静かに生まれる。
+const MOVE_KINDS = ['slither', 'dive', 'glide', 'blink', 'angular', 'hop', 'lurk'];
+
+test('MOVES only declares personalities that engine.js actually implements', () => {
+  for (const k of Object.keys(MOVES)) {
+    assert.ok(MOVE_KINDS.includes(k),
+      `MOVES has "${k}", which applyPersonality() in engine.js does not handle — the tagged enemies would move like untagged ones`);
+  }
+});
+
+test('MOVES assigns each emoji exactly one personality', () => {
+  const seen = new Map();
+  for (const [kind, list] of Object.entries(MOVES)) {
+    for (const emoji of list) {
+      assert.ok(!seen.has(emoji),
+        `"${emoji}" is listed under both "${seen.get(emoji)}" and "${kind}" — MOVE_BY_EMOJI would silently keep only one`);
+      seen.set(emoji, kind);
+    }
+  }
+  assert.equal(Object.keys(MOVE_BY_EMOJI).length, seen.size);
+  for (const [emoji, kind] of seen) assert.equal(MOVE_BY_EMOJI[emoji], kind);
+});
+
+test('design rule: no CHARS emoji is ever given an enemy personality', () => {
+  const charEmojis = new Set(CHARS.map(c => c.emoji));
+  for (const emoji of Object.keys(MOVE_BY_EMOJI)) {
+    assert.ok(!charEmojis.has(emoji),
+      `"${emoji}" is a player character emoji and must never be tagged as enemy movement`);
+  }
+});
+
+test('every STAGES enemy emoji has a personality, so no stage feels flatter than the rest', () => {
+  const missing = [];
+  for (const st of STAGES) {
+    for (const e of st.enemies) if (!MOVE_BY_EMOJI[e.emoji]) missing.push(`${st.name}:${e.emoji}`);
+  }
+  assert.deepEqual(missing, [],
+    `these enemies still move on the base pattern only: ${missing.join(', ')}`);
+});
+
+test('every procedurally generated enemy emoji has a personality too', () => {
+  const rng = makeRng(hashStr('personality-coverage'));
+  const missing = [];
+  for (let themeIdx = 0; themeIdx < 7; themeIdx++) {
+    const stage = proceduralStage(rng, themeIdx);
+    for (const e of stage.enemies) if (!MOVE_BY_EMOJI[e.emoji]) missing.push(`${stage.name}:${e.emoji}`);
+  }
+  assert.deepEqual(missing, [],
+    `these AI-stage enemies still move on the base pattern only: ${missing.join(', ')}`);
 });

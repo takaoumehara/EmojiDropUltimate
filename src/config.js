@@ -269,6 +269,27 @@ export const SKINS = [
   { name: 'GALAXY',  body: '#8b5cf6', body2: '#b98cff', nose: '#f3e8ff', wing: '#22d3ee', trail: '#e879f9', need: 10 },
 ];
 
+// === 敵の「性格」 ===
+//   絵文字を見た瞬間に動きが想像でき、しかも基本4種より読みにくい。
+//   乱数で散らすと理不尽になるだけなので、絵柄に紐づく決まった癖として与える。
+//   slither=蛇行 / dive=不規則な急降下 / glide=滑走と停止 / blink=瞬間移動 /
+//   angular=直角に曲がる / hop=跳ねる / lurk=溜めてから突進
+export const MOVES = {
+  slither: ['🐍', '🦎', '🪼', '🐙', '🦑', '🦋', '🐟', '🦐', '🦠', '🌀'],
+  dive:    ['🦇', '🐝', '🕷️', '🦅', '☄️', '😈', '👺'],
+  glide:   ['🐧', '🦭', '🐻‍❄️', '❄️', '🧊', '🕊️', '🍣', '🍙', '🌑'],
+  blink:   ['👻', '🧛', '💀', '🔮', '👾', '🛸', '👽', '🌟'],
+  angular: ['🤖', '🦾', '🔧', '📡', '💾', '🚓'],
+  hop:     ['🐸', '🐰', '🍡', '🧁', '🍬', '🍰', '🐦'],
+  lurk:    ['🦈', '🐊', '🦖', '🦕', '🐡', '👹', '🦉', '🧟'],
+};
+// 絵文字 → 性格 の逆引き(起動時に1度だけ作る)
+export const MOVE_BY_EMOJI = (() => {
+  const m = {};
+  for (const [k, list] of Object.entries(MOVES)) for (const e of list) m[e] = k;
+  return m;
+})();
+
 // === 純粋ユーティリティ ===
 export const rand = (a, b) => Math.random() * (b - a) + a;
 export const randInt = (a, b) => Math.floor(rand(a, b + 1));

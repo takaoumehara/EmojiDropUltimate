@@ -1,7 +1,7 @@
 // ============================================================
 // engine.js — ゲームロジック(更新・生成・当たり判定・状態遷移)
 // ============================================================
-import { CFG, BELLS, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
+import { CFG, BELLS, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, MOVE_BY_EMOJI, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
 import { W, H } from './env.js';
 import { game, newGame, setGame } from './state.js';
 import { stage, dirDef, fwAngle, inAngle, isVert, latSpan, fwSpan, posFromPL, invPL, latOf, playerHome } from './geo.js';
@@ -241,6 +241,8 @@ function spawnWave() {
     const lat = clamp(it.lat, 42, latSpan() - 42);
     game.enemies.push({
       id: nextEid++, ti: Math.max(0, st.enemies.indexOf(tt)),
+      move: MOVE_BY_EMOJI[tt.emoji] || null, mvT: rand(400, 1400), mvS: 0,
+      mph: rand(0, Math.PI * 2), blink: 0,
       type: tt.type, emoji: tt.emoji,
       hp: tt.hp, maxHp: tt.hp, speed: tt.speed, pts: tt.pts, size: tt.size,
       amp: tt.amp || 60, freq: tt.freq || 2, shootRate: tt.shootRate || 0,
@@ -252,6 +254,48 @@ function spawnWave() {
   game.waveIdx++;
 }
 
+// 絵柄に応じた癖を、基本の動きの「上に」足す。
+// step = このフレームで基本の動きが進めた量。止まる系はこれを打ち消して初めて「止まって見える」。
+function applyPersonality(e, dt, step) {
+  e.mvT -= dt * 1000;
+  e.mph += dt;                                   // 癖専用の位相(基本の動きに依存しない)
+  const lim = latSpan();
+  switch (e.move) {
+    case 'slither':                              // 蛇行(速く細かく)
+      e.lat += Math.sin(e.mph * 4.2) * 150 * dt;
+      break;
+    case 'dive':                                 // 不規則に方向を変えて突っ込む
+      if (e.mvT <= 0) { e.mvT = rand(280, 720); e.mvS = rand(-150, 150); }
+      e.lat += e.mvS * dt; e.prog += 42 * dt;
+      break;
+    case 'glide':                                // 滑って止まってまた滑る
+      if (e.mvT <= 0) { e.mvT = rand(500, 1000); e.mvS = e.mvS > 0 ? 0 : 1; }
+      if (e.mvS) e.prog += 110 * dt;             // 滑走
+      else { e.prog -= step * 0.92; e.lat += Math.sin(e.mph * 1.6) * 26 * dt; }  // ほぼ停止
+      break;
+    case 'blink':                                // ふっと消えて横に現れる
+      if (e.mvT <= 0) { e.mvT = rand(900, 1900); e.lat = clamp(e.lat + rand(-130, 130), 30, lim - 30); e.blink = 0.35; }
+      if (e.blink > 0) e.blink -= dt;
+      break;
+    case 'angular':                              // 直角に折れる
+      if (e.mvT <= 0) { e.mvT = rand(600, 1200); e.mvS = e.mvS === 0 ? (Math.random() < 0.5 ? -1 : 1) : 0; }
+      e.lat += e.mvS * 130 * dt;
+      break;
+    case 'hop': {                                // ぴょんぴょん跳ねながら来る
+      const up = Math.max(0, Math.sin(e.mph * 3.6));
+      e.prog += -step * 0.8 + up * 260 * dt;     // 着地中はほぼ止まり、跳ねる時だけ前へ
+      e.lat += Math.cos(e.mph * 3.6) * up * 70 * dt;
+      break;
+    }
+    case 'lurk':                                 // 溜めてから一気に喰らいつく
+      if (e.mvT <= 0) { e.mvT = rand(1100, 2000); e.mvS = e.mvS > 0 ? 0 : 1; }
+      if (e.mvS) { e.prog += 210 * dt; e.lat = lerp(e.lat, latOf(game.player), dt * 1.4); }
+      else e.prog -= step * 0.88;                // 息をひそめる
+      break;
+  }
+  e.lat = clamp(e.lat, -60, lim + 60);
+}
+
 function updateEnemies(dt) {
   const wMod = Weather.mods, span = fwSpan();
   for (let i = game.enemies.length - 1; i >= 0; i--) {
@@ -259,6 +303,7 @@ function updateEnemies(dt) {
     if (e.delay > 0) { e.delay -= dt * 1000; continue; }
     if (e.slowT > 0) e.slowT -= dt * 1000;               // 💩 で鈍っている間
     const spd = e.speed * wMod.enemySpeed * (e.slowT > 0 ? 0.45 : 1) * dt;
+    const prog0 = e.prog;
     switch (e.type) {
       case 'straight': e.prog += spd; break;
       case 'wave': e.prog += spd; e.phase += e.freq * dt * Math.PI; e.lat = e.lat0 + Math.sin(e.phase) * e.amp; break;
@@ -279,6 +324,7 @@ function updateEnemies(dt) {
         if (e.locked) e.lat = lerp(e.lat, e.lockLat, dt * 3);
         break;
     }
+    if (e.move) applyPersonality(e, dt, e.prog - prog0);
     const pos = posFromPL(e.prog, e.lat);
     e.x = pos.x; e.y = pos.y;
     if (e.flash > 0) e.flash -= dt * 8;
@@ -472,10 +518,25 @@ function bossDefeated() {
 
 // === ベル ===
 function spawnBell() {
-  game.bells.push({ prog: 60, lat: rand(50, latSpan() - 50), idx: 0, hits: 0, phase: rand(0, Math.PI * 2), size: 16, x: -999, y: -999 });
+  game.bells.push({ prog: 60, lat: rand(50, latSpan() - 50), idx: 0, hits: 0, phase: rand(0, Math.PI * 2), size: 16, x: -999, y: -999, lockFlash: 0 });
+}
+// ベルは自機が近づくと色が固定される。
+//   ツインビーは手動ショットなので「必要な回数だけ撃つ」ができたが、
+//   こちらは自動連射なので狙った色を通り過ぎてしまう。近距離でロックすることで
+//   「遠くで色を選び、近づいて取りに行く」という判断に変える。
+export const BELL_LOCK_R = 118;
+function bellLocked(bell) {
+  const p = game.player;
+  return !p.dead && dist(bell, p) < BELL_LOCK_R;
 }
 function hitBell(bell) {
-  bell.hits++; bell.idx = (bell.idx + 1) % BELLS.length; bell.prog -= 26;
+  bell.prog -= 26;                     // 撃てば押し戻せるのはそのまま
+  if (bellLocked(bell)) {              // ロック中は色を変えない
+    bell.lockFlash = 1;
+    particles(bell.x, bell.y, 2, '#ffffff');
+    return;
+  }
+  bell.hits++; bell.idx = (bell.idx + 1) % BELLS.length;
   Snd.bell(); particles(bell.x, bell.y, 3, BELLS[bell.idx].color);
 }
 function collectBell(bell) {
@@ -544,6 +605,7 @@ function updateBullets(dt) {
   for (let i = game.bells.length - 1; i >= 0; i--) {
     const bl = game.bells[i];
     bl.prog += 42 * dt; bl.phase += dt * 3;
+    if (bl.lockFlash > 0) bl.lockFlash -= dt * 3;
     bl.lat += Math.sin(bl.phase) * 14 * dt + wind * 0.4 * dt;
     const pos = posFromPL(bl.prog, bl.lat); bl.x = pos.x; bl.y = pos.y;
     if (bl.prog > fwSpan() + 90) game.bells.splice(i, 1);

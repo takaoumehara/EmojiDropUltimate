@@ -11,6 +11,7 @@ import { Director } from './director.js';
 import { BossAI } from './bossai.js';
 import { Save } from './save.js';
 import { Coop } from './coop.js';
+import { BELL_LOCK_R } from './engine.js';
 import { txt, surface, scrim, roundPath, COL, FONT_UI, FONT_DISPLAY } from './theme.js';
 import { qrMatrix } from './qr.js';
 
@@ -328,6 +329,7 @@ function drawEnemies() {
   for (const e of game.enemies) {
     if (e.delay > 0) continue;
     ctx.save(); ctx.translate(e.x, e.y); ctx.font = `${e.size * 2}px serif`;
+    if (e.blink > 0) ctx.globalAlpha = 0.25 + 0.75 * (1 - e.blink / 0.35);
     ctx.fillText(e.emoji, 0, 0);
     if (e.flash > 0) { ctx.globalAlpha = clamp(e.flash, 0, 1); ctx.fillText('✨', 0, 0); ctx.globalAlpha = 1; }
     if (e.maxHp > 2) {
@@ -376,7 +378,16 @@ function drawBells() {
     ctx.save(); ctx.translate(bl.x, bl.y + Math.sin(bl.phase) * 3);
     ctx.fillStyle = bt.color + '55'; ctx.beginPath(); ctx.arc(0, 0, bl.size + 5, 0, Math.PI * 2); ctx.fill();
     ctx.font = `${bl.size * 2}px serif`; ctx.textAlign = 'center'; ctx.fillText('🔔', 0, 0);
-    ctx.strokeStyle = bt.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, bl.size + 3, 0, Math.PI * 2); ctx.stroke();
+    const locked = !game.player.dead && Math.hypot(bl.x - game.player.x, bl.y - game.player.y) < BELL_LOCK_R;
+    ctx.strokeStyle = bt.color; ctx.lineWidth = locked ? 3 : 2;
+    if (!locked) ctx.setLineDash([4, 4]);          // 未確定は破線、確定したら実線
+    ctx.beginPath(); ctx.arc(0, 0, bl.size + 3, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    if (locked) {                                   // 色が固定された合図
+      ctx.globalAlpha = 0.75 + 0.25 * Math.sin(performance.now() * 0.008);
+      ctx.font = `${Math.round(11 * UI)}px serif`; ctx.fillText('🔒', bl.size + 9, -bl.size - 2);
+      ctx.globalAlpha = 1;
+    }
     label(bt.name, 0, bl.size + 16, bt.color, 10 * UI);
     ctx.restore();
   }
