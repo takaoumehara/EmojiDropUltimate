@@ -6,7 +6,7 @@ import './bootstrap.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  makeRng, hashStr, clamp, lerp,
+  makeRng, hashStr, clamp, lerp, CFG,
   STAGES, BOSS_STYLES, STYLE_KEYS, CHARS, DIRS, MOVES, MOVE_BY_EMOJI, BELLS, POWER_SHOT_EMOJIS,
 } from '../src/config.js';
 import { proceduralStage } from '../src/aistage.js';
@@ -301,3 +301,24 @@ test('CHARS: bullet speed is set for everyone and stays readable', () => {
     `emoji projectiles average ${emojiAvg.toFixed(2)} but plain bolts average ${plainAvg.toFixed(2)} — emoji shots must fly slower to stay legible`);
 });
 function avg(a) { return a.reduce((x, y) => x + y, 0) / a.length; }
+
+test('CHARS: every projectile stays on screen long enough to be recognised', () => {
+  // 絵文字は「自分の幅を横切る時間」が短すぎると、何が飛んでいるか読めない。
+  // 弾速を上げるときは、この下限を割らないかで判断する。
+  for (const c of CHARS) {
+    const v = CFG.BULLET_SPEED * c.bspeed;
+    const glyph = Math.max(30, c.size * 4.2);      // render.js の下限と揃える
+    const ms = glyph / v * 1000;
+    assert.ok(ms >= 80,
+      `character "${c.id}" projectile crosses its own width in ${Math.round(ms)}ms — too fast to read`);
+  }
+});
+
+test('CFG: player bullets still outrun every enemy that closes on you', () => {
+  // 弾を遅くしすぎると、突っ込んでくる敵に置いていかれて倒せなくなる。
+  // ここが「これ以上遅くできない」の本当の下限。
+  const slowest = CFG.BULLET_SPEED * Math.min(...CHARS.map(c => c.bspeed));
+  const fastestEnemy = Math.max(...STAGES.flatMap(s => s.enemies.map(e => e.speed)));
+  assert.ok(slowest > fastestEnemy * 0.6,
+    `slowest projectile is ${Math.round(slowest)}px/s against a ${fastestEnemy}px/s enemy — shots would never land`);
+});

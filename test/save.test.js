@@ -219,3 +219,39 @@ test('save: read-only-throwing storage (write succeeds, read throws) still yield
   assert.equal(Save.data.bestScore, 0, 'must fall back to defaults when read throws, even if write would have worked');
   assert.doesNotThrow(() => Save.recordRun({ score: 999, world: 1 }), 'writes must still be attempted without throwing');
 });
+
+test('resume point: round-trips the exact spot the run ended', async () => {
+  const Save = await freshSave(makeMemoryLocalStorage());
+  assert.equal(Save.resumePoint(), null, 'a fresh save has nowhere to resume from');
+  Save.setResumePoint(2, 27500, 9);
+  assert.deepEqual(Save.resumePoint(), { stage: 2, time: 27500, wave: 9 });
+});
+
+test('resume point: never returns a negative time or wave', async () => {
+  const Save = await freshSave(makeMemoryLocalStorage());
+  Save.setResumePoint(0, -5000, -3);
+  assert.deepEqual(Save.resumePoint(), { stage: 0, time: 0, wave: 0 });
+});
+
+test('resume point: clearing it sends the next run back to the stage start', async () => {
+  const Save = await freshSave(makeMemoryLocalStorage());
+  Save.setResumePoint(3, 1000, 4);
+  Save.clearResumePoint();
+  assert.equal(Save.resumePoint(), null);
+});
+
+test('resume point: survives a whole save/load round trip', async () => {
+  const storage = makeMemoryLocalStorage();
+  const Save = await freshSave(storage);
+  Save.setResumePoint(4, 18000, 6);
+  const Reloaded = await freshSave(storage);       // アプリを開き直した状態
+  assert.deepEqual(Reloaded.resumePoint(), { stage: 4, time: 18000, wave: 6 },
+    'the death point must outlive a reload, or "continue" is useless after closing the app');
+});
+
+test('resume point: storage that throws does not break the run', async () => {
+  const Save = await freshSave(makeThrowingLocalStorage());
+  Save.setResumePoint(1, 5000, 2);
+  assert.deepEqual(Save.resumePoint(), { stage: 1, time: 5000, wave: 2 },
+    'the point must still be usable in memory even when it cannot be persisted');
+});

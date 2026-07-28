@@ -1,7 +1,7 @@
 // ============================================================
 // input.js — キーボード + タッチ/マウス入力
 // ============================================================
-import { canvas } from './env.js';
+import { canvas, W, H, SAFE } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
 import { toggleLang, getLang } from './i18n.js';
@@ -50,7 +50,7 @@ function hitMenu(x, y) {
   for (const b of game.menuBtns) {
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
       if (b.id === 'start') startRun();
-      else if (b.id === 'continue') startRun(Save.resumeStage());
+      else if (b.id === 'continue') startRun(Save.resumeStage(), true);   // 死んだところから
       else if (b.id === 'restart') startRun(0);
       else if (b.id === 'ai') requestAIStage();
       else if (b.id === 'daily') startDaily();
@@ -105,8 +105,9 @@ canvas.addEventListener('pointermove', e => {
   if (!dragging || !last) return;
   const p = game.player;
   if ((game.state === 'play' || game.state === 'warn') && !p.dead) {
-    p.x = Math.max(22, Math.min(window.innerWidth - 22, p.x + (e.clientX - last.x) * 1.7));
-    p.y = Math.max(40, Math.min(window.innerHeight - 22, p.y + (e.clientY - last.y) * 1.7));
+    // 可動域は engine 側の clamp と同じにする(片方だけ端に届くとズレて見える)
+    p.x = Math.max(22 + SAFE.left, Math.min(W - 22 - SAFE.right, p.x + (e.clientX - last.x) * 1.7));
+    p.y = Math.max(40 + SAFE.top, Math.min(H - 22 - SAFE.bottom, p.y + (e.clientY - last.y) * 1.7));
   }
   last.x = e.clientX; last.y = e.clientY;
 });

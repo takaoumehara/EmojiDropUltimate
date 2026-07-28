@@ -19,6 +19,7 @@ const DEF = {
   skin: 0, name: '', cid: '', char: 0,
   cleared: 0,   // 現在の章で制覇したステージのビットマスク(1<<i)
   resume: 0,    // 次に挑むステージ番号(つづきから)
+  rp: null,     // 死んだ地点(ステージ内の進行度)
   chapter: 0,   // いま挑んでいる章(0=第1章)
 };
 
@@ -112,6 +113,18 @@ export const Save = {
     return done;
   },
   resumeStage() { const r = this.data.resume | 0; return r > 0 && r < 6 ? r : 0; },
+  // 死んだ地点(ステージ内のどこまで進んでいたか)。ステージ番号だけだと
+  // 「つづき」がいつも頭からになり、同じ道のりを何度もやり直すことになる。
+  setResumePoint(stage, time, wave) {
+    this.data.rp = { s: stage | 0, t: Math.max(0, time | 0), w: Math.max(0, wave | 0) };
+    this.persist();
+  },
+  resumePoint() {
+    const r = this.data.rp;
+    if (!r || typeof r.s !== 'number') return null;
+    return { stage: r.s, time: r.t | 0, wave: r.w | 0 };
+  },
+  clearResumePoint() { this.data.rp = null; this.persist(); },
 
   // 自機キャラクター(全員最初から選べる)
   charIndex() { const i = this.data.char | 0; return i >= 0 && i < CHARS.length ? i : 0; },

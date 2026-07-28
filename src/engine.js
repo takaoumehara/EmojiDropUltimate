@@ -2,7 +2,7 @@
 // engine.js — ゲームロジック(更新・生成・当たり判定・状態遷移)
 // ============================================================
 import { CFG, BELLS, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, MOVE_BY_EMOJI, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
-import { W, H } from './env.js';
+import { W, H, SAFE } from './env.js';
 import { game, newGame, setGame } from './state.js';
 import { stage, dirDef, fwAngle, inAngle, isVert, latSpan, fwSpan, posFromPL, invPL, latOf, playerHome } from './geo.js';
 import { Snd } from './audio.js';
@@ -149,8 +149,9 @@ function updatePlayer(dt, keys) {
   //   指1本のまま「攻めるか避けるか」の判断が生まれる(撃つボタンは不要)。
   const px0 = p.x, py0 = p.y;
   const spd = CFG.PLAYER_SPEED * (p.boost ? 1.5 : 1) * Save.char().speed * (p.focus ? 0.55 : 1) * dt;
-  p.x = clamp(p.x + dx * spd, 22, W - 22);
-  p.y = clamp(p.y + dy * spd, 40, H - 22);
+  // 自機も「触れない縁」の内側に留める。ホームバーの上に乗ると指で隠れる。
+  p.x = clamp(p.x + dx * spd, 22 + SAFE.left, W - 22 - SAFE.right);
+  p.y = clamp(p.y + dy * spd, 40 + SAFE.top, H - 22 - SAFE.bottom);
   const moved = Math.hypot(p.x - px0, p.y - py0) / Math.max(dt, 0.001);
   if (moved < 26) p.stillT = (p.stillT || 0) + dt * 1000; else p.stillT = 0;
   p.focus = p.stillT > 320;
@@ -168,7 +169,7 @@ function updatePlayer(dt, keys) {
   if (p.rearT > 0) p.rearT -= dt * 1000;
   if (p.sideT > 0) p.sideT -= dt * 1000;
   p.fireT -= dt * 1000;
-  if (p.fireT <= 0) { fire(); p.fireT = (p.power >= 3 ? 105 : 130) * Save.char().fire * (p.focus ? 0.55 : 1); }
+  if (p.fireT <= 0) { fire(); p.fireT = (p.power >= 3 ? 120 : 148) * Save.char().fire * (p.focus ? 0.55 : 1); }
   if (p.muzzle > 0) p.muzzle -= dt * 11;
   p.anim += dt * 10;
 }
@@ -240,7 +241,7 @@ function killPlayer() {
     setTimeout(() => {
       if (game.state !== 'play' && game.state !== 'warn') return;
       recordRunEnd({ daily: game.daily });
-      game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
+      markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
     }, 900);
   } else {
     setTimeout(() => { if (game.state === 'play' || game.state === 'warn') resetPlayer(); }, 500);
@@ -662,7 +663,11 @@ function collectBell(bell) {
 // === ステージ進行 ===
 function startStage(i) {
   game.stageIndex = i;
-  game.stageTime = 0; game.waveIdx = 0; game.lastBellDrop = -9999;   // ステージを跨いで持ち越さない
+  // resumeAt があれば、そこまで進んだ状態で始める(死んだ場所からの再開)
+  const rs = game.resumeAt; game.resumeAt = null;
+  game.stageTime = rs ? rs.time : 0;
+  game.waveIdx = rs ? rs.wave : 0;
+  game.lastBellDrop = -9999;   // ステージを跨いで持ち越さない
   game.bossActive = false; game.warnT = 0;
   game.nextWave = 1400; game.nextBell = 6500;
   game.enemies = []; game.eBullets = []; game.pBullets = [];
@@ -840,11 +845,17 @@ function saveHi() {
 }
 function freshGame() { const hi = game.hi; setGame(newGame()); game.hi = hi; Director.reset(); Save.startRun(); }
 
-export function startRun(from = 0) {
+export function startRun(from = 0, resume = false) {
   Snd.init(); freshGame();
   game.stages = chapterStages(Save.chapter(), STAGES);   // 章ごとに6ステージ
   game.chapter = Save.chapter();
-  startStage(clamp(from, 0, game.stages.length - 1));
+  const idx = clamp(from, 0, game.stages.length - 1);
+  // タイトルの「つづき」も、前回死んだところから始める
+  if (resume) {
+    const r = Save.resumePoint();
+    if (r && r.stage === idx) game.resumeAt = { time: r.time, wave: r.wave };
+  }
+  startStage(idx);
 }
 // エンドレスAI: 第1ワールドはサーバー(Gemini)で生成→以降はローカル手続き生成で無限連戦
 export function requestAIStage() {
@@ -920,14 +931,14 @@ Coop.onPartnerDied = () => {
   if (game.lives <= 0) {
     Coop.send({ t: 'over' });
     recordRunEnd({});
-    game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
+    markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
   }
 };
 // ゲスト: ホストから終了の合図
 Coop.onGameOver = () => {
   if (game.state === 'over' || game.state === 'victory') return;
   recordRunEnd({});
-  game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
+  markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
 };
 
 function recordRunEnd({ daily = false } = {}) {
@@ -968,10 +979,24 @@ export function toTitle() {
   setGame(newGame()); game.hi = hi;
   initStars();
 }
+// 「つづき」は死んだところから。ステージの頭に戻されると、
+//   もう一度同じ道のりをやり直すことになって続ける気が失せる。
+//   ただし本当に同じ一瞬から再開すると、自分を殺した弾に突っ込むだけなので
+//   数秒だけ巻き戻す。ボス戦で死んだ場合はボスの直前から。
+const RESUME_REWIND = 4500;
+export function markResumePoint() {
+  const st = stage();
+  const boss = game.bossActive || game.warnT > 0;
+  const time = boss ? Math.max(0, (st.dur || 60000) - 200)
+                    : Math.max(0, game.stageTime - RESUME_REWIND);
+  Save.setResumePoint(game.stageIndex, time, Math.max(0, game.waveIdx - 2));
+}
 export function doContinue() {
   if (game.continues <= 0) return;
   game.continues--;
   Snd.continueJingle();
+  const r = Save.resumePoint();
+  if (r && r.stage === game.stageIndex) game.resumeAt = { time: r.time, wave: r.wave };
   startStage(game.stageIndex);
   game.lives = CFG.MAX_LIVES; game.bombs = 1;
 }

@@ -2,7 +2,7 @@
 // render.js — 描画(読みやすさ優先: 大きめ・視認性の高いサンセリフ)
 // ============================================================
 import { BELLS, clamp, stageTint, CHARS, STAGES } from './config.js';
-import { W, H, ctx, UI } from './env.js';
+import { W, H, ctx, UI, SAFE } from './env.js';
 import { game } from './state.js';
 import { stage, dirDef } from './geo.js';
 import { t, getLang } from './i18n.js';
@@ -14,6 +14,11 @@ import { Coop } from './coop.js';
 import { BELL_LOCK_R } from './engine.js';
 import { txt, surface, scrim, roundPath, COL, FONT_UI, FONT_DISPLAY } from './theme.js';
 import { qrMatrix } from './qr.js';
+
+// 画面の縦位置は「実際に使える範囲」の割合で置く。
+//   iPhone のようにダイナミックアイランドとホームバーがある端末では、
+//   H の割合で置くと上下の要素がそのまま縁の下に潜って読めなくなる。
+const vy = f => SAFE.top + (H - SAFE.top - SAFE.bottom) * f;
 
 // 既定の UI 書体は幾何学サンセリフ。丸ゴシックはロゴ・祝祭表現に限定する。
 const SANS = FONT_UI;
@@ -225,7 +230,7 @@ function drawBullets() {
     if (b.emoji) {   // キャラ固有の弾(💧 🥖 🍌 など)
       ctx.save(); ctx.translate(b.x, b.y);
       // 絵文字弾は小さいと何を撃っているのか分からない。下限を決めて必ず読める大きさにする。
-      const fs = Math.max(23, b.size * 3.9);
+      const fs = Math.max(30, b.size * 4.2);   // 何を投げているか読める最低限の大きさ
       // どの背景でも埋もれないよう、キャラ色の光背を敷く
       const r = fs * 0.62;
       const gl = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
@@ -375,7 +380,7 @@ function drawBoss() {
   if (BossAI.thinking > 0) { ctx.font = '22px serif'; ctx.fillText('🧠', 40, -42); }
   ctx.restore();
   if (!b.entering) {
-    const bw = Math.min(W * 0.72, 420), bx = (W - bw) / 2, by = 52 + 8 * UI;
+    const bw = Math.min(W * 0.72, 420), bx = (W - bw) / 2, by = 52 + 8 * UI + SAFE.top;
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx - 3, by - 3, bw + 6, 15);
     ctx.fillStyle = '#3a0a0a'; ctx.fillRect(bx, by, bw, 9);
     const r = clamp(b.hp / b.maxHp, 0, 1);
@@ -398,7 +403,7 @@ function drawBossReveal() {
   const k = Math.min(1, (2400 - t) / 220);            // 出るときだけ素早く拡大
   ctx.save();
   ctx.globalAlpha = Math.min(1, t / 400);
-  ctx.translate(W / 2, H * 0.34);
+  ctx.translate(W / 2, vy(0.34));
   ctx.scale(0.6 + k * 0.4, 0.6 + k * 0.4);
   txt(ja ? 'まだ終わっていない' : 'NOT OVER YET', 0, -30 * UI,
     { size: 15 * UI, weight: 800, color: '#ffd0dc', maxW: W * 0.84 });
@@ -447,7 +452,10 @@ function drawPopups() {
 }
 
 function drawHUD() {
-  const pad = 14 * UI, top = 14 * UI;
+  // 端末の「触れない縁」を避ける。ここを足さないと iPhone では
+  // スコアがダイナミックアイランドの下、残機がホームバーの下に隠れる。
+  const pad = 14 * UI + SAFE.left, top = 14 * UI + SAFE.top;
+  const bot = SAFE.bottom;
   ctx.textBaseline = 'top';
   // スコア(左上・数字は等幅感のある太字。上部ボタンとは反対側に置く)
   txt(String(game.score).padStart(7, '0'), pad, top, { size: 19 * UI, weight: 700, color: '#fff', align: 'left', baseline: 'top', shadow: 0.8 });
@@ -456,18 +464,18 @@ function drawHUD() {
   }
   const p = game.player;
   ctx.font = `${Math.round(17 * UI)}px serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText('❤️'.repeat(Math.max(0, game.lives)) + (game.bombs ? '  ' + '💣'.repeat(game.bombs) : ''), pad, H - 46 * UI);
+  ctx.fillText('❤️'.repeat(Math.max(0, game.lives)) + (game.bombs ? '  ' + '💣'.repeat(game.bombs) : ''), pad, H - 46 * UI - bot);
   const st8 = `PW${p.power}${p.options ? ' · OP' + p.options : ''}${p.shield ? ' · 🛡️' : ''}${p.boost ? ' · 💨' : ''}`
     + (p.boomT > 0 ? ` · 🪃${Math.ceil(p.boomT / 1000)}` : '')
     + (p.rearT > 0 ? ` · ⬇︎${Math.ceil(p.rearT / 1000)}` : '')
     + (p.sideT > 0 ? ` · ↔︎${Math.ceil(p.sideT / 1000)}` : '');
-  txt(st8, pad, H - 24 * UI, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'left', baseline: 'top', shadow: 0.7 });
+  txt(st8, pad, H - 24 * UI - bot, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'left', baseline: 'top', shadow: 0.7 });
   const slabel = game.coop ? '👥' : game.endless ? ('W' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('' + (game.stageIndex + 1));
-  txt(`${slabel} ${stage().emoji}${dirDef().arrow}`, W - pad, H - 24 * UI, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'right', baseline: 'top', shadow: 0.7 });
+  txt(`${slabel} ${stage().emoji}${dirDef().arrow}`, W - 14 * UI - SAFE.right, H - 24 * UI - bot, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'right', baseline: 'top', shadow: 0.7 });
   if (game.coop) drawCoopHud();
   if (Director.msg && Director.msgT > 0) {
     ctx.globalAlpha = clamp(Director.msgT, 0, 1);
-    label(Director.msg, W / 2, H - 78 * UI, '#00ffcc', 12 * UI);
+    label(Director.msg, W / 2, H - 78 * UI - bot, '#00ffcc', 12 * UI);
     ctx.globalAlpha = 1;
   }
   if (game.warnT > 0 && Math.floor(game.warnT / 220) % 2 === 0) {
@@ -488,8 +496,8 @@ function drawHUD() {
   if (game.stageIndex === 0 && game.stageTime < 5200 && game.state === 'play') {
     // 自機(画面下部)と重ならない高さに出す
     ctx.globalAlpha = clamp((5200 - game.stageTime) / 1000, 0, 0.9);
-    label(t('hint_move'), W / 2, H - 196 * UI, '#fff', 12 * UI);
-    label(t('hint_bomb'), W / 2, H - 178 * UI, '#fff', 12 * UI);
+    label(t('hint_move'), W / 2, H - 196 * UI - bot, '#fff', 12 * UI);
+    label(t('hint_bomb'), W / 2, H - 178 * UI - bot, '#fff', 12 * UI);
     ctx.globalAlpha = 1;
   }
 }
@@ -500,7 +508,7 @@ function nightSky(from = '#070b1e', to = '#141a3c') {
   g.addColorStop(0, from); g.addColorStop(1, to);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   // 中央にほのかな光のにじみ(奥行き)
-  const b = ctx.createRadialGradient(W / 2, H * 0.34, 0, W / 2, H * 0.34, W * 0.85);
+  const b = ctx.createRadialGradient(W / 2, vy(0.34), 0, W / 2, vy(0.34), W * 0.85);
   b.addColorStop(0, 'rgba(96,120,255,0.16)'); b.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = b; ctx.fillRect(0, 0, W, H);
 }
@@ -533,12 +541,12 @@ function drawSplash() {
     const e2 = 1 - Math.pow(1 - d, 3);
     ctx.globalAlpha = e2 * 0.95;
     ctx.font = `${Math.round(26 * UI)}px serif`;
-    ctx.fillText(e, W / 2 + (i - 1.5) * 48 * UI, H * 0.40 - 20 * UI + (1 - e2) * 40);
+    ctx.fillText(e, W / 2 + (i - 1.5) * 48 * UI, vy(0.40) - 20 * UI + (1 - e2) * 40);
   });
   ctx.globalAlpha = 1;
-  wordmark(W / 2, H * 0.485, 0.94 + ein * 0.06, ein);
+  wordmark(W / 2, vy(0.485), 0.94 + ein * 0.06, ein);
   if (k > 0.5) {
-    txt(getLang() === 'ja' ? 'タップでスキップ' : 'TAP TO SKIP', W / 2, H * 0.88,
+    txt(getLang() === 'ja' ? 'タップでスキップ' : 'TAP TO SKIP', W / 2, vy(0.88),
       { size: 10.5 * UI, weight: 500, color: '#6f819f', alpha: clamp((k - 0.5) * 3, 0, 0.85), track: 1.6 });
   }
 }
@@ -554,7 +562,7 @@ function drawTitle() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
   // 絵文字の隊列(設定ボタンと干渉しない高さに配置)
-  const ey = H * 0.125;
+  const ey = vy(0.125);
   const crew = ['🚀', '🐦', '🐙', '👾', '🐉', '🛸'];
   ctx.save();
   ctx.font = `${Math.round(25 * UI)}px serif`;
@@ -563,10 +571,10 @@ function drawTitle() {
     ctx.fillText(e, cx, cyy);   // 光背は敷かない(絵文字がぼやけて見えるため)
   });
   ctx.restore();
-  wordmark(W / 2, H * 0.205);
+  wordmark(W / 2, vy(0.205));
 
   // 天気チップ(中央・都市名つき)。天気が何をするのかを一言で明示。
-  const wy = H * 0.30;
+  const wy = vy(0.30);
   if (Weather.loaded) {
     const line = `${Weather.icon()}  ${Weather.place}  ${Math.round(Weather.temp)}°`;
     f(13 * UI, 600);
@@ -586,7 +594,7 @@ function drawTitle() {
   const streak = Save.streakAtRisk();
   let h1 = 64 * UI, h2 = 58 * UI, h3 = 52 * UI, gap = 11 * UI;
   let top = wy + 48 * UI;
-  const avail = H * 0.885 - top;
+  const avail = vy(0.885) - top;
   const need = h1 + gap + h2 + gap + h3 + (streak ? 26 * UI : 0) + 44 * UI;
   if (need > avail) { const k = avail / need; h1 *= k; h2 *= k; h3 *= k; gap *= k; }
   else top += (avail - need) * 0.4;
@@ -654,9 +662,9 @@ function drawTitle() {
 
   // フッター: ハイスコア
   const msg = game.aiMsg && !game.aiLoading;
-  txt(msg ? game.aiMsg : (ja ? 'ハイスコア' : 'HI-SCORE'), W / 2, H * 0.935,
+  txt(msg ? game.aiMsg : (ja ? 'ハイスコア' : 'HI-SCORE'), W / 2, vy(0.935),
     { size: msg ? 11.5 * UI : 9.5 * UI, weight: 500, color: msg ? '#ffcf6f' : COL.mute, track: msg ? 0 : 2 });
-  if (!msg) txt(String(game.hi).padStart(7, '0'), W / 2, H * 0.968, { size: 17 * UI, weight: 700, color: COL.gold });
+  if (!msg) txt(String(game.hi).padStart(7, '0'), W / 2, vy(0.968), { size: 17 * UI, weight: 700, color: COL.gold });
 }
 // アイコン+ラベル(上)とサブ説明(下)の2段ボタン
 // 2段ボタン(見出し + 意味の説明)。枠は 2px の実線でクッキリ。
@@ -710,7 +718,7 @@ function drawCharSelect() {
   nightSky('#0a0718', '#1d1436');
   for (const s of game.stars) { ctx.fillStyle = `rgba(255,255,255,${(s.b * 0.45).toFixed(2)})`; ctx.fillRect(s.x, s.y, s.size, s.size); }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  txt(ja ? 'キャラクターをえらぶ' : 'CHOOSE YOUR FIGHTER', W / 2, H * 0.085,
+  txt(ja ? 'キャラクターをえらぶ' : 'CHOOSE YOUR FIGHTER', W / 2, vy(0.085),
     { size: 18 * UI, weight: 800, color: COL.gold, family: FONT_DISPLAY, maxW: W * 0.9 });
 
   game.menuBtns = [];
@@ -720,8 +728,8 @@ function drawCharSelect() {
   const gap = 8 * UI;
   const cols = CHARS.length > 9 ? 4 : 3;
   const rows = Math.ceil(CHARS.length / cols);
-  const gy = H * 0.145;
-  const avail = H * 0.60 - gy;
+  const gy = vy(0.145);
+  const avail = vy(0.60) - gy;
   const cw = Math.min((Math.min(W * 0.94, 392) - gap * (cols - 1)) / cols,
                       (avail - gap * (rows - 1)) / rows / 1.02);
   const chh = cw * 1.02;
@@ -744,7 +752,7 @@ function drawCharSelect() {
   txt(ja ? c.tag : c.tagEn, W / 2, iy + 24 * UI, { size: 12 * UI, weight: 600, color: COL.sub, maxW: W * 0.86 });
 
   const bw = Math.min(W * 0.82, 348), bx = (W - bw) / 2;
-  let by = Math.min(H * 0.78, iy + 44 * UI);
+  let by = Math.min(vy(0.78), iy + 44 * UI);
   const pulse = 1 + Math.sin(time * 3) * 0.01;
   ctx.save(); ctx.translate(W / 2, by + 28 * UI); ctx.scale(pulse, pulse); ctx.translate(-W / 2, -(by + 28 * UI));
   const gg = ctx.createLinearGradient(0, by, 0, by + 56 * UI);
@@ -788,8 +796,8 @@ function drawCoopLobby() {
   const host = Coop.role === 'host';
   const joining = Coop.joinOpen;   // 合言葉フォーム表示中は QR/コードを隠す
 
-  txt(t('coop'), W / 2, H * 0.085, { size: 21 * UI, weight: 800, color: COL.mint, family: FONT_DISPLAY });
-  txt(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, H * 0.122, { size: 11 * UI, weight: 500, color: COL.mute });
+  txt(t('coop'), W / 2, vy(0.085), { size: 21 * UI, weight: 800, color: COL.mint, family: FONT_DISPLAY });
+  txt(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, vy(0.122), { size: 11 * UI, weight: 500, color: COL.mute });
 
   game.menuBtns = [];
   const bw = Math.min(W * 0.82, 348), bx = (W - bw) / 2;
@@ -798,18 +806,18 @@ function drawCoopLobby() {
     // QR(かざすだけ) + あいことば
     const joinUrl = Coop.inviteUrl();
     const box = Math.min(W * 0.40, 142 * UI);
-    const qy = H * 0.255;
+    const qy = vy(0.255);
     const ok = drawQR(joinUrl, W / 2, qy, box);
     if (!ok) txt('QR --', W / 2, qy, { size: 12 * UI, color: COL.mute });
     txt(ja ? 'カメラでかざすだけ' : 'SCAN TO JOIN', W / 2, qy + box / 2 + 18 * UI,
       { size: 9.5 * UI, weight: 600, color: COL.mint, track: 1.8 });
 
-    const cy2 = H * 0.455;
+    const cy2 = vy(0.455);
     txt(ja ? 'または あいことば' : 'OR ENTER CODE', W / 2, cy2 - 20 * UI, { size: 9.5 * UI, weight: 600, color: COL.mute, track: 1.8 });
     txt(Coop.code || '------', W / 2, cy2 + 10 * UI, { size: 32 * UI, weight: 800, color: '#fff', track: 5 * UI });
 
     // 遊ぶ面
-    const half = (bw - 9 * UI) / 2, my = H * 0.525;
+    const half = (bw - 9 * UI) / 2, my = vy(0.525);
     const chip = (id, x, tx, sel, col) => {
       surface(x, my, half, 36 * UI, { r: 12, fill: sel ? col : 'rgba(13,19,40,0.82)', border: sel ? col : 'rgba(255,255,255,0.16)', lw: 2 });
       txt(tx, x + half / 2, my + 18 * UI, { size: 11.5 * UI, weight: 700, color: sel ? '#0c1a16' : COL.sub });
@@ -818,14 +826,14 @@ function drawCoopLobby() {
     chip('coopModeStory', bx, ja ? 'オリジナル' : 'Original', Coop.mode === 'story', COL.sky);
     chip('coopModeAi', bx + half + 9 * UI, ja ? 'AI生成' : 'AI stage', Coop.mode === 'ai', COL.violet);
   } else if (!joining) {
-    txt(ja ? 'あいことば' : 'ROOM CODE', W / 2, H * 0.30, { size: 9.5 * UI, weight: 600, color: COL.mute, track: 1.8 });
-    txt(Coop.code || '------', W / 2, H * 0.36, { size: 38 * UI, weight: 800, color: '#fff', track: 5 * UI });
+    txt(ja ? 'あいことば' : 'ROOM CODE', W / 2, vy(0.30), { size: 9.5 * UI, weight: 600, color: COL.mute, track: 1.8 });
+    txt(Coop.code || '------', W / 2, vy(0.36), { size: 38 * UI, weight: 800, color: '#fff', track: 5 * UI });
   }
 
   if (joining) return;   // 以降はHTMLフォームが担当
 
   // 接続ステータス
-  const sy = H * 0.60;
+  const sy = vy(0.60);
   if (Coop.connected) {
     txt((ja ? `${Coop.partner.name} と接続` : `Connected: ${Coop.partner.name}`) + (Coop.p2p ? '  ⚡' : '  🤖'),
       W / 2, sy, { size: 13 * UI, weight: 700, color: '#7CFC00' });
@@ -850,7 +858,7 @@ function drawCoopLobby() {
       { size: 11.5 * UI, weight: 500, color: COL.gold, alpha: 0.55 + 0.45 * Math.sin(time * 4) });
   }
 
-  let by = H * 0.645;
+  let by = vy(0.645);
   const bh = 44 * UI, gap = 8 * UI;
   if (Coop.connected) {
     // つながったら「どちらの端末でも」開始できる(ホスト待ちで詰まらない)
@@ -934,30 +942,30 @@ function drawIntro() {
   drawBackground();
   ctx.fillStyle = 'rgba(0,0,10,0.55)'; ctx.fillRect(0, 0, W, H);
   const slide = tt < 0.2 ? (0.2 - tt) * 5 * 60 : 0;
-  label(game.aiMode ? '✨ AI STAGE ✨' : (t('stage') + ' ' + (game.stageIndex + 1)), W / 2, H * 0.30 - slide, '#8fd3ff', 14 * UI);
+  label(game.aiMode ? '✨ AI STAGE ✨' : (t('stage') + ' ' + (game.stageIndex + 1)), W / 2, vy(0.30) - slide, '#8fd3ff', 14 * UI);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(56 * UI)}px serif`;
-  ctx.fillText(st.emoji, W / 2, H * 0.42 - slide);
-  label(st.name, W / 2, H * 0.52 - slide, '#ffffff', 22 * UI);
-  label(st.en, W / 2, H * 0.565 - slide, '#aab', 11 * UI);
+  ctx.fillText(st.emoji, W / 2, vy(0.42) - slide);
+  label(st.name, W / 2, vy(0.52) - slide, '#ffffff', 22 * UI);
+  label(st.en, W / 2, vy(0.565) - slide, '#aab', 11 * UI);
   const pulse = 1 + Math.sin(performance.now() * 0.008) * 0.18;
-  ctx.save(); ctx.translate(W / 2, H * 0.69); ctx.scale(pulse, pulse);
+  ctx.save(); ctx.translate(W / 2, vy(0.69)); ctx.scale(pulse, pulse);
   ctx.font = `${Math.round(46 * UI)}px serif`; ctx.fillText(d.arrow, 0, 0); ctx.restore();
-  label(t('dir_' + st.dir), W / 2, H * 0.77, '#ffd700', 14 * UI);
+  label(t('dir_' + st.dir), W / 2, vy(0.77), '#ffd700', 14 * UI);
 }
 
 function drawClear() {
   drawBackground(); drawParticles();
   ctx.fillStyle = 'rgba(0,0,10,0.5)'; ctx.fillRect(0, 0, W, H);
-  label(t('stage_clear'), W / 2, H * 0.40, '#ffd700', 26 * UI);
-  label(t('score') + ' ' + game.score, W / 2, H * 0.50, '#fff', 14 * UI);
+  label(t('stage_clear'), W / 2, vy(0.40), '#ffd700', 26 * UI);
+  label(t('score') + ' ' + game.score, W / 2, vy(0.50), '#fff', 14 * UI);
   const next = game.stages[game.stageIndex + 1];
-  if (next) label(`${t('next')}: ${next.emoji} ${next.name}`, W / 2, H * 0.58, '#8fd3ff', 12 * UI);
+  if (next) label(`${t('next')}: ${next.emoji} ${next.name}`, W / 2, vy(0.58), '#8fd3ff', 12 * UI);
 }
 
 function drawPause() {
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
-  label(t('paused'), W / 2, H * 0.45, '#fff', 26 * UI);
-  label(t('resume'), W / 2, H * 0.53, '#8fd3ff', 12 * UI);
+  label(t('paused'), W / 2, vy(0.45), '#fff', 26 * UI);
+  label(t('resume'), W / 2, vy(0.53), '#8fd3ff', 12 * UI);
 }
 
 function drawFinale() {
@@ -981,26 +989,26 @@ function drawFinale() {
       : F.kind === 'world' ? `WORLD ${game.world - 1} ${ja ? '突破!' : 'CLEAR!'}`
         : (ja ? 'ステージクリア!' : 'STAGE CLEAR!');
   const gold = F.kind === 'victory' || F.kind === 'coop';
-  ctx.save(); ctx.translate(W / 2, H * 0.40); ctx.scale(s, s);
+  ctx.save(); ctx.translate(W / 2, vy(0.40)); ctx.scale(s, s);
   label(title, 0, 0, gold ? '#ffd700' : '#8fff9d', 36 * UI);
   ctx.restore();
-  if (F.t > 500) label(`+${F.bonus}`, W / 2, H * 0.40 + 42 * UI, '#ffe14d', 20 * UI);
-  if (F.kind === 'victory' && F.t > 900) label(ja ? '✨ 全ステージ制覇 ✨' : '✨ ALL STAGES CLEAR ✨', W / 2, H * 0.40 + 72 * UI, '#b98cff', 14 * UI);
-  if (F.kind === 'coop' && F.t > 900) label(ja ? `👥 ${Coop.partner.name} と一緒に撃破!` : `👥 Beaten with ${Coop.partner.name}!`, W / 2, H * 0.40 + 72 * UI, '#4ad6a0', 14 * UI);
+  if (F.t > 500) label(`+${F.bonus}`, W / 2, vy(0.40) + 42 * UI, '#ffe14d', 20 * UI);
+  if (F.kind === 'victory' && F.t > 900) label(ja ? '✨ 全ステージ制覇 ✨' : '✨ ALL STAGES CLEAR ✨', W / 2, vy(0.40) + 72 * UI, '#b98cff', 14 * UI);
+  if (F.kind === 'coop' && F.t > 900) label(ja ? `👥 ${Coop.partner.name} と一緒に撃破!` : `👥 Beaten with ${Coop.partner.name}!`, W / 2, vy(0.40) + 72 * UI, '#4ad6a0', 14 * UI);
   if (game.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, 0.85)})`; ctx.fillRect(0, 0, W, H); }
 }
 
 function drawGameOver() {
   ctx.fillStyle = 'rgba(0,0,0,0.74)'; ctx.fillRect(0, 0, W, H);
-  label(t('game_over'), W / 2, H * 0.20, '#ff3030', 30 * UI);
+  label(t('game_over'), W / 2, vy(0.20), '#ff3030', 30 * UI);
   const r = game.lastResult;
-  if (r && (game.endless)) label(`${t('world')} ${r.world}`, W / 2, H * 0.28, '#b98cff', 17 * UI);
-  label(t('score') + ' ' + game.score, W / 2, H * 0.345, '#fff', 16 * UI);
-  if (game.score >= game.hi && game.score > 0) label(t('new_record'), W / 2, H * 0.40, '#ffd700', 13 * UI);
-  if (game.skinFlash > 0) label(t('new_skin') + ' ' + Save.currentSkin().name, W / 2, H * 0.44, '#7CFC00', 13 * UI);
+  if (r && (game.endless)) label(`${t('world')} ${r.world}`, W / 2, vy(0.28), '#b98cff', 17 * UI);
+  label(t('score') + ' ' + game.score, W / 2, vy(0.345), '#fff', 16 * UI);
+  if (game.score >= game.hi && game.score > 0) label(t('new_record'), W / 2, vy(0.40), '#ffd700', 13 * UI);
+  if (game.skinFlash > 0) label(t('new_skin') + ' ' + Save.currentSkin().name, W / 2, vy(0.44), '#7CFC00', 13 * UI);
   game.overBtns = [];
   const bw = Math.min(W * 0.74, 330), bh = 48 * UI, bx = W / 2 - bw / 2, gap = 13 * UI;
-  let by = H * 0.50;
+  let by = vy(0.50);
   if (game.continues > 0) { overBtn('continue', bx, by, bw, bh, `${t('continue')} (${t('remain')} ${game.continues})`, '#00cc88'); by += bh + gap; }
   overBtn('share', bx, by, bw, bh, t('share'), '#ff8bd0'); by += bh + gap;
   overBtn('retry', bx, by, bw, bh, t('retry'), '#8fd3ff'); by += bh + gap;
@@ -1019,24 +1027,24 @@ function drawVictory() {
   ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
   drawParticles();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(52 * UI)}px serif`;
-  ctx.fillText(game.coop ? '👥' : '🏆', W / 2, H * 0.24);
+  ctx.fillText(game.coop ? '👥' : '🏆', W / 2, vy(0.24));
   const jaV = getLang() === 'ja';
   const vTitle = game.coop ? (jaV ? `${Coop.partner.name} と共闘クリア!` : `Co-op clear with ${Coop.partner.name}!`)
     : game.aiMode ? t('ai_clear')
       : (jaV ? `第${(game.chapter | 0) + 1}章 制覇!` : `CHAPTER ${(game.chapter | 0) + 1} CONQUERED!`);
-  label(vTitle, W / 2, H * 0.35, '#ffd700', game.coop ? 18 * UI : 22 * UI);
+  label(vTitle, W / 2, vy(0.35), '#ffd700', game.coop ? 18 * UI : 22 * UI);
   if (!game.coop && !game.aiMode) {
     label(jaV ? `▶︎ 第${(game.chapter | 0) + 2}章 が開放されました` : `▶︎ Chapter ${(game.chapter | 0) + 2} unlocked`,
-      W / 2, H * 0.40, '#7CFC00', 13 * UI);
+      W / 2, vy(0.40), '#7CFC00', 13 * UI);
   }
-  label(t('final_score') + ' ' + game.score, W / 2, H * 0.45, '#fff', 14 * UI);
+  label(t('final_score') + ' ' + game.score, W / 2, vy(0.45), '#fff', 14 * UI);
   const rank = game.score >= 180000 ? 'S' : game.score >= 120000 ? 'A' : game.score >= 70000 ? 'B' : 'C';
-  label(t('rank') + ' ' + rank, W / 2, H * 0.55, { S: '#ffd700', A: '#ff66aa', B: '#8fd3ff', C: '#99cc99' }[rank], 38 * UI);
+  label(t('rank') + ' ' + rank, W / 2, vy(0.55), { S: '#ffd700', A: '#ff66aa', B: '#8fd3ff', C: '#99cc99' }[rank], 38 * UI);
   const acc = game.stats.shots ? Math.round(game.stats.hits / game.stats.shots * 100) : 0;
-  label(`${t('kills')} ${game.stats.kills}   ${t('accuracy')} ${acc}%   ${t('hits_taken')} ${game.stats.deathTimes.length}`, W / 2, H * 0.62, '#aab', 12 * UI);
+  label(`${t('kills')} ${game.stats.kills}   ${t('accuracy')} ${acc}%   ${t('hits_taken')} ${game.stats.deathTimes.length}`, W / 2, vy(0.62), '#aab', 12 * UI);
   game.overBtns = [];
   const bw = Math.min(W * 0.7, 320), bh = 48 * UI, bx = W / 2 - bw / 2, gap = 13 * UI;
-  let by = H * 0.70;
+  let by = vy(0.70);
   overBtn('share', bx, by, bw, bh, t('share'), '#ff8bd0'); by += bh + gap;
   overBtn('title', bx, by, bw, bh, t('to_title'), '#5577aa');
 }
