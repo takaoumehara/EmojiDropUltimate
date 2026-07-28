@@ -64,7 +64,9 @@ function rebuildFromSnap(s) {
     if (!game.boss) spawnBoss();
     const b = game.boss;
     b.tx = s.s[0]; b.ty = s.s[1]; b.hp = s.s[2]; b.entering = !!s.s[3]; b.phase = s.s[4];
-  } else if (game.boss && !game.finale) { game.boss = null; game.bossActive = false; }
+    Coop.bossShared = b.hp;                     // 貢献表示用に同期
+    if (b.hp <= 0) bossDefeated();              // ホストが倒した → 撃破演出へ
+  } else if (game.boss && !game.finale) { bossDefeated(); }
 }
 function applySnap(dt) {
   const s = Coop.snap;
@@ -295,11 +297,12 @@ function spawnBoss() {
   const style = BOSS_STYLES[styleKey];
   const hp = Math.round(st.boss.hp * (game.coop ? COOP_HP_MUL : 1)); // 共闘は二人がかり前提で硬く
   game.boss = {
-    prog: -80, targetProg: 150, lat: latSpan() / 2, latPhase: 0,
+    prog: -80, targetProg: game.coop ? 195 : 150, lat: latSpan() / 2, latPhase: 0,
     hp, maxHp: hp, phase: 0,
     atkT: 900, atkIdx: 0, flash: 0, entering: true,
     charging: false, chargeTo: null, returning: false, x: -999, y: -999,
     style: styleKey, col: style.col, shape: style.shape, phases: style.phases, ringAng: 0, spiralAng: 0,
+    scale: game.coop ? 2.15 : 1,   // ふたりで挑む時は画面を圧するサイズに
   };
   // 共有ボスHPの管理はホストが正。ゲストは表示用の最大値だけ合わせる。
   if (game.coop) { if (isGuest()) Coop.bossSharedMax = hp; else Coop.initBoss(hp); }
@@ -330,7 +333,9 @@ function updateBoss(dt) {
       if (b.charging) return;
     } else {
       b.latPhase += dt * (1.2 + b.phase * 0.4);
-      const oscLat = latSpan() / 2 + Math.sin(b.latPhase) * latSpan() * 0.3;
+      // 巨大ボスは振り幅を抑える(画面外にはみ出さないように)
+      const amp = 0.3 / Math.max(1, (b.scale || 1) * 0.82);
+      const oscLat = latSpan() / 2 + Math.sin(b.latPhase) * latSpan() * amp;
       if (b.returning) {
         b.prog = lerp(b.prog, b.targetProg, dt * 2.5); b.lat = lerp(b.lat, oscLat, dt * 2.5);
         if (Math.abs(b.prog - b.targetProg) < 4) b.returning = false;
@@ -412,7 +417,9 @@ function damageBoss(dmg) {
   if (!b || b.entering) return;
   b.flash = 1; game.stats.hits++; Snd.bossHit();
   game.shake = Math.min(game.shake + 1.5, CFG.MAX_SHAKE);
-  if (game.coop) { Coop.dealLocal(dmg); b.hp = Coop.bossShared; } // 共闘: 共有HPを削る
+  // 共闘のボスHPはホストが正。ゲストは与ダメを送るだけで、HPはスナップショットで受け取る。
+  if (isGuest()) { Coop.dealLocal(dmg); return; }
+  if (game.coop) { Coop.dealLocal(dmg); b.hp = Coop.bossShared; }
   else b.hp -= dmg;
   if (b.hp <= 0) bossDefeated();
 }
@@ -596,7 +603,7 @@ function checkCollisions() {
       }
     }
     if (used) continue;
-    if (game.boss && !game.boss.entering && dist(b, game.boss) < 42 + b.size) { damageBoss(1); game.pBullets.splice(bi, 1); continue; }
+    if (game.boss && !game.boss.entering && dist(b, game.boss) < 42 * game.boss.scale + b.size) { damageBoss(1); if (!b.pierce) { game.pBullets.splice(bi, 1); } continue; }
     for (let li = game.bells.length - 1; li >= 0; li--) {
       const bl = game.bells[li];
       if (dist(b, bl) < bl.size + b.size + 4) { hitBell(bl); game.pBullets.splice(bi, 1); break; }
@@ -608,7 +615,7 @@ function checkCollisions() {
   if (p.dead || p.inv) return;
   for (let i = game.eBullets.length - 1; i >= 0; i--) if (dist(game.eBullets[i], p) < hitR + game.eBullets[i].size) { game.eBullets.splice(i, 1); killPlayer(); return; }
   for (const e of game.enemies) { if (e.delay > 0) continue; if (dist(e, p) < hitR + e.size * 0.72) { killPlayer(); return; } }
-  if (game.boss && !game.boss.entering && dist(game.boss, p) < hitR + 38) { killPlayer(); return; }
+  if (game.boss && !game.boss.entering && dist(game.boss, p) < hitR + 38 * game.boss.scale) { killPlayer(); return; }
 }
 
 // === 汎用更新 ===

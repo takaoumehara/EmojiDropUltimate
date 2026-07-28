@@ -280,9 +280,16 @@ function drawEnemies() {
 function drawBoss() {
   const b = game.boss;
   if (!b) return;
+  const bs = b.scale || 1;
   ctx.save(); ctx.translate(b.x, b.y);
-  const pulse = 1 + Math.sin(performance.now() * 0.004) * 0.06; ctx.scale(pulse, pulse);
+  const pulse = 1 + Math.sin(performance.now() * 0.004) * 0.06; ctx.scale(pulse * bs, pulse * bs);
   const aura = ['rgba(255,255,255,0.2)', 'rgba(255,170,0,0.28)', 'rgba(255,30,30,0.35)'][b.phase];
+  // 巨大ボスは さらに威圧的なオーラをもう一枚重ねる
+  if (bs > 1.4) {
+    const og = ctx.createRadialGradient(0, 0, 30, 0, 0, 72);
+    og.addColorStop(0, b.col + '44'); og.addColorStop(1, b.col + '00');
+    ctx.fillStyle = og; ctx.beginPath(); ctx.arc(0, 0, 72, 0, Math.PI * 2); ctx.fill();
+  }
   ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(0, 0, 48, 0, Math.PI * 2); ctx.fill();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '68px serif';
   ctx.fillText(stage().boss.emoji, 0, 0);
