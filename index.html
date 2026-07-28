@@ -15,6 +15,15 @@
 <meta name="twitter:description" content="方向が変わる×リアル天気連動×AIが無限にステージ生成。ワンタップで即プレイ。">
 <meta name="twitter:image" content="og.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<!-- iOS は manifest.webmanifest の表示設定を無視するため個別に指定する -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EMOJI DROP">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Outfit:wght@400;500;600;800&display=swap" rel="stylesheet">
@@ -53,6 +62,30 @@ canvas{display:block;position:fixed;inset:0}
   padding:11px 12px;border-radius:10px;cursor:pointer;color:#e7edf9;font-size:13.5px;font-weight:500}
 .setRow:active{background:rgba(255,255,255,.09)}
 .setRow b{font-weight:600;color:#ffd23f;font-size:13px}
+
+/* PWAインストールの誘い(タイトル画面のみ・控えめ・いつでも閉じられる) */
+#pwaNudge{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));z-index:15;
+  width:min(90vw,372px);transform:translate(-50%,150%);opacity:0;pointer-events:none;
+  display:flex;align-items:center;gap:10px;padding:11px 11px 11px 13px;border-radius:14px;
+  background:rgba(10,15,32,.92);border:1px solid rgba(255,255,255,.16);
+  box-shadow:0 14px 40px rgba(0,0,0,.55);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  font-family:'Outfit',system-ui,sans-serif;color:#e7edf9;
+  transition:transform .4s cubic-bezier(.2,.9,.25,1.2),opacity .3s ease}
+#pwaNudge.show{transform:translate(-50%,0);opacity:1;pointer-events:auto}
+#pwaNudge .pnIcon{font-size:25px;line-height:1;flex-shrink:0;
+  filter:drop-shadow(0 2px 5px rgba(255,210,63,.35))}
+#pwaNudge .pnBody{flex:1;min-width:0}
+#pwaNudge .pnTitle{font-weight:700;font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pwaNudge .pnSub{font-weight:500;font-size:11px;color:#a8b8d4;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pwaNudge .pnBtn{flex-shrink:0;border:none;border-radius:10px;padding:9px 14px;font-family:inherit;
+  font-weight:700;font-size:12.5px;background:linear-gradient(180deg,#ffdf6b,#f5b429);color:#20180a;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .12s ease}
+#pwaNudge .pnBtn:active{transform:scale(.92)}
+#pwaNudge .pnClose{flex-shrink:0;width:25px;height:25px;border-radius:50%;border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.07);color:#a8b8d4;font-size:11px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
+#pwaNudge .pnClose:active{background:rgba(255,255,255,.18)}
 </style>
 </head>
 <body>
@@ -65,6 +98,122 @@ canvas{display:block;position:fixed;inset:0}
   <div class="setRow" id="setSound"><span id="setSoundL">サウンド</span><b id="setSoundV">ON</b></div>
   <div class="setRow" id="setLang"><span id="setLangL">言語</span><b id="setLangV">日本語</b></div>
 </div>
+
+<div id="pwaNudge" role="dialog" aria-label="Add to Home Screen">
+  <div class="pnIcon">🚀</div>
+  <div class="pnBody">
+    <div class="pnTitle" id="pnTitle">ホーム画面に追加</div>
+    <div class="pnSub" id="pnSub">オフラインでも即プレイ</div>
+  </div>
+  <button class="pnBtn" id="pnInstallBtn" type="button">追加</button>
+  <button class="pnClose" id="pnCloseBtn" type="button" aria-label="閉じる">✕</button>
+</div>
+
+<script>
+// Service Worker 登録: 失敗してもゲーム本体には一切影響させない。
+// https か localhost でのみ(セキュアコンテキスト以外では登録自体が無意味/エラーの元)。
+(function () {
+  try {
+    var secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if ('serviceWorker' in navigator && secure) {
+      window.addEventListener('load', function () {
+        try {
+          navigator.serviceWorker.register('./sw.js').catch(function () {});
+        } catch (e) { /* noop */ }
+      });
+    }
+  } catch (e) { /* noop */ }
+})();
+</script>
+
 <script type="module" src="./src/main.js"></script>
+<script type="module">
+// ============================================================
+// PWAインストールの誘い(タイトル画面のみ・1回閉じたら二度と出さない)
+//   src/ の読み取り専用インポートのみ使用(表示言語を本体と同期させるため)。
+// ============================================================
+import { getLang } from './src/i18n.js';
+
+const DISMISS_KEY = 'edu_pwa_dismissed';
+const nudge = document.getElementById('pwaNudge');
+const elTitle = document.getElementById('pnTitle');
+const elSub = document.getElementById('pnSub');
+const btnInstall = document.getElementById('pnInstallBtn');
+const btnClose = document.getElementById('pnCloseBtn');
+
+let deferredPrompt = null;
+let iosHint = false;
+let shown = false;
+
+function isStandalone() {
+  try {
+    return window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: fullscreen)').matches ||
+      window.navigator.standalone === true;
+  } catch (e) { return false; }
+}
+function hasPlayed() {
+  try { return !!localStorage.getItem('edu_save'); } catch (e) { return false; }
+}
+function wasDismissed() {
+  try { return localStorage.getItem(DISMISS_KEY) === '1'; } catch (e) { return false; }
+}
+function dismiss() {
+  try { localStorage.setItem(DISMISS_KEY, '1'); } catch (e) { /* noop */ }
+  nudge.classList.remove('show');
+}
+
+// iOS Safari には beforeinstallprompt が存在しないため、共有シートへの案内で代替する
+if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream) iosHint = true;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+});
+window.addEventListener('appinstalled', () => {
+  deferredPrompt = null;
+  nudge.classList.remove('show');
+});
+
+function syncTexts() {
+  let ja = true;
+  try { ja = getLang() === 'ja'; } catch (e) { /* noop */ }
+  elTitle.textContent = ja ? 'ホーム画面に追加' : 'Add to Home Screen';
+  elSub.textContent = iosHint
+    ? (ja ? '共有アイコン →「ホーム画面に追加」' : 'Share icon → "Add to Home Screen"')
+    : (ja ? 'オフラインでも即プレイ' : 'Play offline, instantly');
+  btnInstall.style.display = iosHint ? 'none' : '';
+  btnInstall.textContent = ja ? '追加' : 'Add';
+}
+
+function tick() {
+  const canOffer = !!deferredPrompt || iosHint;
+  const onTitle = !!(window.EDU && window.EDU.game && window.EDU.game.state === 'title');
+  const eligible = canOffer && onTitle && !isStandalone() && hasPlayed() && !wasDismissed();
+  if (eligible && !shown) {
+    shown = true;
+    syncTexts();
+    requestAnimationFrame(() => nudge.classList.add('show'));
+  } else if (!eligible && shown) {
+    shown = false;
+    nudge.classList.remove('show');
+  } else if (eligible && shown) {
+    syncTexts(); // タイトル画面で言語を切替えても追従させる
+  }
+}
+setInterval(tick, 500);
+
+btnClose.addEventListener('click', dismiss);
+btnInstall.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  nudge.classList.remove('show');
+  try {
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+  } catch (e) { /* noop */ }
+  deferredPrompt = null;
+  try { localStorage.setItem(DISMISS_KEY, '1'); } catch (e) { /* noop */ }
+});
+</script>
 </body>
 </html>

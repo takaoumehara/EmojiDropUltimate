@@ -1,0 +1,21 @@
+{
+  "name": "EMOJI DROP ULTIMATE",
+  "short_name": "EMOJI DROP",
+  "description": "方向がガラッと変わる絵文字シューティング。リアル天気連動AI・学習ボス・AIステージ無限生成。",
+  "lang": "ja",
+  "start_url": "/",
+  "scope": "/",
+  "id": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone", "minimal-ui", "browser"],
+  "orientation": "portrait",
+  "background_color": "#05050f",
+  "theme_color": "#05050f",
+  "categories": ["games"],
+  "dir": "ltr",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

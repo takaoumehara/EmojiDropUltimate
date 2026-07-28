@@ -225,40 +225,90 @@ function drawBullets() {
     ctx.fillStyle = '#ffffff'; ctx.fillRect(-1, -5, 2, 7);
     ctx.restore();
   }
-  const tNow = performance.now() * 0.004;
-  for (const b of game.eBullets) {
-    const s = b.size, col = b.col || (b.boss ? '#ff4646' : '#ffaa00');
-    // 外周のにじみ(どの背景でも位置が判る)
-    ctx.fillStyle = col + '55'; ctx.beginPath(); ctx.arc(b.x, b.y, s + 3.5, 0, Math.PI * 2); ctx.fill();
-    ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.fillStyle = col;
-    // ボスのテーマごとに弾の形を変える(色だけでなく形でも見分けられる)
-    switch (b.shape) {
-      case 'star': polyStar(s * 1.45, s * 0.62, 5, (b.spin || 0) + tNow); break;
-      case 'diamond': ctx.rotate((b.spin || 0) + tNow * 0.6); ctx.beginPath();
-        ctx.moveTo(0, -s * 1.35); ctx.lineTo(s, 0); ctx.lineTo(0, s * 1.35); ctx.lineTo(-s, 0); ctx.closePath(); ctx.fill(); break;
-      case 'chip': ctx.rotate((b.spin || 0) * 0 + Math.PI / 4); ctx.fillRect(-s * 0.82, -s * 0.82, s * 1.64, s * 1.64); break;
-      case 'flame': ctx.beginPath();
-        ctx.moveTo(0, -s * 1.5); ctx.quadraticCurveTo(s * 1.1, 0, 0, s * 1.15); ctx.quadraticCurveTo(-s * 1.1, 0, 0, -s * 1.5); ctx.fill(); break;
-      case 'bubble': ctx.beginPath(); ctx.arc(0, 0, s, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#ffffffcc'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(0, 0, s + 2, 0, Math.PI * 2); ctx.stroke(); break;
-      case 'orb': ctx.beginPath(); ctx.arc(0, 0, s, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(0, 0, s + 4, 0, Math.PI * 2); ctx.stroke(); break;
-      default: ctx.beginPath(); ctx.arc(0, 0, s, 0, Math.PI * 2); ctx.fill();
-    }
-    // 白い芯 — これがあるので明るい背景でも必ず見える
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, s * 0.4, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
+  drawEnemyBullets();
 }
-function polyStar(R, r, n, rot) {
-  ctx.beginPath();
-  for (let i = 0; i < n * 2; i++) {
-    const a = rot + i * Math.PI / n, rad = i % 2 ? r : R;
-    i ? ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad) : ctx.moveTo(Math.cos(a) * rad, Math.sin(a) * rad);
+
+// 敵弾は数が多い(弾幕で100発超)。1発ずつ save/restore して3回描くと
+// スマホで確実にフレームが落ちるため、色ごとに1本のパスへまとめて塗る。
+function drawEnemyBullets() {
+  const list = game.eBullets;
+  if (!list.length) return;
+  const tNow = performance.now() * 0.004;
+  const groups = new Map();
+  for (const b of list) {
+    const col = b.col || (b.boss ? '#ff4646' : '#ffaa00');
+    let g = groups.get(col);
+    if (!g) { g = []; groups.set(col, g); }
+    g.push(b);
   }
-  ctx.closePath(); ctx.fill();
+  // 弾幕が濃い時は半透明の光背を省く(塗り面積が重なって低スペック機で落ちるため)。
+  // 白い芯は必ず描くので、省いても弾は見失わない。
+  const glow = list.length <= 70;
+  ctx.save();
+  for (const [col, bs] of groups) {
+    // ① 外周のにじみ(位置が背景に埋もれないように)
+    if (glow) {
+      ctx.beginPath();
+      for (const b of bs) { ctx.moveTo(b.x + b.size + 3.5, b.y); ctx.arc(b.x, b.y, b.size + 3.5, 0, Math.PI * 2); }
+      ctx.fillStyle = col + '55'; ctx.fill();
+    }
+    // ② 本体(テーマごとの形。回転は座標計算で行い、変換行列は触らない)
+    ctx.beginPath();
+    for (const b of bs) shapePath(b, tNow);
+    ctx.fillStyle = col; ctx.fill();
+    // ③ 一部の形だけ輪郭を足す(配列は作らずその場で数える)
+    let ring = 0;
+    ctx.beginPath();
+    for (const b of bs) {
+      if (b.shape !== 'bubble' && b.shape !== 'orb') continue;
+      ring = b.shape === 'orb' ? 2 : 1;
+      const r = b.size + (b.shape === 'orb' ? 4 : 2);
+      ctx.moveTo(b.x + r, b.y); ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+    }
+    if (ring) { ctx.strokeStyle = ring === 2 ? col : '#ffffffcc'; ctx.lineWidth = 1.6; ctx.stroke(); }
+    // ④ 白い芯(明るい背景でも必ず見える)
+    ctx.beginPath();
+    for (const b of bs) { const r = b.size * 0.4; ctx.moveTo(b.x + r, b.y); ctx.arc(b.x, b.y, r, 0, Math.PI * 2); }
+    ctx.fillStyle = '#fff'; ctx.fill();
+  }
+  ctx.restore();
+}
+
+// 現在のパスへ弾1発分の輪郭を足す(fill は呼び出し側でまとめて1回)。
+//   毎フレーム100発以上を通るホットパス。配列もクロージャも作らないこと。
+function shapePath(b, tNow) {
+  const s = b.size, x = b.x, y = b.y;
+  switch (b.shape) {
+    case 'star': {
+      const a0 = (b.spin || 0) + tNow, R = s * 1.45, r = s * 0.62;
+      for (let i = 0; i < 10; i++) {
+        const a = a0 + i * 0.6283185307, rad = i % 2 ? r : R;   // π/5
+        const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad;
+        i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+      }
+      ctx.closePath(); break;
+    }
+    case 'diamond': {
+      const a = (b.spin || 0) + tNow * 0.6, c = Math.cos(a), n = Math.sin(a), d = s * 1.35;
+      ctx.moveTo(x + n * d, y - c * d);
+      ctx.lineTo(x + c * s, y + n * s);
+      ctx.lineTo(x - n * d, y + c * d);
+      ctx.lineTo(x - c * s, y - n * s);
+      ctx.closePath(); break;
+    }
+    case 'chip': {
+      const h = s * 1.16;                                        // 45°回転した正方形=菱形
+      ctx.moveTo(x, y - h); ctx.lineTo(x + h, y); ctx.lineTo(x, y + h); ctx.lineTo(x - h, y);
+      ctx.closePath(); break;
+    }
+    case 'flame':
+      ctx.moveTo(x, y - s * 1.5);
+      ctx.quadraticCurveTo(x + s * 1.1, y, x, y + s * 1.15);
+      ctx.quadraticCurveTo(x - s * 1.1, y, x, y - s * 1.5);
+      ctx.closePath(); break;
+    default:
+      ctx.moveTo(x + s, y); ctx.arc(x, y, s, 0, Math.PI * 2);
+  }
 }
 
 function drawEnemies() {
