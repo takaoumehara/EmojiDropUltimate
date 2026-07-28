@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>絵文字台帳 — EMOJI DROP ULTIMATE</title>
+<style>
+:root {
+  --ground: #10132a;
+  --raised: #171b36;
+  --sunk:   #0b0e20;
+  --ink:    #e7eaf6;
+  --muted:  #8b93b5;
+  --line:   #272c4e;
+  --accent: #ffcf4d;
+  --accent-ink: #ffcf4d;
+  --cyan:   #6cc6ff;
+  --alert:  #ff8071;
+  --ok:     #6ee7a8;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --ground: #e9ecf4; --raised: #ffffff; --sunk: #dde2ee;
+    --ink: #161a2e; --muted: #5c6482; --line: #c7cee0;
+    --accent: #f0b400; --accent-ink: #7a5200; --cyan: #1f7fbf;
+    --alert: #c23c2c; --ok: #1f8a5a;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --ground: #e9ecf4; --raised: #ffffff; --sunk: #dde2ee;
+  --ink: #161a2e; --muted: #5c6482; --line: #c7cee0;
+  --accent: #f0b400; --accent-ink: #7a5200; --cyan: #1f7fbf;
+  --alert: #c23c2c; --ok: #1f8a5a;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --ground: #10132a; --raised: #171b36; --sunk: #0b0e20;
+  --ink: #e7eaf6; --muted: #8b93b5; --line: #272c4e;
+  --accent: #ffcf4d; --accent-ink: #ffcf4d; --cyan: #6cc6ff;
+  --alert: #ff8071; --ok: #6ee7a8;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  line-height: 1.75;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px 96px; }
+
+/* --- 見出し --- */
+.masthead { padding: 56px 0 34px; display: flex; flex-direction: column; gap: 14px; }
+.eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--accent-ink); margin: 0;
+}
+h1 {
+  font-family: var(--mono); font-weight: 600; font-size: clamp(28px, 6vw, 46px);
+  line-height: 1.15; letter-spacing: -0.02em; margin: 0; text-wrap: balance;
+}
+.dek { margin: 0; max-width: 62ch; color: var(--muted); font-size: 15px; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.stat {
+  background: var(--raised); border: 1px solid var(--line); border-radius: 3px;
+  padding: 9px 14px; display: flex; align-items: baseline; gap: 8px;
+}
+.stat b {
+  font-family: var(--mono); font-size: 20px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--accent-ink);
+}
+.stat span { font-size: 11px; color: var(--muted); font-family: var(--mono); letter-spacing: 0.06em; }
+
+/* --- 回答カード --- */
+.answers { display: grid; gap: 16px; grid-template-columns: 1fr; margin: 0 0 40px; }
+@media (min-width: 760px) { .answers { grid-template-columns: 1fr 1fr; } }
+.answer {
+  background: var(--raised); border: 1px solid var(--line);
+  border-radius: 3px; padding: 22px 22px 24px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.answer .q {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted); margin: 0;
+}
+.answer .a {
+  font-family: var(--mono); font-size: 19px; font-weight: 600; line-height: 1.4;
+  margin: 0; color: var(--accent-ink); text-wrap: balance;
+}
+.answer p { margin: 0; font-size: 14px; color: var(--ink); }
+.answer p.note { color: var(--muted); font-size: 13px; }
+.answer code {
+  font-family: var(--mono); font-size: 0.92em; background: var(--sunk);
+  padding: 1px 5px; border-radius: 2px;
+}
+
+/* --- 端末レポート --- */
+.probe {
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  background: var(--raised); border-radius: 3px; padding: 20px 22px; margin: 0 0 44px;
+}
+.probe h2 {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+  margin: 0 0 12px; color: var(--muted); font-weight: 600;
+}
+.probe-line { font-family: var(--mono); font-size: 15px; margin: 0 0 6px; }
+.probe-line em { font-style: normal; color: var(--accent-ink); }
+.probe-sub { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.probe-miss { margin: 12px 0 0; font-size: 22px; font-family: serif; line-height: 1.6; word-break: break-all; }
+
+/* --- 絞り込み --- */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 28px; }
+.chip {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 7px 14px; cursor: pointer; transition: color .15s, border-color .15s, background .15s;
+}
+.chip:hover { color: var(--ink); border-color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #1a1500; }
+.chip:focus-visible, .tile:focus-visible, .close:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* --- 台帳本体 --- */
+.sect { margin: 0 0 44px; }
+.sect > header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0 0 4px;
+  border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.sect h2 { font-family: var(--mono); font-size: 15px; font-weight: 600; margin: 0; letter-spacing: 0.02em; }
+.sect .count { font-family: var(--mono); font-size: 12px; color: var(--accent-ink); font-variant-numeric: tabular-nums; }
+.sect .blurb { font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; }
+.tile {
+  position: relative; background: var(--raised); border: 1px solid var(--line);
+  border-radius: 3px; padding: 10px 4px 7px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  font: inherit; color: inherit; transition: border-color .15s, transform .15s, background .15s;
+}
+.tile:hover { border-color: var(--accent); transform: translateY(-2px); }
+.tile[aria-pressed="true"] { border-color: var(--accent); background: var(--sunk); }
+/* ゲーム本体と同じ指定。ここを変えると台帳が現物と食い違う。 */
+.tile .glyph { font-family: serif; font-size: 30px; line-height: 1.1; }
+.tile .cp { font-family: var(--mono); font-size: 9px; color: var(--muted); letter-spacing: -0.02em; }
+.tile .dot { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; }
+.dot.zwj, .dot.multi { background: var(--cyan); }
+.dot.vs16 { background: var(--muted); }
+.dot.textd { background: var(--alert); }
+.dot.missing { background: var(--alert); box-shadow: 0 0 0 3px color-mix(in srgb, var(--alert) 28%, transparent); }
+.tile.is-missing .glyph { opacity: .45; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 0 0 30px; font-size: 12px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); }
+.legend i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+
+/* --- 詳細 --- */
+.detail {
+  position: fixed; inset: auto 0 0 0; z-index: 20;
+  background: var(--raised); border-top: 1px solid var(--accent);
+  padding: 18px 20px 22px; transform: translateY(102%); transition: transform .22s ease;
+  box-shadow: 0 -16px 40px rgba(0,0,0,.32);
+}
+.detail.open { transform: translateY(0); }
+.detail-in { max-width: 1040px; margin: 0 auto; display: flex; gap: 18px; align-items: flex-start; }
+.detail .big { font-family: serif; font-size: 54px; line-height: 1; flex: none; }
+.detail dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 13px; min-width: 0; }
+.detail dt { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.06em; }
+.detail dd { margin: 0; font-family: var(--mono); word-break: break-all; }
+.close {
+  margin-left: auto; flex: none; background: transparent; border: 1px solid var(--line);
+  color: var(--muted); border-radius: 3px; font-family: var(--mono); font-size: 12px;
+  padding: 5px 11px; cursor: pointer;
+}
+.close:hover { color: var(--ink); border-color: var(--muted); }
+/* 狭い画面では、説明リストを1行まるごとに逃がす(絵文字とボタンに挟まれて潰れるため) */
+@media (max-width: 620px) {
+  .detail { max-height: 62vh; overflow-y: auto; }
+  .detail-in { display: grid; grid-template-columns: auto 1fr auto; gap: 8px 14px; align-items: start; }
+  .detail .big { font-size: 40px; }
+  .close { grid-column: 3; grid-row: 1; margin-left: 0; }
+  .detail dl { grid-column: 1 / -1; }
+}
+
+/* --- 絵文字でないもの --- */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 3px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 460px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.what { font-family: var(--mono); }
+td.how { color: var(--muted); }
+.yes { color: var(--ok); } .no { color: var(--alert); }
+
+footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+footer code { font-family: var(--mono); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Emoji Drop Ultimate — 素材台帳</p>
+  <h1>このゲームが使っている文字、全部</h1>
+  <p class="dek">敵もボスも背景もベルも、画像ではなく文字です。ここに出ているのは全部、いまあなたが見ている端末のフォントが描いた字形。下の一覧はソースコードから自動生成しているので、ゲームの中身と必ず一致します。</p>
+  <div class="stats" id="stats"></div>
+</header>
+
+<section class="answers">
+  <div class="answer">
+    <p class="q">Q. どのシリーズの絵文字?</p>
+    <p class="a">どのシリーズでもありません</p>
+    <p>絵文字の画像は1枚も同梱していません。<code>ctx.fillText("🐙", x, y)</code> と、ただの文字として描いているだけです。だから絵柄を決めているのは<strong>あなたの端末</strong>です。</p>
+    <p class="note">iPhone・Mac → Apple Color Emoji ／ Android・ChromeOS → Noto Color Emoji ／ Windows → Segoe UI Emoji。同じコードでも端末ごとに違う絵が出ます。ライセンス上も、同梱していないので配布物に他社の絵は一切入っていません。</p>
+  </div>
+  <div class="answer">
+    <p class="q">Q. 本当に全部絵文字?</p>
+    <p class="a">ほぼ全部。例外が2種類あります</p>
+    <p>敵・ボス・背景・ステージ看板・自機キャラは全部、本物の Unicode 絵文字です。</p>
+    <p class="note"><strong>例外1</strong>: 3文字(⚠︎ ⚙︎ ▶︎)は、わざと白黒に固定してあります。赤い「WARNING」の中で警告記号だけ黄色くなると意図が壊れるためです。<br><strong>例外2</strong>: 自機の戦闘機・弾・ボスの本体・星・破片は絵文字ではなく、Canvas で描いた図形です。ページ下部の表にまとめました。</p>
+  </div>
+</section>
+
+<section class="probe" id="probe">
+  <h2>あなたの端末での実測</h2>
+  <p class="probe-line" id="probeFont">測定中…</p>
+  <p class="probe-sub" id="probeSub"></p>
+  <p class="probe-miss" id="probeMiss"></p>
+</section>
+
+<div class="filters" id="filters">
+  <button class="chip" type="button" data-f="all" aria-pressed="true">すべて</button>
+  <button class="chip" type="button" data-f="seq" aria-pressed="false">合字・複数コードポイント</button>
+  <button class="chip" type="button" data-f="textd" aria-pressed="false">白黒で出る恐れ</button>
+  <button class="chip" type="button" data-f="missing" aria-pressed="false">この端末で欠けている</button>
+  <button class="chip" type="button" data-f="move" aria-pressed="false">性格が付いている敵</button>
+</div>
+
+<div class="legend">
+  <span><i class="dot zwj" style="background:var(--cyan)"></i> 合字・複数コードポイント</span>
+  <span><i class="dot vs16" style="background:var(--muted)"></i> 表示形式を固定してある</span>
+  <span><i class="dot textd" style="background:var(--alert)"></i> セレクタ無し(白黒の恐れ)</span>
+</div>
+
+<main id="sections"></main>
+
+<section class="sect">
+  <header><h2>絵文字ではないもの</h2></header>
+  <p class="blurb">「全部絵文字ですか」の答えの残り半分です。ここに挙げたものは文字ではなく、その場で計算して描いている図形なので、端末が変わっても見た目は変わりません。</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>画面に出るもの</th><th>絵文字?</th><th>実際の描き方</th></tr></thead>
+      <tbody>
+        <tr><td class="what">自機(ファイター)</td><td class="no">いいえ</td><td class="how">長方形6枚を重ねた自作の機体 (render.js)</td></tr>
+        <tr><td class="what">自機(それ以外の6キャラ)</td><td class="yes">はい</td><td class="how">🚀 🐱 ⚡ 🍕 🦄 💩 をそのまま描画</td></tr>
+        <tr><td class="what">自分の弾</td><td class="no">いいえ</td><td class="how">長方形＋発光。ただし 🐾 ✨ 💩 の弾だけは絵文字</td></tr>
+        <tr><td class="what">ボスの本体</td><td class="no">いいえ</td><td class="how">形状ごとに計算した輪郭。顔の絵文字はその上に重ねる</td></tr>
+        <tr><td class="what">敵</td><td class="yes">はい</td><td class="how">絵文字1文字。HPバーだけ図形</td></tr>
+        <tr><td class="what">ベル</td><td class="yes">はい</td><td class="how">🔔 ＋ 色リングと 🔒 は図形と絵文字の組み合わせ</td></tr>
+        <tr><td class="what">星・破片・爆発</td><td class="no">いいえ</td><td class="how">小さな長方形と円</td></tr>
+        <tr><td class="what">背景の飾り</td><td class="yes">はい</td><td class="how">ステージごとの絵文字を薄く流している</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <p>この台帳は <code>node tools/emoji-sheet.mjs</code> がソースから生成しています。絵文字を足したら生成し直せば、ここも自動で追随します。</p>
+</footer>
+
+</div>
+
+<aside class="detail" id="detail" aria-live="polite">
+  <div class="detail-in">
+    <div class="big" id="dBig"></div>
+    <dl>
+      <dt>コードポイント</dt><dd id="dCp"></dd>
+      <dt>字形の種類</dt><dd id="dKind"></dd>
+      <dt>ゲーム内の役割</dt><dd id="dRole"></dd>
+      <dt>動きの性格</dt><dd id="dMove"></dd>
+      <dt>この端末では</dt><dd id="dSupport"></dd>
+    </dl>
+    <button class="close" type="button" id="dClose">閉じる</button>
+  </div>
+</aside>
+
+<script>
+const DATA = /*__DATA__*/null;
+
+const GROUPS = [
+  { id: 'player', name: '自機キャラと自機の弾', blurb: '選べる7キャラ。ここに出ている絵文字は、約束どおり敵側には一度も使っていません。' },
+  { id: 'enemy',  name: '敵',                 blurb: '手書きの第1章と、AI生成テーマの両方から集めたもの。絵柄そのものから動きの性格を決めています。' },
+  { id: 'boss',   name: 'ボス',               blurb: '本体の輪郭は図形で、顔だけがこの絵文字です。' },
+  { id: 'bg',     name: '背景の飾り',          blurb: 'ステージの奥を薄く流れていくもの。当たり判定はありません。' },
+  { id: 'sign',   name: 'ステージ看板',        blurb: 'ステージ名の横と、制覇マップに出る印。' },
+  { id: 'ui',     name: 'UI・演出',           blurb: '残機、ボム、シールド、章クリアなど、画面まわりで使っているもの。' },
+  { id: 'spare',  name: '性格表だけにいる予備', blurb: 'いま出番はないけれど、動きの性格だけ先に決めてある絵文字。新ステージを足すとそのまま使えます。' },
+];
+const KIND_JA = { single: '単一コードポイント', vs16: '異体字セレクタ付き(U+FE0F)', text15: '白黒表示に固定(U+FE0E)', zwj: 'ZWJ合字', multi: '複数コードポイント' };
+const MOVE_JA = {
+  slither: '蛇行して迫る', dive: '不規則に急降下する', glide: '滑って止まる',
+  blink: '瞬間移動する', angular: '直角に曲がる', hop: '跳ねながら来る', lurk: '溜めてから突進する',
+};
+
+// --- 端末が本当にその字形を持っているかを実測する ---
+//   1) 豆腐判定: 割り当ての無いコードポイント(U+10FFFF)を描いた絵と同じなら、
+//      その字形はこの端末に無い。
+//   2) カラー判定: 塗り色を赤と青に変えて2回描く。絵が変われば「文字」として
+//      描かれている(=白黒)。カラー絵文字は塗り色を無視するので絵は変わらない。
+//      彩度で判断すると 🦈 や 💀 のような色の薄い絵文字を誤判定するので使わない。
+const cv = document.createElement('canvas');
+const cx = cv.getContext('2d', { willReadFrequently: true });
+const SZ = 40;
+function sample(str, color) {
+  cv.width = cv.height = SZ;
+  cx.clearRect(0, 0, SZ, SZ);
+  cx.font = Math.round(SZ * 0.8) + 'px serif';
+  cx.textBaseline = 'top';
+  cx.fillStyle = color;
+  cx.fillText(str, 0, 0);
+  const d = cx.getImageData(0, 0, SZ, SZ).data;
+  let hash = 0, ink = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] > 8) ink++;
+    hash = (hash * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13 + d[i + 3]) | 0;
+  }
+  return { hash, ink };
+}
+
+let probeReady = false;
+function runProbe() {
+  const tofu = sample('\u{10FFFF}', '#ff0000');
+  for (const d of DATA) {
+    const red = sample(d.e, '#ff0000');
+    d.missing = red.ink === 0 || (red.hash === tofu.hash && red.ink === tofu.ink);
+    d.mono = !d.missing && red.hash !== sample(d.e, '#0000ff').hash;
+  }
+  probeReady = true;
+}
+
+function platformGuess() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua)) return ['Apple Color Emoji', 'iOS'];
+  if (/Android/.test(ua)) return ['Noto Color Emoji', 'Android'];
+  if (/Macintosh|Mac OS X/.test(ua)) return ['Apple Color Emoji', 'macOS'];
+  if (/Windows/.test(ua)) return ['Segoe UI Emoji', 'Windows'];
+  if (/CrOS/.test(ua)) return ['Noto Color Emoji', 'ChromeOS'];
+  if (/Linux/.test(ua)) return ['Noto Color Emoji', 'Linux'];
+  return ['お使いのシステムの絵文字フォント', 'この端末'];
+}
+
+function renderProbe() {
+  const [font, os] = platformGuess();
+  const missing = DATA.filter(d => d.missing);
+  // わざと白黒にしてあるものと、意図せず白黒になっているものは別の話
+  const monoWanted = DATA.filter(d => d.mono && d.s === 'text15');
+  const mono = DATA.filter(d => d.mono && d.s !== 'text15');
+  document.getElementById('probeFont').innerHTML =
+    os + ' なので、いま見えているのは <em>' + font + '</em> が描いた字形です。';
+  const parts = [];
+  parts.push(missing.length === 0
+    ? '全' + DATA.length + '字がこの端末で表示できています。'
+    : DATA.length + '字のうち ' + missing.length + '字がこの端末に無く、豆腐(□)になります。');
+  parts.push(mono.length === 0
+    ? '意図せず白黒になっている字はありません。'
+    : '意図せず白黒の記号として出ているものが ' + mono.length + '字あります:');
+  if (monoWanted.length) {
+    parts.push('(' + monoWanted.map(d => d.e).join(' ') + ' の' + monoWanted.length + '字は、わざと白黒にしてあります)');
+  }
+  document.getElementById('probeSub').textContent = parts.join(' ');
+  document.getElementById('probeMiss').textContent =
+    [...missing, ...mono].map(d => d.e).join('  ');
+}
+
+function renderStats() {
+  const st = [
+    [DATA.length, '字'],
+    [GROUPS.length, '役割'],
+    [DATA.filter(d => d.s !== 'single').length, '合字/複数'],
+    [DATA.filter(d => d.t).length, 'セレクタ無し'],
+    [DATA.filter(d => d.m).length, '性格つき'],
+  ];
+  document.getElementById('stats').innerHTML = st.map(function (s) {
+    return '<div class="stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>';
+  }).join('');
+}
+
+let filter = 'all';
+function passes(d) {
+  if (filter === 'seq') return d.s !== 'single';
+  if (filter === 'textd') return !!d.t;
+  if (filter === 'missing') return !!d.missing || !!d.mono;
+  if (filter === 'move') return !!d.m;
+  return true;
+}
+
+function dotClass(d) {
+  if (d.missing) return 'missing';
+  if (d.t) return 'textd';
+  if (d.s === 'zwj' || d.s === 'multi') return 'zwj';
+  if (d.s === 'vs16' || d.s === 'text15') return 'vs16';
+  return '';
+}
+
+function render() {
+  const host = document.getElementById('sections');
+  host.innerHTML = '';
+  for (const g of GROUPS) {
+    const items = DATA.filter(d => d.g === g.id && passes(d));
+    if (!items.length) continue;
+    const sec = document.createElement('section');
+    sec.className = 'sect';
+    const head = document.createElement('header');
+    head.innerHTML = '<h2>' + g.name + '</h2><span class="count">' + items.length + '字</span>';
+    const blurb = document.createElement('p');
+    blurb.className = 'blurb';
+    blurb.textContent = g.blurb;
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for (const d of items) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tile' + (d.missing ? ' is-missing' : '');
+      b.setAttribute('aria-pressed', 'false');
+      b.setAttribute('aria-label', d.e + ' ' + d.cp.join(' '));
+      const cls = dotClass(d);
+      b.innerHTML =
+        (cls ? '<span class="dot ' + cls + '"></span>' : '') +
+        '<span class="glyph">' + d.e + '</span>' +
+        '<span class="cp">' + d.cp[0].replace('U+', '') + (d.cp.length > 1 ? '+' + (d.cp.length - 1) : '') + '</span>';
+      b.addEventListener('click', () => showDetail(d, b));
+      grid.appendChild(b);
+    }
+    sec.appendChild(head); sec.appendChild(blurb); sec.appendChild(grid);
+    host.appendChild(sec);
+  }
+}
+
+let openTile = null;
+const detail = document.getElementById('detail');
+function showDetail(d, tile) {
+  if (openTile) openTile.setAttribute('aria-pressed', 'false');
+  openTile = tile;
+  tile.setAttribute('aria-pressed', 'true');
+  document.getElementById('dBig').textContent = d.e;
+  document.getElementById('dCp').textContent = d.cp.join(' ');
+  document.getElementById('dKind').textContent =
+    KIND_JA[d.s] + (d.t ? '(U+FE0F 無し — 端末によって白黒)' : '');
+  document.getElementById('dRole').textContent = d.r.join('、') || '—';
+  document.getElementById('dMove').textContent = d.m ? MOVE_JA[d.m] + '（' + d.m + '）' : '—';
+  document.getElementById('dSupport').textContent = !probeReady ? '測定中'
+    : d.missing ? '表示できません(豆腐になります)'
+    : d.mono ? (d.s === 'text15' ? '白黒の記号(意図どおり)' : '白黒の記号として表示されています')
+    : 'カラー絵文字として表示されています';
+  detail.classList.add('open');
+}
+function closeDetail() {
+  detail.classList.remove('open');
+  if (openTile) { openTile.setAttribute('aria-pressed', 'false'); openTile = null; }
+}
+document.getElementById('dClose').addEventListener('click', closeDetail);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+document.getElementById('filters').addEventListener('click', e => {
+  const btn = e.target.closest('.chip');
+  if (!btn) return;
+  filter = btn.dataset.f;
+  for (const c of document.querySelectorAll('.chip')) {
+    c.setAttribute('aria-pressed', String(c === btn));
+  }
+  closeDetail();
+  render();
+});
+
+renderStats();
+render();
+// 絵文字フォントが読み込まれてから測る。早すぎると全部「無い」判定になる。
+(document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve())
+  .then(() => new Promise(r => setTimeout(r, 60)))
+  .then(() => { runProbe(); renderProbe(); render(); });
+</script>
+</body>
+</html>

@@ -421,7 +421,7 @@ function drawHUD() {
   const p = game.player;
   ctx.font = `${Math.round(17 * UI)}px serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillText('❤️'.repeat(Math.max(0, game.lives)) + (game.bombs ? '  ' + '💣'.repeat(game.bombs) : ''), pad, H - 46 * UI);
-  const st8 = `PW${p.power}${p.options ? ' · OP' + p.options : ''}${p.shield ? ' · 🛡' : ''}${p.boost ? ' · 💨' : ''}`;
+  const st8 = `PW${p.power}${p.options ? ' · OP' + p.options : ''}${p.shield ? ' · 🛡️' : ''}${p.boost ? ' · 💨' : ''}`;
   txt(st8, pad, H - 24 * UI, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'left', baseline: 'top', shadow: 0.7 });
   const slabel = game.coop ? '👥' : game.endless ? ('W' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('' + (game.stageIndex + 1));
   txt(`${slabel} ${stage().emoji}${dirDef().arrow}`, W - pad, H - 24 * UI, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'right', baseline: 'top', shadow: 0.7 });
@@ -433,7 +433,7 @@ function drawHUD() {
   }
   if (game.warnT > 0 && Math.floor(game.warnT / 220) % 2 === 0) {
     ctx.fillStyle = 'rgba(255,0,0,0.16)'; ctx.fillRect(0, H / 2 - 62, W, 124);
-    label('⚠ ' + t('warning') + ' ⚠', W / 2, H / 2 - 12, '#ff3030', 30 * UI);
+    label('⚠︎ ' + t('warning') + ' ⚠︎', W / 2, H / 2 - 12, '#ff3030', 30 * UI);
     const nm = getLang() === 'ja' ? stage().boss.name : stage().boss.en;
     label(`${nm} ${t('approach')}`, W / 2, H / 2 + 26, '#ffb0b0', 14 * UI);
   }
@@ -514,7 +514,7 @@ function drawTitle() {
   }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
-  // 絵文字の隊列(⚙ボタンと干渉しない高さに配置)
+  // 絵文字の隊列(設定ボタンと干渉しない高さに配置)
   const ey = H * 0.125;
   const crew = ['🚀', '🐦', '🐙', '👾', '🐉', '🛸'];
   ctx.save();
@@ -980,7 +980,7 @@ function drawVictory() {
       : (jaV ? `第${(game.chapter | 0) + 1}章 制覇!` : `CHAPTER ${(game.chapter | 0) + 1} CONQUERED!`);
   label(vTitle, W / 2, H * 0.35, '#ffd700', game.coop ? 18 * UI : 22 * UI);
   if (!game.coop && !game.aiMode) {
-    label(jaV ? `▶ 第${(game.chapter | 0) + 2}章 が開放されました` : `▶ Chapter ${(game.chapter | 0) + 2} unlocked`,
+    label(jaV ? `▶︎ 第${(game.chapter | 0) + 2}章 が開放されました` : `▶︎ Chapter ${(game.chapter | 0) + 2} unlocked`,
       W / 2, H * 0.40, '#7CFC00', 13 * UI);
   }
   label(t('final_score') + ' ' + game.score, W / 2, H * 0.45, '#fff', 14 * UI);
