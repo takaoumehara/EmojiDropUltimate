@@ -142,9 +142,12 @@ export const Coop = {
       case 'hit': if (this.onPartnerHit) this.onPartnerHit(o.id, o.d | 0, o.sl); break; // ホスト: 相方の命中を反映
       case 'died': if (this.onPartnerDied) this.onPartnerDied(); break;           // ホスト: 共有残機を減らす
       case 'over': if (this.onGameOver) this.onGameOver(); break;                 // ゲスト: 二人まとめて終了
+      // ゲスト: ボス撃破。スナップショットは state が finale に移った時点で止まるので、
+      //   「ボスが消えた世界」は永久に届かない。撃破だけは明示的に伝える必要がある。
+      case 'bd': if (this.onBossDown) this.onBossDown(); break;
     }
   },
-  onPartnerHit: null, onPartnerDied: null, onGameOver: null,   // engine が設定
+  onPartnerHit: null, onPartnerDied: null, onGameOver: null, onBossDown: null,   // engine が設定
 
   // ホスト → ゲスト: ワールド状態(敵・弾・ベル・ボス)を一定間隔で送る
   _lastSnap: 0,

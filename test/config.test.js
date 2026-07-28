@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   makeRng, hashStr, clamp, lerp,
-  STAGES, BOSS_STYLES, STYLE_KEYS, CHARS, DIRS, MOVES, MOVE_BY_EMOJI,
+  STAGES, BOSS_STYLES, STYLE_KEYS, CHARS, DIRS, MOVES, MOVE_BY_EMOJI, BELLS, POWER_SHOT_EMOJIS,
 } from '../src/config.js';
 import { proceduralStage } from '../src/aistage.js';
 
@@ -208,7 +208,7 @@ test('every procedurally generated enemy emoji has a personality too', () => {
 // === 自機の弾と、世界の素材がぶつからないこと ===
 // 弾と同じ絵文字が敵や背景に混ざっていると、撃っているのか撃たれているのか
 // 一瞬わからなくなる。❄️ が「雪だるまの弾」かつ「氷結パレスの敵」だった件の再発防止。
-const SHOT_EMOJIS = CHARS.map(c => c.shotEmoji).filter(Boolean);
+const SHOT_EMOJIS = [...CHARS.map(c => c.shotEmoji).filter(Boolean), ...POWER_SHOT_EMOJIS];
 
 test('design rule: no projectile emoji is also used as an enemy or boss', () => {
   const shots = new Set(SHOT_EMOJIS);
@@ -269,3 +269,35 @@ test('CHARS: damage-per-second stays within one band, so no character is strictl
   assert.ok(hi / lo < 2.4,
     `raw damage spread is ${(hi / lo).toFixed(2)}x — ${JSON.stringify(dps.sort((a, b) => b.v - a.v).slice(0, 3))}`);
 });
+
+// === ベル ===
+test('BELLS: every entry has a colour, both names, and a known effect', () => {
+  const EFFECTS = new Set(['points', 'speed', 'power', 'option', 'shield', 'bomb', 'boomerang', 'rear', 'side']);
+  const seen = new Set();
+  for (const b of BELLS) {
+    assert.ok(EFFECTS.has(b.effect), `bell "${b.name}" has unknown effect "${b.effect}" — collectBell would silently do nothing`);
+    assert.ok(!seen.has(b.effect), `two bells both grant "${b.effect}"`);
+    seen.add(b.effect);
+    assert.ok(b.color && b.name && b.ja, `bell "${b.effect}" is missing colour or names`);
+    // 時限効果は必ず切れること。切れないと取った瞬間に永続強化になる。
+    if (['speed', 'boomerang', 'rear', 'side'].includes(b.effect)) {
+      assert.ok(b.duration > 0 && b.duration <= 20000,
+        `bell "${b.name}" needs a duration under 20s, got ${b.duration}`);
+    }
+  }
+});
+
+test('CHARS: bullet speed is set for everyone and stays readable', () => {
+  // 弾が速すぎると「何を投げているか」が読めず、遅すぎると手応えが無くなる。
+  for (const c of CHARS) {
+    assert.ok(typeof c.bspeed === 'number', `character "${c.id}" has no bspeed — it would silently fall back to 1`);
+    assert.ok(c.bspeed >= 0.6 && c.bspeed <= 1.3,
+      `character "${c.id}" bspeed ${c.bspeed} is outside the readable range`);
+  }
+  // 絵文字を投げるキャラほど遅い側に居ること(絵柄が見えないと意味が無い)
+  const emojiAvg = avg(CHARS.filter(c => c.shotEmoji).map(c => c.bspeed));
+  const plainAvg = avg(CHARS.filter(c => !c.shotEmoji).map(c => c.bspeed));
+  assert.ok(emojiAvg < plainAvg,
+    `emoji projectiles average ${emojiAvg.toFixed(2)} but plain bolts average ${plainAvg.toFixed(2)} — emoji shots must fly slower to stay legible`);
+});
+function avg(a) { return a.reduce((x, y) => x + y, 0) / a.length; }

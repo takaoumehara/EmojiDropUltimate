@@ -5,7 +5,7 @@
 
 export const CFG = {
   PLAYER_SPEED: 330,
-  BULLET_SPEED: 560,
+  BULLET_SPEED: 400,   // 遅くした。速いと絵柄が読めず、敵が近づく前に溶けて手応えが消える
   EBULLET_SPEED: 190,
   COMBO_WINDOW: 2000,
   INV_TIME: 2200,
@@ -198,7 +198,14 @@ export const BELLS = [
   { color: '#b967ff', name: 'OPTION', ja: 'オプション', effect: 'option' },
   { color: '#ffd700', name: 'SHIELD', ja: 'シールド', effect: 'shield' },
   { color: '#7CFC00', name: 'BOMB',   ja: 'ボム',     effect: 'bomb' },
+  // 撃つ方向そのものを変える武装。効果は時間切れで消えるので、強いまま居座らない。
+  { color: '#ff9f1c', name: 'BOOMER', ja: 'ブーメラン', effect: 'boomerang', duration: 12000 },
+  { color: '#3ddc97', name: 'REAR',   ja: 'うしろ撃ち', effect: 'rear',      duration: 14000 },
+  { color: '#ff6fae', name: 'SIDE',   ja: 'よこ撃ち',   effect: 'side',      duration: 14000 },
 ];
+
+// ベルで手に入る武装が使う絵文字。敵や背景と被らせない(テストで縛ってある)。
+export const POWER_SHOT_EMOJIS = ['🪃'];
 
 // 編隊パターン: (敵タイプ配列, 横軸の幅 span) → [{t, lat, delay}]
 export const PATTERNS = [
@@ -239,56 +246,56 @@ export const PATTERNS = [
 //   face は絵文字が元々向いている角度。指定すると進行方向へ回して描く。
 export const CHARS = [
   { id: 'fighter', emoji: '🛩️', name: 'ファイター', en: 'FIGHTER', col: '#6cc6ff',
-    shot: '#8fe3ff', shotEmoji: null, speed: 1, fire: 1, size: 4, spread: 0, pierce: 0, slow: 0,
+    shot: '#8fe3ff', shotEmoji: null, speed: 1, fire: 1, size: 4, spread: 0, pierce: 0, slow: 0, bspeed: 1.0,
     art: 'ship', tag: 'バランス', tagEn: 'All-round' },
   { id: 'rocket', emoji: '🚀', name: 'ロケット', en: 'ROCKET', col: '#ff9d5c',
-    shot: '#ffc48f', shotEmoji: null, speed: 1.08, fire: 1.05, size: 4.6, spread: 0, pierce: 0, slow: 0,
+    shot: '#ffc48f', shotEmoji: null, speed: 1.08, fire: 1.05, size: 4.6, spread: 0, pierce: 0, slow: 0, bspeed: 1.15,
     face: -Math.PI / 4, tag: '加速重視', tagEn: 'Boosted' },
   { id: 'cat', emoji: '🐱', name: 'ネコ', en: 'CAT', col: '#ffb26b',
-    shot: '#ffd7a8', shotEmoji: '🐾', speed: 1.3, fire: 0.95, size: 3.4, spread: 0, pierce: 0, slow: 0,
+    shot: '#ffd7a8', shotEmoji: '🐾', speed: 1.3, fire: 0.95, size: 3.4, spread: 0, pierce: 0, slow: 0, bspeed: 1.1,
     tag: 'すばやい', tagEn: 'Fastest move' },
   { id: 'bolt', emoji: '⚡', name: 'カミナリ', en: 'BOLT', col: '#ffe14d',
-    shot: '#fff2a0', shotEmoji: null, speed: 1.05, fire: 0.62, size: 3, spread: 0, pierce: 0, slow: 0,
+    shot: '#fff2a0', shotEmoji: null, speed: 1.05, fire: 0.62, size: 3, spread: 0, pierce: 0, slow: 0, bspeed: 1.2,
     tag: '連射', tagEn: 'Rapid fire' },
   { id: 'pizza', emoji: '🍕', name: 'ピザ', en: 'PIZZA', col: '#ff8a4d',
-    shot: '#ffc07a', shotEmoji: null, speed: 0.92, fire: 1.45, size: 4.2, spread: 1, pierce: 0, slow: 0,
+    shot: '#ffc07a', shotEmoji: null, speed: 0.92, fire: 1.45, size: 4.2, spread: 1, pierce: 0, slow: 0, bspeed: 0.95,
     tag: '横に広い', tagEn: 'Wide shot' },
   { id: 'unicorn', emoji: '🦄', name: 'ユニコーン', en: 'UNICORN', col: '#e879f9',
-    shot: '#f5b8ff', shotEmoji: '✨', speed: 1, fire: 1.25, size: 5.2, spread: 0, pierce: 1, slow: 0,
+    shot: '#f5b8ff', shotEmoji: '✨', speed: 1, fire: 1.25, size: 5.2, spread: 0, pierce: 1, slow: 0, bspeed: 1.05,
     tag: 'つらぬく', tagEn: 'Piercing' },
   { id: 'poop', emoji: '💩', name: 'ウンチ', en: 'POOP', col: '#a9744f',
-    shot: '#c58a5e', shotEmoji: '💩', speed: 0.95, fire: 1.4, size: 8, spread: 0, pierce: 0, slow: 1,
+    shot: '#c58a5e', shotEmoji: '💩', speed: 0.95, fire: 1.4, size: 8, spread: 0, pierce: 0, slow: 1, bspeed: 0.8,
     tag: 'ベタッと減速', tagEn: 'Sticky slow' },
 
   // --- 「その絵文字なら何を投げるか」で決めた面々 ---
   //   dmg を持つキャラは1発が重いぶん連射が遅い。合計火力はどれもほぼ同じで、
   //   違うのは「当てやすさ」と「取り回し」。見た目だけの差にはしない。
   { id: 'genie', emoji: '🧞‍♂️', name: 'ランプの精', en: 'GENIE', col: '#4fc3f7',
-    shot: '#9be7ff', shotEmoji: '💧', speed: 1.02, fire: 1.3, size: 5.4, spread: 0, pierce: 1, slow: 0, dmg: 1,
+    shot: '#9be7ff', shotEmoji: '💧', speed: 1.02, fire: 1.3, size: 5.4, spread: 0, pierce: 1, slow: 0, dmg: 1, bspeed: 1.05,
     tag: '水流がつらぬく', tagEn: 'Piercing jet' },
   { id: 'chef', emoji: '🧑‍🍳', name: 'パン職人', en: 'BAKER', col: '#f0c27b',
-    shot: '#ffd9a0', shotEmoji: '🥖', speed: 0.95, fire: 1.5, size: 6.4, spread: 0, pierce: 0, slow: 0, dmg: 2,
+    shot: '#ffd9a0', shotEmoji: '🥖', speed: 0.95, fire: 1.5, size: 6.4, spread: 0, pierce: 0, slow: 0, dmg: 2, bspeed: 0.72,
     tag: '固いパンで殴る', tagEn: 'Heavy loaf' },
   { id: 'farmer', emoji: '🧑‍🌾', name: 'ファーマー', en: 'FARMER', col: '#ff9f45',
-    shot: '#ffc888', shotEmoji: '🥕', speed: 1.06, fire: 0.74, size: 4.8, spread: 0, pierce: 0, slow: 0, dmg: 1,
+    shot: '#ffc888', shotEmoji: '🥕', speed: 1.06, fire: 0.74, size: 4.8, spread: 0, pierce: 0, slow: 0, dmg: 1, bspeed: 1.0,
     tag: '人参を速射', tagEn: 'Carrot volley' },
   { id: 'snowman', emoji: '⛄', name: 'ゆきだるま', en: 'SNOWMAN', col: '#8fd8ff',
-    shot: '#d6f2ff', shotEmoji: '❄️', speed: 0.98, fire: 1.15, size: 5.6, spread: 0, pierce: 0, slow: 1, dmg: 1,
+    shot: '#d6f2ff', shotEmoji: '❄️', speed: 0.98, fire: 1.15, size: 5.6, spread: 0, pierce: 0, slow: 1, dmg: 1, bspeed: 0.85,
     tag: '凍らせて止める', tagEn: 'Freezes' },
   { id: 'tree', emoji: '🌲', name: 'ツリー', en: 'TREE', col: '#67c96a',
-    shot: '#a8e8a0', shotEmoji: '🍃', speed: 0.88, fire: 1.3, size: 5, spread: 1, pierce: 0, slow: 0, dmg: 1,
+    shot: '#a8e8a0', shotEmoji: '🍃', speed: 0.88, fire: 1.3, size: 5, spread: 1, pierce: 0, slow: 0, dmg: 1, bspeed: 0.8,
     tag: '葉が横に広がる', tagEn: 'Wide leaves' },
   { id: 'dog', emoji: '🦮', name: 'イヌ', en: 'DOG', col: '#d9a066',
-    shot: '#e8c39a', shotEmoji: '💩', speed: 1.22, fire: 0.8, size: 4.4, spread: 0, pierce: 0, slow: 1, dmg: 1,
+    shot: '#f0e2c8', shotEmoji: '🦴', speed: 1.22, fire: 0.8, size: 4.4, spread: 0, pierce: 0, slow: 1, dmg: 1, bspeed: 1.05,
     tag: '走りながら撒く', tagEn: 'Hit and run' },
   { id: 'gorilla', emoji: '🦍', name: 'ゴリラ', en: 'GORILLA', col: '#ffd54f',
-    shot: '#ffe89a', shotEmoji: '🍌', speed: 0.85, fire: 1.9, size: 7.6, spread: 0, pierce: 0, slow: 0, dmg: 3,
+    shot: '#ffe89a', shotEmoji: '🍌', speed: 0.85, fire: 1.9, size: 7.6, spread: 0, pierce: 0, slow: 0, dmg: 3, bspeed: 0.68,
     tag: '最重量の一撃', tagEn: 'Heaviest hit' },
   { id: 'cow', emoji: '🐄', name: 'ウシ', en: 'COW', col: '#eaeaea',
-    shot: '#ffffff', shotEmoji: '🥛', speed: 0.95, fire: 0.68, size: 4.6, spread: 0, pierce: 0, slow: 0, dmg: 1,
+    shot: '#ffffff', shotEmoji: '🥛', speed: 0.95, fire: 0.68, size: 4.6, spread: 0, pierce: 0, slow: 0, dmg: 1, bspeed: 1.15,
     tag: 'ミルク最速連射', tagEn: 'Fastest fire' },
   { id: 'chicken', emoji: '🐓', name: 'ニワトリ', en: 'CHICKEN', col: '#ff8a80',
-    shot: '#ffd7b0', shotEmoji: '🥚', speed: 0.98, fire: 1.42, size: 5.6, spread: 0, pierce: 0, slow: 0, dmg: 2,
+    shot: '#ffd7b0', shotEmoji: '🥚', speed: 0.98, fire: 1.42, size: 5.6, spread: 0, pierce: 0, slow: 0, dmg: 2, bspeed: 0.85,
     tag: '卵は当たりやすい', tagEn: 'Big egg' },
 ];
 

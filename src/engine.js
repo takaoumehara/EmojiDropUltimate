@@ -44,7 +44,8 @@ function buildSnap() {
     e: game.enemies.filter(e => e.delay <= 0).map(e => [e.id, Math.round(e.x), Math.round(e.y), e.ti, e.hp, e.maxHp]),
     b: game.eBullets.map(x => [Math.round(x.x), Math.round(x.y), Math.round(x.vx), Math.round(x.vy), x.size, x.boss ? 1 : 0]),
     l: game.bells.map(x => [Math.round(x.x), Math.round(x.y), x.idx, x.size]),
-    s: b ? [Math.round(b.x), Math.round(b.y), Math.round(b.hp), b.entering ? 1 : 0, b.phase] : null,
+    s: b ? [Math.round(b.x), Math.round(b.y), Math.round(b.hp), b.entering ? 1 : 0, b.phase,
+            Math.round(b.maxHp), Math.round((b.scale || 1) * 100), b.dying > 0 ? 1 : 0, b.revived ? 1 : 0] : null,
     w: Math.round(game.warnT),
     lv: game.lives,
   };
@@ -74,8 +75,15 @@ function rebuildFromSnap(s) {
     if (!game.boss) spawnBoss();
     const b = game.boss;
     b.tx = s.s[0]; b.ty = s.s[1]; b.hp = s.s[2]; b.entering = !!s.s[3]; b.phase = s.s[4];
+    if (s.s.length > 5) {
+      b.maxHp = s.s[5] || b.maxHp;
+      b.scale = (s.s[6] || 100) / 100;
+      b.dying = s.s[7] ? 1 : 0;
+      if (s.s[8] && !b.revived) { b.revived = true; b.col = '#ff3b5c'; game.bossRevealT = 2400; Snd.warning(); }
+    }
     Coop.bossShared = b.hp;                     // 貢献表示用に同期
-    if (b.hp <= 0) bossDefeated();              // ホストが倒した → 撃破演出へ
+    // 撃破は 'bd' の受信だけで判定する。HP0=撃破にすると、復活ボスの
+    // 「一度0になる」瞬間にゲストだけ先に終わってしまう。
   } else if (game.boss && !game.finale) { bossDefeated(); }
 }
 function applySnap(dt) {
@@ -155,6 +163,10 @@ function updatePlayer(dt, keys) {
   if (p.trail.length > 40) p.trail.pop();
   if (p.inv) { p.invT -= dt * 1000; if (p.invT <= 0) p.inv = false; }
   if (p.boost) { p.boostT -= dt * 1000; if (p.boostT <= 0) p.boost = false; }
+  // ベル武装は時限式。取り続けないと維持できないので、強いまま居座らない。
+  if (p.boomT > 0) p.boomT -= dt * 1000;
+  if (p.rearT > 0) p.rearT -= dt * 1000;
+  if (p.sideT > 0) p.sideT -= dt * 1000;
   p.fireT -= dt * 1000;
   if (p.fireT <= 0) { fire(); p.fireT = (p.power >= 3 ? 105 : 130) * Save.char().fire * (p.focus ? 0.55 : 1); }
   if (p.muzzle > 0) p.muzzle -= dt * 11;
@@ -168,12 +180,18 @@ function fire() {
   p.muzzle = 1;
   Snd.shoot();
   const ch = Save.char();
-  const mk = (ox, spread = 0) => {
+  const spd = CFG.BULLET_SPEED * (ch.bspeed || 1);   // 重い物ほど遅く飛ぶ = 何を投げたか見える
+  const boom = p.boomT > 0;
+  // dx,dy = 飛ばす向き(単位ベクトル)。うしろ撃ち・よこ撃ちはここを差し替えるだけ。
+  const mk = (ox, spread = 0, dx = fx, dy = fy, smul = 1, ssize = 1) => {
+    const sx = -dy, sy = dx;
     game.pBullets.push({
-      x: p.x + fx * 20 + px * ox, y: p.y + fy * 20 + py * ox,
-      vx: fx * CFG.BULLET_SPEED + px * spread, vy: fy * CFG.BULLET_SPEED + py * spread,
-      size: ch.size, emoji: ch.shotEmoji, col: ch.shot, pierce: ch.pierce, slow: ch.slow,
-      dmg: ch.dmg || 1,
+      x: p.x + dx * 20 + sx * ox, y: p.y + dy * 20 + sy * ox,
+      vx: dx * spd * smul + sx * spread, vy: dy * spd * smul + sy * spread,
+      size: ch.size * ssize, emoji: boom ? '🪃' : ch.shotEmoji, col: boom ? '#ff9f1c' : ch.shot,
+      pierce: boom ? 1 : ch.pierce, slow: ch.slow, dmg: ch.dmg || 1,
+      // 折り返す時刻を少しずらす。揃っていると団子になって1個に見える。
+      boom: boom ? 1 : 0, bt: boom ? rand(0, 0.1) : 0, spin: rand(0, 6.28),
     });
     game.stats.shots++;
   };
@@ -182,6 +200,14 @@ function fire() {
   else { mk(0); mk(-13, -45); mk(13, 45); }
   // キャラ特性: 横に広い(ピザ)
   if (ch.spread) { mk(-20, -95); mk(20, 95); }
+  // ベルで得た武装。撃つ方向が増えるので、囲まれても抜け道ができる。
+  //   ただし主砲と同じ密度で撒くと、自機も敵弾も自分の弾に埋もれて見えなくなる。
+  //   1発おき・少し速く・少し小さく撃って、あくまで援護に見えるようにする。
+  p.auxTick = (p.auxTick || 0) + 1;
+  if (p.auxTick % 2 === 0) {
+    if (p.rearT > 0) mk(0, 0, -fx, -fy, 1.3, 0.8);
+    if (p.sideT > 0) { mk(0, 0, px, py, 1.3, 0.8); mk(0, 0, -px, -py, 1.3, 0.8); }
+  }
   for (let i = 0; i < p.options; i++) {
     const tt = p.trail[Math.min((i + 1) * 14, p.trail.length - 1)];
     if (tt) { game.pBullets.push({ x: tt.x + fx * 16, y: tt.y + fy * 16, vx: fx * CFG.BULLET_SPEED, vy: fy * CFG.BULLET_SPEED, size: 3, opt: true }); game.stats.shots++; }
@@ -349,6 +375,14 @@ function killEnemy(e, silent = false) {
   if (!silent) Snd.kill();
   explosion(e.x, e.y, 5, stage().sky[1]);
   popup(e.x, e.y - 18, '+' + pts, game.comboMul > 1 ? '#ff8844' : '#ffdd44');
+  // 硬い敵(撃ってくる奴・戦車)を倒すとベルに変わる
+  if (!isGuest() && (e.maxHp || 1) >= BELL_DROP_HP
+      && game.stageTime - (game.lastBellDrop || -9999) > BELL_DROP_COOLDOWN
+      && Math.random() < BELL_DROP_CHANCE) {
+    game.lastBellDrop = game.stageTime;
+    spawnBellAt(e.x, e.y);
+    popup(e.x, e.y - 40, '🔔', '#ffd700');
+  }
 }
 
 // === ボス ===
@@ -367,6 +401,11 @@ function spawnBoss() {
     phases: style.phases.map(ph => ({ attacks: shuffled(ph.attacks) })),
     ringAng: 0, spiralAng: 0,
     scale: game.coop ? 2.15 : 1,   // ふたりで挑む時は画面を圧するサイズに
+    // 「倒した」と思わせてから、一回り大きくなって蘇る。章の最後は必ず、他は約1/4。
+    //   ステージ名から決めるので、デイリーでも共闘でも全員に同じ番が回る。
+    revives: (game.stageIndex >= game.stages.length - 1
+      || hashStr('rev:' + st.name + ':' + game.stageIndex) % 100 < 26) ? 1 : 0,
+    dying: 0, revived: false,
   };
   // 共有ボスHPの管理はホストが正。ゲストは表示用の最大値だけ合わせる。
   if (game.coop) { if (isGuest()) Coop.bossSharedMax = hp; else Coop.initBoss(hp); }
@@ -379,12 +418,20 @@ function updateBoss(dt) {
   const b = game.boss;
   if (!b) return;
   BossAI.observe(dt);
+  if (game.bossRevealT > 0) game.bossRevealT -= dt * 1000;
+  if (b.dying > 0) {                       // 倒したと思わせている最中
+    b.dying -= dt * 1000;
+    b.flash = 1;
+    if (Math.random() < dt * 14) explosion(b.x + rand(-60, 60), b.y + rand(-60, 60), 6, '#ffd700');
+    if (b.dying <= 0) bossRevive();
+    return;
+  }
   if (b.entering) {
     b.prog = lerp(b.prog, b.targetProg, dt * 2);
     if (Math.abs(b.prog - b.targetProg) < 3) { b.entering = false; b.prog = b.targetProg; }
   } else {
     // 共闘: 相方の与ダメを反映(相方が削り切れば撃破)
-    if (game.coop) { b.hp = Coop.bossShared; if (b.hp <= 0) { bossDefeated(); return; } }
+    if (game.coop) { b.hp = Coop.bossShared; if (b.hp <= 0) { bossDepleted(); return; } }
     if (b.flash > 0) b.flash -= dt * 6;
     const hpR = b.hp / b.maxHp;
     b.phase = hpR <= 0.33 ? 2 : hpR <= 0.66 ? 1 : 0;
@@ -485,13 +532,51 @@ function damageBoss(dmg) {
   if (isGuest()) { Coop.dealLocal(dmg); return; }
   if (game.coop) { Coop.dealLocal(dmg); b.hp = Coop.bossShared; }
   else b.hp -= dmg;
-  if (b.hp <= 0) bossDefeated();
+  if (b.hp <= 0) bossDepleted();
+}
+
+// HPが尽きた。まだ復活が残っていれば「倒したと思わせる間」に入る。
+function bossDepleted() {
+  const b = game.boss;
+  if (!b || b.dying > 0) return;
+  if (b.revives > 0) {
+    // ここで即バナーを出すと種明かしになる。まず完全に倒れたように見せる。
+    b.dying = 1500; b.hp = 0; b.charging = false; b.returning = false;
+    Snd.kill(); Snd.bomb(); Snd.stopBGM();
+    game.flash = 0.9; game.shake = CFG.MAX_SHAKE;
+    return;
+  }
+  bossDefeated();
+}
+
+// 復活。別物だと一目で分かるように、大きさ・色・名前・音を全部変える。
+function bossRevive() {
+  const b = game.boss;
+  if (!b) return;
+  b.revives--; b.revived = true; b.dying = 0;
+  // 大きくなるぶん、定位置を奥へ押し下げる。そうしないとHPバーとホームボタンに
+  // 頭がめり込む。共闘は元から2.15倍なので、上限を決めて画面を潰さない。
+  b.scale = Math.min((b.scale || 1) * 1.55, game.coop ? 2.7 : 1.7);
+  b.targetProg += 78; b.returning = true;
+  b.maxHp = Math.round(b.maxHp * 1.15); b.hp = b.maxHp;
+  b.col = '#ff3b5c';
+  b.phase = 2; b.atkT = 700; b.atkIdx = 0;      // いきなり最終フェーズの攻撃から
+  b.phases = (b.phases || BOSS_PHASES).map(ph => ({ attacks: shuffled(ph.attacks) }));
+  game.bossRevealT = 2400;
+  if (game.coop && !isGuest()) Coop.initBoss(b.maxHp);
+  explosion(b.x, b.y, 22, '#ff3b5c');
+  game.flash = 1; game.shake = CFG.MAX_SHAKE;
+  Snd.warning();
+  Snd.startBGM(stage(), game.stageIndex, 'boss');
 }
 
 // ボス撃破 → フィナーレ(爽快感の余韻)。ソロ/共闘/エンドレスで分岐。
 function bossDefeated() {
   const b = game.boss;
   if (!b) return;
+  // ここで state が finale に移り、ワールド配信が止まる。相方には
+  // 「ボスが消えた世界」が永久に届かないので、撃破そのものを送る。
+  if (game.coop && Coop.role === 'host') Coop.send({ t: 'bd' });
   Snd.kill(); Snd.bomb();
   const bx = b.x, by = b.y, emoji = stage().boss.emoji;
   explosion(bx, by, 18, '#ffd700');
@@ -518,9 +603,24 @@ function bossDefeated() {
 }
 
 // === ベル ===
+const MAX_BELLS = 3;                    // 画面に溜めない。溜まると結局「無料の火力」になる
 function spawnBell() {
+  if (game.bells.length >= MAX_BELLS) return;
   game.bells.push({ prog: 60, lat: rand(50, latSpan() - 50), idx: 0, hits: 0, phase: rand(0, Math.PI * 2), size: 16, x: -999, y: -999, lockFlash: 0 });
 }
+// 倒した敵の位置からベルを出す。ベルを「湧いてくるもの」から
+//   「強い敵を倒した見返り」に変えると、取りに行く判断が生まれる。
+function spawnBellAt(x, y) {
+  if (game.bells.length >= MAX_BELLS) return;
+  const inv = invPL(x, y);
+  game.bells.push({ prog: Math.max(20, inv.prog), lat: clamp(inv.lat, 40, latSpan() - 40),
+    idx: 0, hits: 0, phase: rand(0, Math.PI * 2), size: 16, x, y, lockFlash: 0 });
+}
+export const BELL_DROP_HP = 3;          // これ以上硬い敵=撃ち返してくる連中だけが落とす
+const BELL_DROP_CHANCE = 0.5;
+// 後半のステージは硬い敵が大量に出るので、確率だけだと逆に降り注いでしまう。
+// 「前のドロップから何秒空いたか」で頭を押さえる。
+const BELL_DROP_COOLDOWN = 9000;
 // ベルは自機が近づくと色が固定される。
 //   ツインビーは手動ショットなので「必要な回数だけ撃つ」ができたが、
 //   こちらは自動連射なので狙った色を通り過ぎてしまう。近距離でロックすることで
@@ -553,13 +653,16 @@ function collectBell(bell) {
     case 'option': p.options = Math.min(p.options + 1, CFG.MAX_OPTIONS); break;
     case 'shield': p.shield = true; break;
     case 'bomb': game.bombs = Math.min(game.bombs + 1, CFG.MAX_BOMBS); break;
+    case 'boomerang': p.boomT = bt.duration; break;
+    case 'rear': p.rearT = bt.duration; break;
+    case 'side': p.sideT = bt.duration; break;
   }
 }
 
 // === ステージ進行 ===
 function startStage(i) {
   game.stageIndex = i;
-  game.stageTime = 0; game.waveIdx = 0;
+  game.stageTime = 0; game.waveIdx = 0; game.lastBellDrop = -9999;   // ステージを跨いで持ち越さない
   game.bossActive = false; game.warnT = 0;
   game.nextWave = 1400; game.nextBell = 6500;
   game.enemies = []; game.eBullets = []; game.pBullets = [];
@@ -582,7 +685,9 @@ function updateStage(dt) {
     if (game.nextBell <= 0) {
       spawnBell();
       const clearBonus = Weather.kind === 'clear' ? 0.8 : 1;
-      game.nextBell = rand(9000, 15000) * clearBonus / Director.bellMul;
+      // 大幅に間隔を空けた。前は1ステージで5個以上降ってきて、撃つ前に最大火力に
+      // なってしまい手応えが消えていた。主な供給源は下の「硬い敵の撃破」に移した。
+      game.nextBell = rand(17000, 26000) * clearBonus / Director.bellMul;
     }
     if (game.stageTime >= st.dur) {
       game.warnT = CFG.WARN_TIME; Snd.warning();
@@ -597,8 +702,16 @@ function updateBullets(dt) {
   const a = fwAngle();
   const px = -Math.sin(a), py = Math.cos(a);
   for (let i = game.pBullets.length - 1; i >= 0; i--) {
-    const b = game.pBullets[i]; b.x += b.vx * dt; b.y += b.vy * dt;
-    if (b.x < -25 || b.x > W + 25 || b.y < -25 || b.y > H + 25) game.pBullets.splice(i, 1);
+    const b = game.pBullets[i];
+    if (b.boom) {
+      b.bt += dt; b.spin += dt * 13;
+      // 行きが終わったら折り返す。帰り道にも当たるので、前に出て撃つ価値が生まれる。
+      if (!b.back && b.bt > 0.44) { b.back = 1; b.vx = -b.vx; b.vy = -b.vy; }
+      if (b.back && b.bt > 1.25) { game.pBullets.splice(i, 1); continue; }
+    }
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    // 戻ってくる弾は画面外に出ても消さない(消すと帰ってこられない)
+    if (!(b.boom && !b.back) && (b.x < -25 || b.x > W + 25 || b.y < -25 || b.y > H + 25)) game.pBullets.splice(i, 1);
   }
   for (let i = game.eBullets.length - 1; i >= 0; i--) {
     const b = game.eBullets[i];
@@ -793,6 +906,8 @@ export function startCoop() {
 }
 // ゲスト: ホストの開始合図(共有種つき)を受けて同時スタート
 Coop.onStartGame = () => startCoop();
+// ホストがボスを倒した → ゲストも同じ撃破演出へ
+Coop.onBossDown = () => { if (game.boss && !game.finale) bossDefeated(); };
 // ホスト: 相方が当てた敵に実ダメージを与える(判定の正はホスト)
 Coop.onPartnerHit = (id, d, sl) => {
   const e = game.enemies.find(x => x.id === id);

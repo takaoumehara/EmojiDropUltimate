@@ -234,6 +234,7 @@ function drawBullets() {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `${Math.round(fs)}px serif`;
       ctx.shadowColor = 'rgba(0,0,0,0.75)'; ctx.shadowBlur = 4;
+      if (b.boom) ctx.rotate(b.spin || 0);      // 回っていないとブーメランに見えない
       ctx.fillText(b.emoji, 0, 0);
       ctx.restore();
       continue;
@@ -363,7 +364,13 @@ function drawBoss() {
   }
   ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(0, 0, 48, 0, Math.PI * 2); ctx.fill();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '68px serif';
+  if (b.dying > 0) ctx.globalAlpha = 0.35 + 0.4 * Math.abs(Math.sin(performance.now() * 0.02));
   ctx.fillText(stage().boss.emoji, 0, 0);
+  if (b.revived) {                       // 蘇った印。同じ絵文字でも別物だと分かる
+    ctx.globalAlpha = 0.55 + 0.25 * Math.sin(performance.now() * 0.006);
+    ctx.font = '84px serif'; ctx.fillText('🔥', 0, 6);
+  }
+  ctx.globalAlpha = 1;
   if (b.flash > 0) { ctx.globalAlpha = clamp(b.flash * 0.7, 0, 1); ctx.font = '74px serif'; ctx.fillText('💥', 0, 0); ctx.globalAlpha = 1; }
   if (BossAI.thinking > 0) { ctx.font = '22px serif'; ctx.fillText('🧠', 40, -42); }
   ctx.restore();
@@ -372,10 +379,32 @@ function drawBoss() {
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx - 3, by - 3, bw + 6, 15);
     ctx.fillStyle = '#3a0a0a'; ctx.fillRect(bx, by, bw, 9);
     const r = clamp(b.hp / b.maxHp, 0, 1);
-    ctx.fillStyle = r > 0.66 ? '#ff5050' : r > 0.33 ? '#ff9430' : '#ffe14d'; ctx.fillRect(bx, by, bw * r, 9);
-    const nm = getLang() === 'ja' ? stage().boss.name : stage().boss.en;
-    label(`${stage().boss.emoji} ${nm}`, W / 2, by - 12, '#fff', 12 * UI);
+    ctx.fillStyle = b.revived ? '#ff2d6f'
+      : r > 0.66 ? '#ff5050' : r > 0.33 ? '#ff9430' : '#ffe14d';
+    ctx.fillRect(bx, by, bw * r, 9);
+    const ja = getLang() === 'ja';
+    const nm = ja ? stage().boss.name : stage().boss.en;
+    label(b.revived ? (ja ? `真・${nm}` : `TRUE ${nm}`) : `${stage().boss.emoji} ${nm}`,
+      W / 2, by - 12, b.revived ? '#ff8fb0' : '#fff', 12 * UI);
   }
+}
+
+// 復活した瞬間だけ大きく出す。ここを出さないと「倒したのに死なない」バグに見える。
+function drawBossReveal() {
+  const t = game.bossRevealT || 0;
+  if (t <= 0) return;
+  const ja = getLang() === 'ja';
+  const nm = ja ? stage().boss.name : stage().boss.en;
+  const k = Math.min(1, (2400 - t) / 220);            // 出るときだけ素早く拡大
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, t / 400);
+  ctx.translate(W / 2, H * 0.34);
+  ctx.scale(0.6 + k * 0.4, 0.6 + k * 0.4);
+  txt(ja ? 'まだ終わっていない' : 'NOT OVER YET', 0, -30 * UI,
+    { size: 15 * UI, weight: 800, color: '#ffd0dc', maxW: W * 0.84 });
+  txt(ja ? `真・${nm}` : `TRUE ${nm}`, 0, 4 * UI,
+    { size: 30 * UI, weight: 800, color: '#ff2d6f', family: FONT_DISPLAY, maxW: W * 0.9 });
+  ctx.restore();
 }
 
 function drawBells() {
@@ -428,7 +457,10 @@ function drawHUD() {
   const p = game.player;
   ctx.font = `${Math.round(17 * UI)}px serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillText('❤️'.repeat(Math.max(0, game.lives)) + (game.bombs ? '  ' + '💣'.repeat(game.bombs) : ''), pad, H - 46 * UI);
-  const st8 = `PW${p.power}${p.options ? ' · OP' + p.options : ''}${p.shield ? ' · 🛡️' : ''}${p.boost ? ' · 💨' : ''}`;
+  const st8 = `PW${p.power}${p.options ? ' · OP' + p.options : ''}${p.shield ? ' · 🛡️' : ''}${p.boost ? ' · 💨' : ''}`
+    + (p.boomT > 0 ? ` · 🪃${Math.ceil(p.boomT / 1000)}` : '')
+    + (p.rearT > 0 ? ` · ⬇︎${Math.ceil(p.rearT / 1000)}` : '')
+    + (p.sideT > 0 ? ` · ↔︎${Math.ceil(p.sideT / 1000)}` : '');
   txt(st8, pad, H - 24 * UI, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'left', baseline: 'top', shadow: 0.7 });
   const slabel = game.coop ? '👥' : game.endless ? ('W' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('' + (game.stageIndex + 1));
   txt(`${slabel} ${stage().emoji}${dirDef().arrow}`, W - pad, H - 24 * UI, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'right', baseline: 'top', shadow: 0.7 });
@@ -1025,6 +1057,7 @@ export function draw() {
       drawBullets(); drawPartner(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
       ctx.restore();
       drawHUD();
+      drawBossReveal();
       if (game.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, 0.85)})`; ctx.fillRect(0, 0, W, H); }
       break;
     }
