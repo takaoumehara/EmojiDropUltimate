@@ -103,7 +103,7 @@ export const STAGES = [
   {
     name: 'ギャラクシーエッジ', en: 'GALAXY EDGE', emoji: '🌌', dir: 'up',
     sky: ['#060618', '#1c1c4e'], night: ['#02020c', '#12123a'],
-    bgEmojis: ['⭐', '🪐', '☄️', '✨'],
+    bgEmojis: ['⭐', '🪐', '☄️', '🌠'],
     enemies: [
       { type: 'straight', emoji: '👽', hp: 2, speed: 150, pts: 220, size: 19 },
       { type: 'wave',     emoji: '🛸', hp: 3, speed: 115, pts: 280, size: 21, amp: 120, freq: 1.7 },
@@ -259,6 +259,37 @@ export const CHARS = [
   { id: 'poop', emoji: '💩', name: 'ウンチ', en: 'POOP', col: '#a9744f',
     shot: '#c58a5e', shotEmoji: '💩', speed: 0.95, fire: 1.4, size: 8, spread: 0, pierce: 0, slow: 1,
     tag: 'ベタッと減速', tagEn: 'Sticky slow' },
+
+  // --- 「その絵文字なら何を投げるか」で決めた面々 ---
+  //   dmg を持つキャラは1発が重いぶん連射が遅い。合計火力はどれもほぼ同じで、
+  //   違うのは「当てやすさ」と「取り回し」。見た目だけの差にはしない。
+  { id: 'genie', emoji: '🧞‍♂️', name: 'ランプの精', en: 'GENIE', col: '#4fc3f7',
+    shot: '#9be7ff', shotEmoji: '💧', speed: 1.02, fire: 1.3, size: 5.4, spread: 0, pierce: 1, slow: 0, dmg: 1,
+    tag: '水流がつらぬく', tagEn: 'Piercing jet' },
+  { id: 'chef', emoji: '🧑‍🍳', name: 'パン職人', en: 'BAKER', col: '#f0c27b',
+    shot: '#ffd9a0', shotEmoji: '🥖', speed: 0.95, fire: 1.5, size: 6.4, spread: 0, pierce: 0, slow: 0, dmg: 2,
+    tag: '固いパンで殴る', tagEn: 'Heavy loaf' },
+  { id: 'farmer', emoji: '🧑‍🌾', name: 'ファーマー', en: 'FARMER', col: '#ff9f45',
+    shot: '#ffc888', shotEmoji: '🥕', speed: 1.06, fire: 0.74, size: 4.8, spread: 0, pierce: 0, slow: 0, dmg: 1,
+    tag: '人参を速射', tagEn: 'Carrot volley' },
+  { id: 'snowman', emoji: '⛄', name: 'ゆきだるま', en: 'SNOWMAN', col: '#8fd8ff',
+    shot: '#d6f2ff', shotEmoji: '❄️', speed: 0.98, fire: 1.15, size: 5.6, spread: 0, pierce: 0, slow: 1, dmg: 1,
+    tag: '凍らせて止める', tagEn: 'Freezes' },
+  { id: 'tree', emoji: '🌲', name: 'ツリー', en: 'TREE', col: '#67c96a',
+    shot: '#a8e8a0', shotEmoji: '🍃', speed: 0.88, fire: 1.3, size: 5, spread: 1, pierce: 0, slow: 0, dmg: 1,
+    tag: '葉が横に広がる', tagEn: 'Wide leaves' },
+  { id: 'dog', emoji: '🦮', name: 'イヌ', en: 'DOG', col: '#d9a066',
+    shot: '#e8c39a', shotEmoji: '💩', speed: 1.22, fire: 0.8, size: 4.4, spread: 0, pierce: 0, slow: 1, dmg: 1,
+    tag: '走りながら撒く', tagEn: 'Hit and run' },
+  { id: 'gorilla', emoji: '🦍', name: 'ゴリラ', en: 'GORILLA', col: '#ffd54f',
+    shot: '#ffe89a', shotEmoji: '🍌', speed: 0.85, fire: 1.9, size: 7.6, spread: 0, pierce: 0, slow: 0, dmg: 3,
+    tag: '最重量の一撃', tagEn: 'Heaviest hit' },
+  { id: 'cow', emoji: '🐄', name: 'ウシ', en: 'COW', col: '#eaeaea',
+    shot: '#ffffff', shotEmoji: '🥛', speed: 0.95, fire: 0.68, size: 4.6, spread: 0, pierce: 0, slow: 0, dmg: 1,
+    tag: 'ミルク最速連射', tagEn: 'Fastest fire' },
+  { id: 'chicken', emoji: '🐓', name: 'ニワトリ', en: 'CHICKEN', col: '#ff8a80',
+    shot: '#ffd7b0', shotEmoji: '🥚', speed: 0.98, fire: 1.42, size: 5.6, spread: 0, pierce: 0, slow: 0, dmg: 2,
+    tag: '卵は当たりやすい', tagEn: 'Big egg' },
 ];
 
 // 自機スキン(bestWorld で解禁。見た目のみ・性能に影響しない)
@@ -277,7 +308,7 @@ export const SKINS = [
 export const MOVES = {
   slither: ['🐍', '🦎', '🪼', '🐙', '🦑', '🦋', '🐟', '🦐', '🦠', '🌀'],
   dive:    ['🦇', '🐝', '🕷️', '🦅', '☄️', '😈', '👺'],
-  glide:   ['🐧', '🦭', '🐻‍❄️', '❄️', '🧊', '🕊️', '🍣', '🍙', '🌑'],
+  glide:   ['🐧', '🦭', '🐻‍❄️', '🥶', '🧊', '🕊️', '🍣', '🍙', '🌑'],
   blink:   ['👻', '🧛', '💀', '🔮', '👾', '🛸', '👽', '🌟'],
   angular: ['🤖', '🦾', '🔧', '📡', '💾', '🚓'],
   hop:     ['🐸', '🐰', '🍡', '🧁', '🍬', '🍰', '🐦'],

@@ -173,6 +173,7 @@ function fire() {
       x: p.x + fx * 20 + px * ox, y: p.y + fy * 20 + py * ox,
       vx: fx * CFG.BULLET_SPEED + px * spread, vy: fy * CFG.BULLET_SPEED + py * spread,
       size: ch.size, emoji: ch.shotEmoji, col: ch.shot, pierce: ch.pierce, slow: ch.slow,
+      dmg: ch.dmg || 1,
     });
     game.stats.shots++;
   };
@@ -673,18 +674,19 @@ function checkCollisions() {
       if (dist(b, e) < e.size + b.size) {
         if (b.slow) e.slowT = 1400;                      // キャラ特性: ベタッと減速
         if (isGuest()) {          // ゲストの命中はホストへ通知(正はホスト側の計算)
-          Coop.send({ t: 'hit', id: e.id, d: 1, sl: b.slow ? 1 : 0 });
-          e.flash = 1; e.hp -= 1; particles(e.x, e.y, 3, '#ffffff');
+          const dmg = b.dmg || 1;
+          Coop.send({ t: 'hit', id: e.id, d: dmg, sl: b.slow ? 1 : 0 });
+          e.flash = 1; e.hp -= dmg; particles(e.x, e.y, 3, '#ffffff');
           game.stats.hits++;
           if (e.hp <= 0) { game.enemies.splice(ei, 1); Snd.kill(); particles(e.x, e.y, 12, '#ffd700'); }
-        } else damageEnemy(e, 1);
+        } else damageEnemy(e, b.dmg || 1);
         if (!b.pierce) { game.pBullets.splice(bi, 1); used = true; }   // 貫通弾は消えない
         if (!isGuest() && e.hp <= 0) game.enemies.splice(ei, 1);
         if (!b.pierce) break;
       }
     }
     if (used) continue;
-    if (game.boss && !game.boss.entering && dist(b, game.boss) < 42 * game.boss.scale + b.size) { damageBoss(1); if (!b.pierce) { game.pBullets.splice(bi, 1); } continue; }
+    if (game.boss && !game.boss.entering && dist(b, game.boss) < 42 * game.boss.scale + b.size) { damageBoss(b.dmg || 1); if (!b.pierce) { game.pBullets.splice(bi, 1); } continue; }
     for (let li = game.bells.length - 1; li >= 0; li--) {
       const bl = game.bells[li];
       if (dist(b, bl) < bl.size + b.size + 4) { hitBell(bl); game.pBullets.splice(bi, 1); break; }

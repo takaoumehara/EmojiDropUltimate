@@ -65,8 +65,8 @@ const THEMES = [
   { name: 'キャンディ地獄', en: 'CANDY HELL', emoji: '🍬', sky: ['#ff6fae', '#ffd1ec'], night: ['#5a123f', '#a11d6e'], bg: ['🍭', '🧁', '🍩', '🍫'], en_list: ['🍬', '🍡', '🧁', '🍰'], boss: ['🎂', 'シュガーロード', 'SUGAR LORD'] },
   { name: '寿司ストーム', en: 'SUSHI STORM', emoji: '🍣', sky: ['#0e6b5a', '#57e0b8'], night: ['#04241d', '#0b5a48'], bg: ['🍤', '🐟', '🍥', '🥢'], en_list: ['🍣', '🍙', '🦐', '🐙'], boss: ['🐋', 'デカネタ大将', 'BIG NETA'] },
   { name: 'ロボ工場', en: 'ROBO FACTORY', emoji: '🏭', sky: ['#3a3f52', '#8b95b8'], night: ['#12141d', '#33384d'], bg: ['⚙️', '🔩', '🔌', '📦'], en_list: ['🤖', '🦾', '🔧', '📡'], boss: ['🦿', 'ギガボット', 'GIGABOT'] },
-  { name: '恐竜ジャングル', en: 'DINO JUNGLE', emoji: '🦖', sky: ['#2f7d32', '#a5e86a'], night: ['#0f2a12', '#2c5a1e'], bg: ['🌿', '🌴', '🥚', '🦴'], en_list: ['🦕', '🐊', '🦎', '🐍'], boss: ['🦖', 'ティラノキング', 'TYRANNO KING'] },
-  { name: '氷結パレス', en: 'FROST PALACE', emoji: '🧊', sky: ['#2c6fb0', '#bfe8ff'], night: ['#0b2036', '#1d4d7a'], bg: ['❄️', '🌨️', '🧊', '⛄'], en_list: ['🐧', '🦭', '❄️', '🐻‍❄️'], boss: ['🧙', 'アイスウィッチ', 'ICE WITCH'] },
+  { name: '恐竜ジャングル', en: 'DINO JUNGLE', emoji: '🦖', sky: ['#2f7d32', '#a5e86a'], night: ['#0f2a12', '#2c5a1e'], bg: ['🌿', '🌴', '🪨', '🦴'], en_list: ['🦕', '🐊', '🦎', '🐍'], boss: ['🦖', 'ティラノキング', 'TYRANNO KING'] },
+  { name: '氷結パレス', en: 'FROST PALACE', emoji: '🧊', sky: ['#2c6fb0', '#bfe8ff'], night: ['#0b2036', '#1d4d7a'], bg: ['🌨️', '🧊', '🏔️', '🌬️'], en_list: ['🐧', '🦭', '🥶', '🐻‍❄️'], boss: ['🧙', 'アイスウィッチ', 'ICE WITCH'] },
   { name: 'お化け屋敷', en: 'HAUNTED HOUSE', emoji: '🏚️', sky: ['#4a2c6b', '#9b6fd4'], night: ['#1a0f2e', '#3a1f5c'], bg: ['🕯️', '🕸️', '⚰️', '🔮'], en_list: ['👻', '🧛', '🦇', '💀'], boss: ['🎃', 'パンプキングド', 'PUMPKIN LORD'] },
   { name: 'エモジ銀河', en: 'EMOJI GALAXY', emoji: '🌠', sky: ['#1b0b3a', '#6d3bd6'], night: ['#08041a', '#2a1466'], bg: ['🪐', '⭐', '🌙', '☄️'], en_list: ['🛸', '👽', '🌟', '☄️'], boss: ['🌞', 'ソーラータイタン', 'SOLAR TITAN'] },
 ];

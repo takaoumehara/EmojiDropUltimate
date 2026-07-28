@@ -190,8 +190,12 @@ function drawPlayer() {
     if (ch.face != null) ctx.rotate(-Math.PI / 2 - ch.face);
     else ctx.rotate(-(Math.atan2(dirDef().fy, dirDef().fx) + Math.PI / 2));  // 正立のまま
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `${Math.round(32 * UI)}px serif`;
+    // 🧑‍🍳 のような細かい絵柄は小さいと潰れる。大きめ＋濃い影で輪郭を立てる。
+    //   当たり判定は hitR=7 固定なので、絵を大きくしても不利にならない。
+    ctx.font = `${Math.round(42 * UI)}px serif`;
+    ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 7;
     ctx.fillText(ch.emoji, 0, 0);
+    ctx.shadowBlur = 0;
   }
   ctx.restore();
   // 発砲マズルフラッシュ(テーマ色・一瞬)
@@ -218,15 +222,18 @@ function drawBullets() {
   const shot = rgbCss(curShot || [143, 227, 255]);
   const shotGlow = rgbCss(curShot || [143, 227, 255], 0.4);
   for (const b of game.pBullets) {
-    if (b.emoji) {   // キャラ固有の弾(🐾 ✨ 💩 など)
+    if (b.emoji) {   // キャラ固有の弾(💧 🥖 🍌 など)
       ctx.save(); ctx.translate(b.x, b.y);
+      // 絵文字弾は小さいと何を撃っているのか分からない。下限を決めて必ず読める大きさにする。
+      const fs = Math.max(23, b.size * 3.9);
       // どの背景でも埋もれないよう、キャラ色の光背を敷く
-      const r = b.size * 2;
+      const r = fs * 0.62;
       const gl = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
       gl.addColorStop(0, (b.col || '#fff') + 'cc'); gl.addColorStop(1, (b.col || '#fff') + '00');
       ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = `${Math.round(b.size * 3.2)}px serif`;
+      ctx.font = `${Math.round(fs)}px serif`;
+      ctx.shadowColor = 'rgba(0,0,0,0.75)'; ctx.shadowBlur = 4;
       ctx.fillText(b.emoji, 0, 0);
       ctx.restore();
       continue;
@@ -676,24 +683,31 @@ function drawCharSelect() {
 
   game.menuBtns = [];
   const cur = Save.charIndex();
-  const cols = 3, gap = 9 * UI;
-  const gw = Math.min(W * 0.88, 340), gx = (W - gw) / 2;
-  const cw = (gw - gap * (cols - 1)) / cols, chh = cw * 1.02;
-  const gy = H * 0.16;
+  // キャラが増えても画面からはみ出さないよう、列数とマス目を人数から決める。
+  //   縦に入る大きさで頭打ちにするので、下の説明とボタンを押しつぶさない。
+  const gap = 8 * UI;
+  const cols = CHARS.length > 9 ? 4 : 3;
+  const rows = Math.ceil(CHARS.length / cols);
+  const gy = H * 0.145;
+  const avail = H * 0.60 - gy;
+  const cw = Math.min((Math.min(W * 0.94, 392) - gap * (cols - 1)) / cols,
+                      (avail - gap * (rows - 1)) / rows / 1.02);
+  const chh = cw * 1.02;
+  const gx = (W - (cw * cols + gap * (cols - 1))) / 2;
   CHARS.forEach((c, i) => {
     const x = gx + (i % cols) * (cw + gap), y = gy + Math.floor(i / cols) * (chh + gap);
     const sel = i === cur;
     surface(x, y, cw, chh, { r: 14, fill: sel ? c.col : 'rgba(13,19,40,0.82)', border: sel ? '#ffffff' : 'rgba(255,255,255,0.18)', lw: sel ? 3 : 2 });
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `${Math.round(cw * 0.42)}px serif`;
-    ctx.fillText(c.emoji, x + cw / 2, y + chh * 0.42);
-    txt(ja ? c.name : c.en, x + cw / 2, y + chh * 0.79, { size: 10.5 * UI, weight: 700, color: sel ? '#141018' : '#e6efff', maxW: cw - 8 });
+    ctx.font = `${Math.round(cw * 0.5)}px serif`;
+    ctx.fillText(c.emoji, x + cw / 2, y + chh * 0.40);
+    txt(ja ? c.name : c.en, x + cw / 2, y + chh * 0.82, { size: 10 * UI, weight: 700, color: sel ? '#141018' : '#e6efff', maxW: cw - 6 });
     game.menuBtns.push({ id: 'char' + i, x, y, w: cw, h: chh });
   });
 
   // 選択中キャラの説明
   const c = CHARS[cur];
-  const iy = gy + Math.ceil(CHARS.length / cols) * (chh + gap) + 16 * UI;
+  const iy = gy + rows * (chh + gap) + 16 * UI;
   txt(ja ? c.name : c.en, W / 2, iy, { size: 17 * UI, weight: 800, color: c.col, family: FONT_DISPLAY });
   txt(ja ? c.tag : c.tagEn, W / 2, iy + 24 * UI, { size: 12 * UI, weight: 600, color: COL.sub, maxW: W * 0.86 });
 

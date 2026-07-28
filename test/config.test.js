@@ -204,3 +204,68 @@ test('every procedurally generated enemy emoji has a personality too', () => {
   assert.deepEqual(missing, [],
     `these AI-stage enemies still move on the base pattern only: ${missing.join(', ')}`);
 });
+
+// === 自機の弾と、世界の素材がぶつからないこと ===
+// 弾と同じ絵文字が敵や背景に混ざっていると、撃っているのか撃たれているのか
+// 一瞬わからなくなる。❄️ が「雪だるまの弾」かつ「氷結パレスの敵」だった件の再発防止。
+const SHOT_EMOJIS = CHARS.map(c => c.shotEmoji).filter(Boolean);
+
+test('design rule: no projectile emoji is also used as an enemy or boss', () => {
+  const shots = new Set(SHOT_EMOJIS);
+  for (const st of STAGES) {
+    for (const e of st.enemies) {
+      assert.ok(!shots.has(e.emoji),
+        `stage "${st.name}" uses "${e.emoji}" as an enemy, but it is also a player projectile`);
+    }
+    assert.ok(!shots.has(st.boss.emoji),
+      `stage "${st.name}" uses "${st.boss.emoji}" as its boss, but it is also a player projectile`);
+  }
+  const rng = makeRng(hashStr('shot-vs-enemy'));
+  for (let themeIdx = 0; themeIdx < 7; themeIdx++) {
+    const stage = proceduralStage(rng, themeIdx);
+    for (const e of stage.enemies) {
+      assert.ok(!shots.has(e.emoji),
+        `aistage theme "${stage.name}" uses "${e.emoji}" as an enemy, but it is also a player projectile`);
+    }
+  }
+});
+
+test('design rule: no projectile or character emoji drifts in the background', () => {
+  const claimed = new Set([...SHOT_EMOJIS, ...CHARS.map(c => c.emoji)]);
+  for (const st of STAGES) {
+    for (const b of (st.bgEmojis || [])) {
+      assert.ok(!claimed.has(b),
+        `stage "${st.name}" has "${b}" in its background, but it is a player character or projectile`);
+    }
+  }
+  const rng = makeRng(hashStr('shot-vs-background'));
+  for (let themeIdx = 0; themeIdx < 7; themeIdx++) {
+    const stage = proceduralStage(rng, themeIdx);
+    for (const b of (stage.bgEmojis || [])) {
+      assert.ok(!claimed.has(b),
+        `aistage theme "${stage.name}" has "${b}" in its background, but it is a player character or projectile`);
+    }
+  }
+});
+
+test('CHARS: every character is uniquely identifiable and has sane stats', () => {
+  const ids = new Set(), emojis = new Set();
+  for (const c of CHARS) {
+    assert.ok(!ids.has(c.id), `duplicate character id "${c.id}"`);
+    assert.ok(!emojis.has(c.emoji), `two characters share the emoji "${c.emoji}" — players could not tell them apart`);
+    ids.add(c.id); emojis.add(c.emoji);
+    assert.ok(c.name && c.en && c.tag && c.tagEn, `character "${c.id}" is missing a name or tag`);
+    assert.ok(c.speed > 0.7 && c.speed < 1.5, `character "${c.id}" speed ${c.speed} is outside the playable range`);
+    assert.ok(c.fire > 0.5 && c.fire < 2.2, `character "${c.id}" fire ${c.fire} is outside the playable range`);
+    assert.ok(c.size >= 3 && c.size <= 9, `character "${c.id}" bullet size ${c.size} is outside the playable range`);
+  }
+});
+
+test('CHARS: damage-per-second stays within one band, so no character is strictly best', () => {
+  // 1発の重さ(dmg)と連射(fire)を掛け合わせた素の火力。広がりや貫通は別価値なので
+  // ここでは見ない。倍以上の差がついたら、それは選択肢ではなく正解になってしまう。
+  const dps = CHARS.map(c => ({ id: c.id, v: (c.dmg || 1) / c.fire }));
+  const lo = Math.min(...dps.map(d => d.v)), hi = Math.max(...dps.map(d => d.v));
+  assert.ok(hi / lo < 2.4,
+    `raw damage spread is ${(hi / lo).toFixed(2)}x — ${JSON.stringify(dps.sort((a, b) => b.v - a.v).slice(0, 3))}`);
+});
