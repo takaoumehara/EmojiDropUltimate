@@ -39,7 +39,7 @@ const MAX_PLAYERS = 4;
 
 function newPeer(id) {
   return {
-    id, name: 'FRIEND', score: 0, alive: true, dmg: 0, char: 0, seenAt: 0, ready: false,
+    id, name: 'FRIEND', score: 0, alive: true, dmg: 0, char: 0, seenAt: 0, ready: false, superAt: 0,
     x: 0.32, y: 0.85, tx: 0.32, ty: 0.85, firing: false,   // 正規化座標(0..1)
   };
 }
@@ -237,10 +237,15 @@ export const Coop = {
       case 'bd': if (this.onBossDown) this.onBossDown(); break;
       // ゲスト: ホストが終盤に何を引いたか。世界そのものはスナップショットで
       //   届くが、演出と「形見」の効果は各自の画面で焚く必要がある。
+      // 相方が必殺技を撃った。合体の受付はここが起点。
+      case 'sup':
+        p.superAt = performance.now(); p.seenAt = performance.now();
+        if (this.onPeerSuper) this.onPeerSuper(from, String(o.k || ''));
+        break;
       case 'ls': if (this.onLastStand) this.onLastStand(String(o.k || ''), o.d ? String(o.d) : null); break;
     }
   },
-  onPartnerHit: null, onPartnerDied: null, onGameOver: null, onBossDown: null, onLastStand: null,   // engine が設定
+  onPartnerHit: null, onPartnerDied: null, onGameOver: null, onBossDown: null, onLastStand: null, onPeerSuper: null,   // engine が設定
 
   // ホスト → ゲスト: ワールド状態(敵・弾・ベル・ボス)を一定間隔で送る
   _lastSnap: 0,

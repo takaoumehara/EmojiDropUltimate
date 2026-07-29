@@ -43,6 +43,15 @@ export function newGame() {
     standKind: null,    // 終盤に引いた札('revive'|'split'|'flee'|'greed'|'legacy')
     standHistory: [],   // 直前2回に引いた札。3連続で同じにならないように
     bossGrudge: 0,      // 逃がしたボスの数。次の面のボスが硬くなる
+    // === 必殺技 ===
+    superCharge: 0,     // 0..SUPER_MAX。敵を倒す・ベルを拾うで溜まる
+    superT: 0,          // 効いている残り時間(ms)。0 なら出ていない
+    superKind: null,    // いま出ている技('blizzard' など)
+    superFusion: 0,     // 合体した人数(0=単独)。2以上で見た目と威力が上がる
+    superAge: 0,        // 出てからの経過(ms)。演出の進み具合に使う
+    superPets: [],      // 'swarm' で飛び出す仲間
+    superFood: [],      // 'feast' で降るごちそう
+    superAt: 0,         // 自分が撃った時刻。合体の受付判定に使う
     charView: 'card', charDrag: 0, charReturn: null,   // キャラ選択: カード/一覧・スワイプ量・戻り先
   };
 }

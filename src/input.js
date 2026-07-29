@@ -5,7 +5,7 @@ import { canvas, W, H, SAFE } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
 import { toggleLang, getLang } from './i18n.js';
-import { startRun, requestAIStage, startDaily, togglePause, useBomb, doContinue, toTitle, handleOverTap, openCoopLobby, startCoop } from './engine.js';
+import { startRun, requestAIStage, startDaily, togglePause, useBombOrSuper, doContinue, toTitle, handleOverTap, openCoopLobby, startCoop } from './engine.js';
 import { Coop } from './coop.js';
 import { Save } from './save.js';
 import { CHARS } from './config.js';
@@ -90,7 +90,7 @@ window.addEventListener('keydown', e => {
   const s = game.state;
   if (s === 'splash') { if (e.key === ' ' || e.key === 'Enter') game.state = 'title'; }
   else if (s === 'title') { if (e.key === ' ' || e.key === 'Enter') startRun(); if (e.key === 'l' || e.key === 'L') toggleLang(); }
-  else if (e.key === ' ' && s === 'play') useBomb();
+  else if (e.key === ' ' && s === 'play') useBombOrSuper();
   else if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (s === 'play' || s === 'pause' || s === 'warn')) togglePause();
   else if (e.key === 'm' || e.key === 'M') { Snd.init(); updateMuteIcon(Snd.toggleMute()); }
   else if (s === 'over') { if ((e.key === 'c' || e.key === 'C') && game.continues > 0) doContinue(); else if (e.key === ' ' || e.key === 'Enter') toTitle(); }
@@ -113,7 +113,7 @@ canvas.addEventListener('pointerdown', e => {
   if (s === 'pause') { togglePause(); return; }
   if (s === 'over' || s === 'victory') { handleOverTap(e.clientX, e.clientY); return; }
   if (s === 'play' || s === 'warn') {
-    if (now - lastTapT < 280 && last && Math.hypot(e.clientX - last.sx, e.clientY - last.sy) < 40) useBomb();
+    if (now - lastTapT < 280 && last && Math.hypot(e.clientX - last.sx, e.clientY - last.sy) < 40) useBombOrSuper();
     lastTapT = now;
   }
   dragging = true; last = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };

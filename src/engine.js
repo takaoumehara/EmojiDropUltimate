@@ -17,6 +17,7 @@ import { Leaderboard } from './leaderboard.js';
 import { openShare } from './ui.js';
 import { Coop } from './coop.js';
 import { Diag } from './diag.js';
+import { SUPERS, superKeyOf, SUPER_MAX, SUPER_GAIN, FUSION_WINDOW, fusionMul } from './super.js';
 
 // ストレージ無効環境でも落ちないように
 // 配列を複製してシャッフル(元データは壊さない)
@@ -313,6 +314,223 @@ function killPlayer() {
   }
 }
 
+// === 必殺技 ===
+//
+// 操作はダブルタップのまま。溜まっていれば必殺技、溜まっていなければボム。
+//   新しいジェスチャーを覚えさせずに、同じ指で結果が変わる。
+export function superReady() { return game.superCharge >= SUPER_MAX; }
+
+export function gainSuper(n) {
+  if (game.superT > 0) return;        // 出ている間は溜めない(撃ちっぱなしを防ぐ)
+  game.superCharge = Math.min(SUPER_MAX, game.superCharge + n);
+}
+
+/** ダブルタップの入口。溜まっていれば必殺技、無ければボム。 */
+export function useBombOrSuper() {
+  if (game.state !== 'play' || game.player.dead) return;
+  if (superReady() && game.superT <= 0) { fireSuper(); return; }
+  useBomb();
+}
+
+function fireSuper(fromPeer) {
+  const key = superKeyOf(Save.char().id);
+  const sup = SUPERS[key];
+  game.superCharge = 0;
+  game.superKind = key;
+  game.superT = sup.dur;
+  game.superAge = 0;
+  game.superAt = performance.now();
+  game.superPets = []; game.superFood = [];
+
+  // 合体。誰かの必殺技が出ている間に自分も撃つと、両方が育つ。
+  //   ひとりでは絶対に起きないので、これが「2人でやる理由」になる。
+  let fuse = 0;
+  if (game.coop) {
+    const now = performance.now();
+    for (const p of Coop.peers.values()) {
+      if (p.superAt && now - p.superAt < FUSION_WINDOW) fuse++;
+    }
+  }
+  game.superFusion = fuse ? fuse + 1 : 0;
+  if (game.superFusion >= 2) {
+    game.superT = Math.round(sup.dur * 1.4);
+    Snd.victory();
+  } else {
+    Snd.bomb();
+  }
+  if (!fromPeer && game.coop) Coop.send({ t: 'sup', k: key });
+
+  if (key === 'swarm') {
+    const n = 5 + game.superFusion * 2;
+    for (let i = 0; i < n; i++) {
+      game.superPets.push({ x: game.player.x, y: game.player.y, t: rand(0, 400), target: null });
+    }
+  }
+  game.flash = 0.9; game.shake = CFG.MAX_SHAKE;
+  particles(game.player.x, game.player.y, 40, sup.col, 3);
+  // 名前は画面上部の大見出しで出す。ここで同じ言葉をもう一度出すと、
+  //   自機のまわりが文字で埋まって弾が見えなくなる。
+}
+
+// 相方が必殺技を撃った。こちらの画面でも同じ技が見えないと、
+//   合体しても「何が起きたか」が分からない。
+Coop.onPeerSuper = (peerId, key) => {
+  if (!game.coop || game.state !== 'play') return;
+  const p = Coop.peers.get(peerId);
+  if (p) p.superAt = performance.now();
+  // 自分が出している最中なら、こちらも合体扱いに格上げする
+  if (game.superT > 0) {
+    game.superFusion = Math.max(2, game.superFusion + 1);
+    game.superT = Math.max(game.superT, 900);
+    game.flash = 1; game.shake = CFG.MAX_SHAKE;
+    Snd.victory();
+    popup(game.player.x, game.player.y - 66, getLang() === 'ja' ? '✨ 合体!' : '✨ FUSION!', '#ffd700');
+  }
+  void key;
+};
+
+function updateSuper(dt) {
+  if (game.superT <= 0) return;
+  const sup = SUPERS[game.superKind]; if (!sup) { game.superT = 0; return; }
+  game.superT -= dt * 1000;
+  game.superAge += dt * 1000;
+  const mul = game.superFusion >= 2 ? fusionMul(game.superFusion) : 1;
+  const dmg = sup.tick * mul * dt;
+  const p = game.player;
+
+  switch (game.superKind) {
+    case 'blizzard':
+      // 敵を止め、弾を鈍らせる。避ける仕事が消えるので、これが爽快さの source。
+      for (const e of game.enemies) { if (e.delay <= 0) e.slowT = Math.max(e.slowT || 0, 400); }
+      for (const b of game.eBullets) { b.vx *= 0.90; b.vy *= 0.90; }
+      hurtAll(dmg);
+      if (Math.random() < dt * 26) particles(rand(0, W), rand(0, H * 0.8), 2, '#cfefff');
+      break;
+    case 'beam': {
+      // 射線の中だけを削る。狙いを付ける必要があるので、当てたときの手応えが出る。
+      const a = fwAngle(), wide = 54 * (1 + (mul - 1) * 0.5);
+      for (const e of game.enemies) {
+        if (e.delay > 0) continue;
+        const rel = (e.x - p.x) * Math.cos(a) + (e.y - p.y) * Math.sin(a);
+        const off = Math.abs(-(e.x - p.x) * Math.sin(a) + (e.y - p.y) * Math.cos(a));
+        if (rel > -20 && off < wide) damageEnemy(e, dmg * 2);
+      }
+      game.enemies = game.enemies.filter(e => e.hp > 0 || e.delay > 0);
+      const bb = game.boss;
+      if (bb && !bb.entering) {
+        const off = Math.abs(-(bb.x - p.x) * Math.sin(a) + (bb.y - p.y) * Math.cos(a));
+        if (off < wide * 1.4) damageBoss(dmg * 2);
+      }
+      game.eBullets = game.eBullets.filter(b => {
+        const off = Math.abs(-(b.x - p.x) * Math.sin(a) + (b.y - p.y) * Math.cos(a));
+        const rel = (b.x - p.x) * Math.cos(a) + (b.y - p.y) * Math.sin(a);
+        return !(rel > -10 && off < wide);
+      });
+      break;
+    }
+    case 'nova':
+    case 'quake': {
+      // 自機から広がる輪。近いほど痛い = 踏み込む理由になる。
+      const r = (game.superAge / sup.dur) * Math.max(W, H) * 0.85 * (1 + (mul - 1) * 0.3);
+      for (const e of game.enemies) {
+        if (e.delay > 0) continue;
+        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        if (d < r) damageEnemy(e, dmg * (1.6 - Math.min(1, d / r)));
+      }
+      game.enemies = game.enemies.filter(e => e.hp > 0 || e.delay > 0);
+      if (game.boss && !game.boss.entering &&
+          Math.hypot(game.boss.x - p.x, game.boss.y - p.y) < r) damageBoss(dmg);
+      game.eBullets = game.eBullets.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > r * 0.85);
+      if (game.superKind === 'quake') game.shake = Math.max(game.shake, 6);
+      break;
+    }
+    case 'swarm':
+      updatePets(dt, dmg);
+      break;
+    case 'feast':
+      updateFood(dt, dmg, mul);
+      break;
+    case 'wish':
+      // 何が起きるか分からない。毎フレーム別のことが少しずつ起きる。
+      if (Math.random() < dt * 3) {
+        const roll = randInt(0, 3);
+        if (roll === 0) hurtAll(sup.tick * mul * 0.5);
+        else if (roll === 1) game.eBullets = [];
+        else if (roll === 2) { for (const e of game.enemies) e.slowT = 600; }
+        else if (game.boss && !game.boss.entering) damageBoss(sup.tick * mul * 0.4);
+        particles(rand(0, W), rand(0, H * 0.7), 6, '#c9a0ff');
+      }
+      hurtAll(dmg * 0.4);
+      break;
+    case 'stink':
+      // 近寄れなくする。押し返しなので、ボスにも効くが削りは弱い。
+      for (const e of game.enemies) {
+        if (e.delay > 0) continue;
+        e.slowT = Math.max(e.slowT || 0, 500);
+        e.prog -= 40 * dt;
+      }
+      hurtAll(dmg);
+      if (Math.random() < dt * 20) particles(p.x + rand(-90, 90), p.y + rand(-90, 90), 2, '#a8d86b');
+      break;
+  }
+
+  if (game.superT <= 0) {
+    game.superKind = null; game.superFusion = 0;
+    game.superPets = []; game.superFood = [];
+  }
+}
+
+/** 画面上の敵とボスをまとめて削る。 */
+function hurtAll(dmg) {
+  for (const e of game.enemies) { if (e.delay <= 0) damageEnemy(e, dmg); }
+  game.enemies = game.enemies.filter(e => e.hp > 0 || e.delay > 0);
+  if (game.boss && !game.boss.entering) damageBoss(dmg * 0.6);
+}
+
+/** 仲間が敵を追いかけて食べる。 */
+function updatePets(dt, dmg) {
+  for (const pet of game.superPets) {
+    pet.t += dt * 1000;
+    if (!pet.target || !game.enemies.includes(pet.target)) {
+      pet.target = nearestEnemy(pet.x, pet.y, 9999);
+    }
+    const tgt = pet.target || game.boss;
+    if (tgt) {
+      const a = Math.atan2(tgt.y - pet.y, tgt.x - pet.x);
+      pet.x += Math.cos(a) * 340 * dt; pet.y += Math.sin(a) * 340 * dt;
+      if (Math.hypot(tgt.x - pet.x, tgt.y - pet.y) < 26) {
+        if (pet.target) { damageEnemy(pet.target, dmg * 3); particles(pet.x, pet.y, 4, '#8affc1'); }
+        else damageBoss(dmg);
+      }
+    } else {
+      pet.y -= 200 * dt;
+    }
+  }
+  game.enemies = game.enemies.filter(e => e.hp > 0 || e.delay > 0);
+}
+
+/** ごちそうが降ってくる。触れた敵は点になる。 */
+function updateFood(dt, dmg, mul) {
+  const FOODS = ['🍕', '🍔', '🍩', '🍰', '🍜', '🍣', '🌽', '🥐'];
+  if (Math.random() < dt * (30 * mul)) {
+    game.superFood.push({ x: rand(20, W - 20), y: -20, vy: rand(180, 320), e: pick(FOODS), s: rand(16, 26) });
+  }
+  for (const f of game.superFood) {
+    f.y += f.vy * dt;
+    for (const e of game.enemies) {
+      if (e.delay > 0) continue;
+      if (Math.hypot(e.x - f.x, e.y - f.y) < f.s + e.size) {
+        damageEnemy(e, dmg * 4);
+        game.score += 40;
+        particles(f.x, f.y, 5, '#ffd27f');
+        f.y = H + 99;
+      }
+    }
+  }
+  game.superFood = game.superFood.filter(f => f.y < H + 40);
+  game.enemies = game.enemies.filter(e => e.hp > 0 || e.delay > 0);
+}
+
 export function useBomb() {
   if (game.bombs <= 0 || game.player.dead || game.state !== 'play') return;
   game.bombs--;
@@ -526,6 +744,7 @@ function killEnemy(e, silent = false) {
   else { game.combo = 0; game.comboMul = 1; }
   game.lastKill = now;
   game.stats.kills++; game.stats.killTimes.push(now);
+  gainSuper(SUPER_GAIN.kill);   // 必殺技は「倒した数」で溜まる。被弾では溜めない
   if (game.stats.killTimes.length > 200) game.stats.killTimes.shift();
   const pts = Math.round(e.pts * game.comboMul * Weather.mods.scoreMul);
   game.score += pts;
@@ -724,6 +943,7 @@ function bossAttack(b, atk) {
 }
 
 function damageBoss(dmg) {
+  gainSuper(SUPER_GAIN.bossHit * dmg);
   const b = game.boss;
   if (!b || b.entering) return;
   b.flash = 1; game.stats.hits++; Snd.bossHit();
@@ -1092,6 +1312,7 @@ function hitBell(bell) {
   particles(bell.x, bell.y, 3, BELLS[bell.idx].color);
 }
 function collectBell(bell) {
+  gainSuper(SUPER_GAIN.bellPick);   // ベルは必殺技への一番大きな供給源
   const bt = BELLS[bell.idx], p = game.player;
   Snd.power(); particles(bell.x, bell.y, 14, bt.color);
   popup(bell.x, bell.y - 16, bt.name + '!', bt.color);
@@ -1649,6 +1870,7 @@ export function update(dt, keys) {
         updateBullets(dt);
       }
       updateBg(dt);
+      updateSuper(dt);
       updateTimers(dt);
       updateParticles(dt);
       updatePopups(dt);

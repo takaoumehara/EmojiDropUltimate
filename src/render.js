@@ -4,7 +4,7 @@
 import { BELLS, clamp, stageTint, CHARS, STAGES, TRAJ_PREVIEW } from './config.js';
 import { W, H, ctx, UI, SAFE, DPR } from './env.js';
 import { game } from './state.js';
-import { stage, dirDef } from './geo.js';
+import { stage, dirDef, fwAngle } from './geo.js';
 import { t, getLang } from './i18n.js';
 import { Weather } from './weather.js';
 import { Director } from './director.js';
@@ -12,6 +12,7 @@ import { BossAI } from './bossai.js';
 import { Save } from './save.js';
 import { Coop } from './coop.js';
 import { BELL_LOCK_R } from './engine.js';
+import { SUPERS, superKeyOf, SUPER_MAX } from './super.js';
 import { txt, surface, scrim, roundPath, COL, FONT_UI, FONT_DISPLAY } from './theme.js';
 import { qrMatrix } from './qr.js';
 
@@ -65,6 +66,12 @@ function f(size, weight = 600, family = SANS) { ctx.font = `${weight} ${Math.rou
 function label(text, x, y, color, size, align = 'center', weight = 700) {
   ctx.save();
   f(size, weight);
+  // 画面幅を超えたら縮める。以前は上限が無く、言葉を1つ足すだけで
+  //   両端が切れて読めなくなった(実際にヒント文で起きた)。
+  //   呼び出し側の全部に maxW を書かせるより、ここで面倒を見るほうが確実。
+  const lim = W * 0.92;
+  const wmeas = ctx.measureText(text).width;
+  if (wmeas > lim) { size *= lim / wmeas; f(size, weight); }
   ctx.textAlign = align;
   ctx.shadowColor = 'rgba(0,0,0,0.9)';
   ctx.shadowBlur = Math.max(3, size * 0.3);
@@ -555,17 +562,31 @@ function drawHUD() {
   const dirName = { up: '↑', right: '→', down: '↓', left: '←' }[stage().dir] || '';
   txt(`${stage().emoji} ${slabel}${dirName}`, W - 22 * UI - SAFE.right, H - 24 * UI - bot,
     { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'right', baseline: 'top', shadow: 0.7 });
+  drawSuperGauge();
   if (game.coop) drawCoopHud();
   if (Director.msg && Director.msgT > 0) {
     ctx.globalAlpha = clamp(Director.msgT, 0, 1);
     label(Director.msg, W / 2, H - 78 * UI - bot, '#00ffcc', 12 * UI);
     ctx.globalAlpha = 1;
   }
-  if (game.warnT > 0 && Math.floor(game.warnT / 220) % 2 === 0) {
-    ctx.fillStyle = 'rgba(255,0,0,0.16)'; ctx.fillRect(0, H / 2 - 62, W, 124);
-    label('⚠︎ ' + t('warning') + ' ⚠︎', W / 2, H / 2 - 12, '#ff3030', 30 * UI);
+  if (game.warnT > 0) {
+    // 以前は「赤い帯の上に赤い文字」を点滅で消しながら出していた。
+    //   一番読ませたい瞬間に一番読めない状態だったので、
+    //   帯は暗く敷いて文字は白、点滅は帯の縁だけに任せる。
+    const wy2 = H * 0.42;
+    const bh = 92 * UI;
+    const beat = Math.floor(game.warnT / 220) % 2 === 0;
+    ctx.save();
+    ctx.fillStyle = 'rgba(10,0,4,0.72)';
+    ctx.fillRect(0, wy2 - bh / 2, W, bh);
+    ctx.fillStyle = beat ? '#ff2d3f' : 'rgba(255,45,63,0.35)';
+    ctx.fillRect(0, wy2 - bh / 2, W, 3 * UI);
+    ctx.fillRect(0, wy2 + bh / 2 - 3 * UI, W, 3 * UI);
+    ctx.restore();
     const nm = getLang() === 'ja' ? stage().boss.name : stage().boss.en;
-    label(`${nm} ${t('approach')}`, W / 2, H / 2 + 26, '#ffb0b0', 14 * UI);
+    label('⚠︎ ' + t('warning') + ' ⚠︎', W / 2, wy2 - 18 * UI, beat ? '#fff' : '#ffd7db', 26 * UI);
+    txt(`${nm} ${t('approach')}`, W / 2, wy2 + 16 * UI,
+      { size: 14 * UI, weight: 800, color: '#ffe08a', maxW: W * 0.9, shadow: 1 });
   }
   // 集中モードの発見用ヒント: 初めて踏みとどまった時に一度だけ出す
   if (game.focusHintT > 0) {
@@ -579,8 +600,8 @@ function drawHUD() {
   if (game.stageIndex === 0 && game.stageTime < 5200 && game.state === 'play') {
     // 自機(画面下部)と重ならない高さに出す
     ctx.globalAlpha = clamp((5200 - game.stageTime) / 1000, 0, 0.9);
-    label(t('hint_move'), W / 2, H - 196 * UI - bot, '#fff', 12 * UI);
-    label(t('hint_bomb'), W / 2, H - 178 * UI - bot, '#fff', 12 * UI);
+    txt(t('hint_move'), W / 2, H - 196 * UI - bot, { size: 12 * UI, weight: 700, color: '#fff', shadow: 0.95, maxW: W * 0.9 });
+    txt(t('hint_bomb'), W / 2, H - 178 * UI - bot, { size: 12 * UI, weight: 700, color: '#fff', shadow: 0.95, maxW: W * 0.9 });
     ctx.globalAlpha = 1;
   }
 }
@@ -1192,6 +1213,134 @@ function drawCoopLobby() {
   drawBtn('coopBack', bx, by, bw, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
 }
 
+// === 必殺技の演出 ===
+//   技ごとに「何が起きているか」が一目で違って見えないと、
+//   キャラを選び分ける意味が伝わらない。色も形も動きも分ける。
+function drawSuper() {
+  if (game.superT <= 0 || !game.superKind) return;
+  const sup = SUPERS[game.superKind]; if (!sup) return;
+  const p = game.player, now = performance.now();
+  const fused = game.superFusion >= 2;
+  const k = Math.min(1, game.superAge / 260);              // 立ち上がり
+  const fade = Math.min(1, game.superT / 320);             // 終わりぎわ
+  ctx.save();
+  ctx.globalAlpha = k * fade;
+
+  switch (game.superKind) {
+    case 'blizzard': {
+      // 画面全体を白く霞ませ、雪を降らせる。「止まった」ことが色で分かる。
+      ctx.fillStyle = `rgba(180,225,255,${0.16 + (fused ? 0.1 : 0)})`;
+      ctx.fillRect(0, 0, W, H);
+      for (let i = 0; i < (fused ? 44 : 24); i++) {
+        const t2 = now * 0.0006 + i * 1.7;
+        const x = (i * 97 + (t2 * 40) % W) % W;
+        const y = ((t2 * 180) + i * 53) % (H + 40) - 20;
+        emojiCentered('❄️', x, y, 14 * UI, 0.55);
+      }
+      break;
+    }
+    case 'beam': {
+      // 進む方向へ極太の光柱。射線が見えるから狙う気になる。
+      const a = fwAngle(), wide = 54 * UI * (fused ? 1.7 : 1) * k;
+      ctx.translate(p.x, p.y); ctx.rotate(a);
+      const far = Math.max(W, H) * 1.2;
+      const g2 = ctx.createLinearGradient(0, 0, far, 0);
+      g2.addColorStop(0, 'rgba(255,255,255,0.95)');
+      g2.addColorStop(0.4, `rgba(255,226,122,${fused ? 0.85 : 0.68})`);
+      g2.addColorStop(1, 'rgba(255,140,60,0)');
+      ctx.fillStyle = g2;
+      ctx.fillRect(0, -wide, far, wide * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.fillRect(0, -wide * 0.22, far, wide * 0.44);
+      break;
+    }
+    case 'nova':
+    case 'quake': {
+      // 広がる輪。何重にも出して「押し出している」感じにする。
+      const rMax = Math.max(W, H) * 0.85 * (fused ? 1.3 : 1);
+      const rings = fused ? 4 : 2;
+      for (let i = 0; i < rings; i++) {
+        const prog = ((game.superAge / sup.dur) + i / rings) % 1;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(1, prog * rMax), 0, Math.PI * 2);
+        ctx.strokeStyle = sup.col;
+        ctx.globalAlpha = k * fade * (1 - prog) * 0.9;
+        ctx.lineWidth = (game.superKind === 'quake' ? 16 : 9) * (1 - prog * 0.5);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'swarm':
+      ctx.globalAlpha = 1;
+      for (const pet of game.superPets) emojiCentered(Save.char().emoji, pet.x, pet.y, 20 * UI, 0.95);
+      break;
+    case 'feast':
+      ctx.globalAlpha = 1;
+      for (const f2 of game.superFood) emojiCentered(f2.e, f2.x, f2.y, f2.s * 1.6);
+      break;
+    case 'wish': {
+      // 何が起きるか分からない技。色そのものが移り変わる。
+      const hue = (now * 0.12) % 360;
+      ctx.fillStyle = `hsla(${hue},80%,65%,0.14)`;
+      ctx.fillRect(0, 0, W, H);
+      for (let i = 0; i < 5; i++) {
+        emojiCentered('✨', (i * 137 + now * 0.05) % W, (i * 211 + now * 0.08) % H, 22 * UI, 0.8);
+      }
+      break;
+    }
+    case 'stink': {
+      // においの雲。自機のまわりが安全地帯だと分かる形。
+      const r = 120 * UI * (fused ? 1.6 : 1) * k;
+      const g3 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      g3.addColorStop(0, 'rgba(168,216,107,0.42)');
+      g3.addColorStop(1, 'rgba(168,216,107,0)');
+      ctx.fillStyle = g3;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+  }
+  ctx.restore();
+
+  // 技の名前。合体したときだけ「合体」と分かる出方にする。
+  if (game.superAge < 1100) {
+    const ja2 = getLang() === 'ja';
+    label((fused ? '✨ ' : '') + (ja2 ? sup.ja : sup.en) + (fused ? ' ✨' : ''),
+      W / 2, vy(0.155), sup.col, (fused ? 28 : 23) * UI);
+    if (fused) label(ja2 ? `${game.superFusion}人 合体!` : `${game.superFusion}-WAY FUSION!`,
+      W / 2, vy(0.155) + 26 * UI, '#ffd700', 13 * UI);
+  }
+}
+
+// === 必殺技のゲージ ===
+//   溜まっていることに気づかれないと、技そのものが存在しないのと同じ。
+//   満タンのときだけ「ダブルタップ」と言い、それ以外は静かにしておく。
+function drawSuperGauge() {
+  const bot = SAFE.bottom, pad = 14 * UI + SAFE.left;
+  const sup = SUPERS[superKeyOf(Save.char().id)];
+  if (!sup) return;
+  const full = game.superCharge >= SUPER_MAX;
+  const w = Math.min(148 * UI, W * 0.44), h = 7 * UI;
+  const x = pad, y = H - 62 * UI - bot;
+  surface(x, y, w, h, { r: h / 2, fill: 'rgba(255,255,255,0.13)', border: null });
+  const p2 = Math.min(1, game.superCharge / SUPER_MAX);
+  if (p2 > 0) {
+    ctx.save();
+    if (full) { ctx.shadowColor = sup.col; ctx.shadowBlur = 14; }
+    surface(x, y, Math.max(h, w * p2), h, { r: h / 2, fill: sup.col, border: null });
+    ctx.restore();
+  }
+  const ja2 = getLang() === 'ja';
+  const name = ja2 ? sup.ja : sup.en;
+  if (full && game.superT <= 0) {
+    const blink = 0.6 + 0.4 * Math.sin(performance.now() * 0.008);
+    txt(`${sup.emoji} ${name} — ${ja2 ? 'ダブルタップ!' : 'DOUBLE-TAP!'}`, x, y - 6 * UI,
+      { size: 10.5 * UI, weight: 800, color: sup.col, align: 'left', baseline: 'bottom', alpha: blink, shadow: 0.9 });
+  } else if (game.superT <= 0) {
+    txt(`${sup.emoji} ${name}`, x, y - 6 * UI,
+      { size: 9.5 * UI, weight: 600, color: COL.mute, align: 'left', baseline: 'bottom' });
+  }
+}
+
 // === みんなでプレイ: 相方の機体(自分の画面に相方が飛ぶ) ===
 //   弾の見た目は相方ごとに別に持つ。ひとつの配列を共有すると、
 //   3人以上のとき全員の弾が同じ場所から出ているように見えてしまう。
@@ -1410,7 +1559,7 @@ export function draw() {
     case 'play': case 'warn': {
       ctx.save(); ctx.translate(game.shakeX, game.shakeY);
       drawBackground(); drawWeatherFx(); drawBells(); drawEnemies(); drawBoss();
-      drawBullets(); drawPartners(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
+      drawBullets(); drawSuper(); drawPartners(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
       ctx.restore();
       drawHUD();
       drawBossReveal();
