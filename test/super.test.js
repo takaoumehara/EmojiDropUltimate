@@ -15,7 +15,38 @@ import { boot, sim, Bot, shutdown } from './headless.js';
 
 const now = h => h.state.game;
 
-/** 敵をまとめて並べる(技が効いたかを数で見るため)。 */
+/**
+ * 敵をまとめて並べる。
+ *
+ * **x,y を直接入れても効かない** —— updateEnemies が毎フレーム prog/lat から
+ * x,y を作り直すので、手で置いた座標は上書きされて全部が1点に集まる。
+ * 置きたい画面座標は geo.invPL で prog/lat に変換して渡す。
+ */
+function seedAt(h, g, points, hp = 4) {
+  points.forEach(([x, y], i) => {
+    const pl = h.geo.invPL(x, y);
+    g.enemies.push({
+      id: 9000 + i, ti: 0, move: null, mvT: 0, mvS: 0, mph: 0, blink: 0,
+      type: 'straight', emoji: '👾', hp, maxHp: hp, speed: 0, pts: 100, size: 14,
+      amp: 0, freq: 1, shootRate: 0, prog: pl.prog, lat0: pl.lat, lat: pl.lat,
+      phase: 0, shootT: 9e9, delay: 0, flash: 0, locked: false, lockLat: 0,
+      x, y, sq: null, progOff: 0, diving: false,
+    });
+  });
+}
+
+/** 自機の前方に、射線・輪・連鎖のどれでも届く位置で固める。 */
+function seedInFront(h, g, n = 12, hp = 4) {
+  const p = g.player;
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (i / n - 0.5) * 1.1;   // 前方の扇
+    const r = 70 + (i % 3) * 45;
+    pts.push([p.x + Math.cos(a) * r * 0.5, p.y + Math.sin(a) * r]);
+  }
+  seedAt(h, g, pts, hp);
+}
+
 function seedEnemies(g, n = 12) {
   for (let i = 0; i < n; i++) {
     g.enemies.push({
@@ -55,25 +86,25 @@ test('16キャラ全員が必殺技を撃てて、8種類に散らばってい�
     `技が8種類そろうこと: ${[...kinds].sort().join(',')}`);
 });
 
-test('どの技も画面の敵を実際に減らす', async () => {
+test('どの技も敵を実際に倒す', async () => {
+  // 純粋な頭数で測ると、効いている間に新しい敵も湧くので増えることがある。
+  //   仕込んだ敵(id 9000番台)だけを追う。
   const h = await boot({ seed: 72 });
-  const { SUPER_BY_CHAR, SUPER_MAX } = await import('../src/super.js');
-  // 型ごとに代表キャラを1体ずつ試す
-  const seen = new Set();
+  const { SUPER_MAX } = await import('../src/super.js');
+  const weak = [];
   for (let i = 0; i < h.config.CHARS.length; i++) {
-    const key = SUPER_BY_CHAR[h.config.CHARS[i].id] || 'nova';
-    if (seen.has(key)) continue;
-    seen.add(key);
     const g = await inPlay(h, i);
-    seedEnemies(g, 14);
-    const before = g.enemies.length;
+    seedInFront(h, g, 14);
+    const seeded = new Set(g.enemies.filter(e => e.id >= 9000).map(e => e.id));
     g.superCharge = SUPER_MAX;
     h.engine.useBombOrSuper();
+    const kind = now(h).superKind;
     sim(h, { steps: 60 * 5, bot: Bot.idle });
-    assert.ok(now(h).enemies.length < before,
-      `${key} が敵を減らすこと (${before} → ${now(h).enemies.length})`);
+    const left = now(h).enemies.filter(e => seeded.has(e.id)).length;
+    if (left >= seeded.size) weak.push(`${kind}(${left}/${seeded.size} 残り)`);
   }
   shutdown(h);
+  assert.equal(weak.length, 0, `どの技も仕込んだ敵を倒すこと。倒せなかった: ${weak.join(', ')}`);
 });
 
 test('溜まっていなければ従来どおりボムが出る', async () => {

@@ -53,7 +53,9 @@ export function normalizeStage(raw) {
       hp: clampN(boss.hp, 60, 260, 150),
       style: STYLE_KEYS.includes(boss.style) ? boss.style : pick(STYLE_KEYS),
     },
-    dur: 40000,
+    // 手作りステージは 62〜80秒。ここが 40秒だと、エンドレスでだけ
+    //   「いきなりボスが出る」ように感じる(実際にそう言われた)。揃える。
+    dur: 60000,
     bpm: clampN(raw.bpm, 120, 168, 140),
     scale: Array.isArray(raw.scale) && raw.scale.every(n => typeof n === 'number') ? raw.scale.slice(0, 6) : [60, 63, 65, 67, 70],
     ai: true,

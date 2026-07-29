@@ -61,6 +61,40 @@ export function txt(s, x, y, {
   ctx.restore();
 }
 
+/**
+ * 折り返して描く。返すのは使った高さ。
+ *
+ * 日本語には単語の区切りがないので、空白で割る方法は使えない。
+ * 空白があればそこで、なければ1文字ずつ入るところまで詰める。
+ * 縮小(maxW)で読めなくするより、行を増やすほうが読める。
+ */
+export function wrapLines(s, w, { size = 12, weight = 600, family = FONT_UI, maxLines = 4 } = {}) {
+  font(size, weight, family);
+  const hasSpace = /\s/.test(s);
+  const units = hasSpace ? s.split(/\s+/) : [...s];
+  const join = hasSpace ? ' ' : '';
+  const lines = [];
+  let cur = '';
+  for (const u of units) {
+    const next = cur ? cur + join + u : u;
+    if (ctx.measureText(next).width > w && cur) { lines.push(cur); cur = u; }
+    else cur = next;
+    if (lines.length >= maxLines) break;
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  return lines;
+}
+
+export function wrapTxt(s, x, y, w, {
+  size = 12, color = COL.sub, weight = 600, align = 'center',
+  family = FONT_UI, lineH = 1.45, maxLines = 4, alpha = 1,
+} = {}) {
+  const lines = wrapLines(s, w, { size, weight, family, maxLines });
+  const lh = size * lineH;
+  lines.forEach((ln, i) => txt(ln, x, y + lh * (i + 0.5), { size, color, weight, align, family, alpha, maxW: w }));
+  return lines.length * lh;
+}
+
 // ゲーム画面に重ねる文字(背景が読めないので影で浮かせる。黒フチは使わない)
 export function gtxt(s, x, y, o = {}) {
   txt(s, x, y, { shadow: 0.85, weight: 700, ...o });

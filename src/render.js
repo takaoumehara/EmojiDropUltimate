@@ -4,7 +4,7 @@
 import { BELLS, clamp, stageTint, CHARS, STAGES, TRAJ_PREVIEW } from './config.js';
 import { W, H, ctx, UI, SAFE, DPR } from './env.js';
 import { game } from './state.js';
-import { stage, dirDef, fwAngle } from './geo.js';
+import { stage, dirDef, fwAngle, fwSpan, isVert, posFromPL } from './geo.js';
 import { t, getLang } from './i18n.js';
 import { Weather } from './weather.js';
 import { Director } from './director.js';
@@ -13,7 +13,7 @@ import { Save } from './save.js';
 import { Coop } from './coop.js';
 import { BELL_LOCK_R } from './engine.js';
 import { SUPERS, superKeyOf, SUPER_MAX } from './super.js';
-import { txt, surface, scrim, roundPath, COL, FONT_UI, FONT_DISPLAY } from './theme.js';
+import { txt, wrapTxt, wrapLines, surface, scrim, roundPath, COL, FONT_UI, FONT_DISPLAY } from './theme.js';
 import { qrMatrix } from './qr.js';
 
 // 画面の縦位置は「実際に使える範囲」の割合で置く。
@@ -849,31 +849,40 @@ function roundRect(x, y, w, h, r) {
 //   「見た目が違うだけ」に見えないよう、投げる物・飛び方・数値をカードで明示する。
 
 // 4つの数値を 0..1 に正規化する。絶対値ではなく「16体の中での位置」で見せる。
+/**
+ * カードに出す4つの数値。
+ *
+ * 「いどう」は捨てた —— 指でドラッグする限りその値は効いておらず、
+ * 数値だけが並んでいた。代わりに **身のこなし(当たり判定の小ささ)** と、
+ * 頼まれていた **たまのはやさ** を出す。全部が実際に効いている値。
+ */
 function statsOf(c) {
-  const dmgs = CHARS.map(x => (x.dmg || 1) / x.fire);
-  const rate = CHARS.map(x => 1 / x.fire);
-  const move = CHARS.map(x => x.speed);
-  const bsp = CHARS.map(x => x.bspeed);
+  const all = CHARS;
   const norm = (v, arr) => {
     const lo = Math.min(...arr), hi = Math.max(...arr);
     return hi === lo ? 0.5 : (v - lo) / (hi - lo);
   };
   return [
-    { ja: 'ちから', en: 'POWER', v: norm((c.dmg || 1) / c.fire, dmgs) },
-    { ja: 'れんしゃ', en: 'RATE', v: norm(1 / c.fire, rate) },
-    { ja: 'いどう', en: 'MOVE', v: norm(c.speed, move) },
-    { ja: 'たまそく', en: 'SHOT', v: norm(c.bspeed, bsp) },
+    // 1発の重さ。連射で割らない —— 「1発が重い」は連射とは別の魅力。
+    { ja: 'ひとげき', en: 'PUNCH', v: norm(c.dmg || 1, all.map(x => x.dmg || 1)) },
+    // 連射。fire は間隔の倍率なので、小さいほど速い。
+    { ja: 'れんしゃ', en: 'RATE', v: norm(1 / c.fire, all.map(x => 1 / x.fire)) },
+    // たまのはやさ(頼まれて追加)。
+    { ja: 'たまのはやさ', en: 'SHOT SPEED', v: norm(c.bspeed, all.map(x => x.bspeed)) },
+    // 身のこなし = 当たり判定の小ささ。engine の hitR と同じ式から出す。
+    { ja: 'みのこなし', en: 'AGILITY', v: norm(c.speed, all.map(x => x.speed)) },
   ];
 }
 
-// 弾道の見本線。カードの中に「どう飛ぶか」を実際の線で描く。
 function drawTrajPreview(c, x, y, w, h) {
   const tp = TRAJ_PREVIEW[c.traj || 'straight'];
   if (!tp) return;
   const ja = getLang() === 'ja';
   surface(x, y, w, h, { r: 12, fill: 'rgba(6,10,24,0.55)', border: 'rgba(255,255,255,0.14)', lw: 1.5 });
-  const pad = 14 * UI;
-  const x0 = x + pad, x1 = x + w - pad, cy = y + h / 2, amp = (h / 2 - pad);
+  // 縦の余白は薄くする。ここを厚くすると振れ幅(amp)が消え、
+  //   「割れる」「波打つ」が上下に分かれず、弾が重なって見えていた。
+  const padX = 14 * UI, padY = 9 * UI;
+  const x0 = x + padX, x1 = x + w - padX, cy = y + h / 2, amp = (h / 2 - padY);
   const P = ([px, py]) => [x0 + (x1 - x0) * px, cy + amp * py];
   const t = performance.now() * 0.001;
   const line = (pts, alpha) => {
@@ -906,10 +915,11 @@ function drawTrajPreview(c, x, y, w, h) {
     if (c.shotEmoji) emojiCentered(c.shotEmoji, dx, dy, sz * UI * 0.9);
     else { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(dx, dy, 3.5, 0, Math.PI * 2); ctx.fill(); }
   };
-  drawDot(tp.pts);
-  if (tp.split && k > 0.45) for (const seg of tp.split) drawDot(seg);
-  txt(ja ? tp.name : tp.en, x + 10 * UI, y + 11 * UI,
-    { size: 10 * UI, weight: 700, color: c.shot, align: 'left', maxW: w - 20 });
+  // 割れる弾は、割れたあとに元の弾を残さない。
+  //   前は「分岐点で止まった弾」+「左右に出ていく2発」の3つが描かれ、
+  //   分岐直後は同じ場所に重なって、絵が壊れているように見えていた。
+  if (tp.split) { if (k <= 0.45) drawDot(tp.pts); else for (const seg of tp.split) drawDot(seg); }
+  else drawDot(tp.pts);
 }
 
 function drawCharCard() {
@@ -930,8 +940,8 @@ function drawCharCard() {
     ctx.restore();
   }
   ctx.globalAlpha = 1;
-  // ページ点
-  const dotY = bottom - 128 * UI;
+  // ページ点。カードが縮んだときは点も一緒に上がる(離れて浮かないように)
+  const dotY = Math.min(bottom - 128 * UI, cardBottom + 38 * UI);
   const dw = Math.min(W * 0.9, 320), dx0 = (W - dw) / 2;
   CHARS.forEach((c, i) => {
     const x = dx0 + (dw / (CHARS.length - 1)) * i;
@@ -961,70 +971,114 @@ function drawCharCard() {
 
 function drawOneCard(c, ja, bottom) {
   const cw = Math.min(W * 0.9, 380), cx = (W - cw) / 2;
-  const room = bottom - 152 * UI - (SAFE.top + 8 * UI);
-  // 要素を減らしたぶん、枠も中身に合わせて縮める。
-  //   高さを決め打ちにすると、下に大きな空白が残って間延びして見える。
-  const hasMarks = !!(c.pierce || c.slow || c.spread);
-  const need = (16 + 88 + 22 + 26 + 66 + 52 + 44 + 16 + (hasMarks ? 18 : 0)) * UI;
-  const ch2 = Math.min(room, need);
-  const top = SAFE.top + 8 * UI + Math.max(0, room - ch2);
+  // **枠を中身に合わせる。** 前は使える高さを全部枠にしてから、余りを
+  //   棒4本の間隔に流していた。背の高い端末では棒が180px間隔に開き、
+  //   下に何もない空白が残った。中身の高さを先に出して、枠をそれに合わせ、
+  //   余った上下は空けておく(詰めこむより、詰めこまないほうがきれい)。
+  const availTop = SAFE.top + 10 * UI;
+  const availH = bottom - 150 * UI - availTop;
+  const pad = 16 * UI;
+  const sup0 = SUPERS[superKeyOf(c.id)];
+  const rows0 = statsOf(c);
+  const marksH = (c.pierce || c.slow || c.spread) ? 22 * UI : 8 * UI;
+  // 伸縮するのは3つ(顔・飛び方の絵・棒の間隔)。まず素の大きさで組んで、
+  //   入らなければ **その3つだけ** を同じ率で縮める。個別に下限で止めると、
+  //   飛び方の絵だけが潰れて「割れる」が見えなくなる。
+  const build = k => {
+    const eSize = Math.min(76 * UI, availH * 0.19) * k;
+    const trajH = 58 * UI * k;
+    const ROW = 26 * UI * k;
+    const flex = eSize * 1.2 + trajH + ROW * rows0.length;
+    const rigid = pad + 8 * UI + 24 * UI + 26 * UI + (sup0 ? 64 * UI : 0)
+                + 8 * UI + 12 * UI + marksH + pad;
+    return { eSize, trajH, ROW, h: flex + rigid, flex, rigid };
+  };
+  let bx0 = build(1);
+  if (bx0.h > availH) bx0 = build(Math.max(0.62, (availH - bx0.rigid) / bx0.flex));
+  const { eSize, trajH, ROW } = bx0;
+  const loreS = 11.5 * UI, loreLH = loreS * 1.42;
+  const loreN = wrapLines(ja ? c.lore : c.loreEn, cw - 44 * UI,
+    { size: loreS, weight: 600, maxLines: 3 }).length;
+  const loreH = (availH - bx0.h >= loreN * loreLH + 8 * UI) ? loreN * loreLH + 8 * UI : 0;
+  const ch2 = Math.min(availH, bx0.h + loreH);
+  // 余りは上より下に多く残す。下にはページ点と案内文が続くので、
+  //   ぴったり中央に置くと案内文だけが遠くに離れて浮いてしまう。
+  const top = availTop + Math.max(0, (availH - ch2) * 0.22);
   surface(cx, top, cw, ch2, { r: 22, fill: 'rgba(12,17,36,0.9)', border: c.col, lw: 2.5 });
 
-  // 上: 大きな絵文字と名前。ここが「誰か」を決める。
-  let y = top + 16 * UI;
-  const glow = ctx.createRadialGradient(W / 2, y + 40 * UI, 4, W / 2, y + 40 * UI, 56 * UI);
+  let y = top + pad;
+
+  // --- 誰か ---
+  const glow = ctx.createRadialGradient(W / 2, y + eSize * 0.6, 4, W / 2, y + eSize * 0.6, eSize * 0.9);
   glow.addColorStop(0, c.col + '55'); glow.addColorStop(1, c.col + '00');
-  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(W / 2, y + 40 * UI, 56 * UI, 0, Math.PI * 2); ctx.fill();
-  emojiCentered(c.emoji, W / 2, y + 40 * UI, 64 * UI);
-  y += 88 * UI;
-  txt(ja ? c.name : c.en, W / 2, y, { size: 21 * UI, weight: 800, color: c.col, family: FONT_DISPLAY, maxW: cw - 30 });
-  y += 22 * UI;
-  txt(ja ? c.tag : c.tagEn, W / 2, y, { size: 11.5 * UI, weight: 700, color: COL.sub, maxW: cw - 34 });
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(W / 2, y + eSize * 0.6, eSize * 0.9, 0, Math.PI * 2); ctx.fill();
+  emojiCentered(c.emoji, W / 2, y + eSize * 0.6, eSize);
+  y += eSize * 1.2 + 8 * UI;
+  txt(ja ? c.name : c.en, W / 2, y, { size: 23 * UI, weight: 800, color: c.col, family: FONT_DISPLAY, maxW: cw - 30 });
+  y += 24 * UI;
+  txt(ja ? c.tag : c.tagEn, W / 2, y, { size: 12 * UI, weight: 700, color: COL.sub, maxW: cw - 34 });
   y += 26 * UI;
 
-  // 中: 必殺技。**いまキャラを選ぶ一番の理由がこれ**なので、
-  //   説明文や数値より前に、専用の枠で見せる。
+  // --- 必殺技 ---
+  //   前は技名の下に小さな説明文を敷いていたが、実機では読めなかった。
+  //   読めない文字は無いのと同じなので消し、代わりに
+  //   **「ひっさつわざ」という見出し**を付けて、何の欄かを明示する。
   const sup = SUPERS[superKeyOf(c.id)];
   if (sup) {
-    const sh = 52 * UI;
+    const sh = 50 * UI;
     surface(cx + 14 * UI, y, cw - 28 * UI, sh,
-      { r: 12, fill: 'rgba(255,255,255,0.05)', border: sup.col + '88', lw: 1.5 });
-    emojiCentered(sup.emoji, cx + 36 * UI, y + sh * 0.5, 22 * UI);
-    txt(ja ? sup.ja : sup.en, cx + 56 * UI, y + 15 * UI,
-      { size: 13 * UI, weight: 800, color: sup.col, align: 'left', maxW: cw - 84 * UI });
-    txt(ja ? sup.jaDesc : sup.enDesc, cx + 56 * UI, y + 34 * UI,
-      { size: 9.5 * UI, weight: 500, color: COL.mute, align: 'left', maxW: cw - 88 * UI });
+      { r: 12, fill: sup.col + '18', border: sup.col + 'aa', lw: 2 });
+    txt(ja ? 'ひっさつわざ' : 'SUPER', cx + 26 * UI, y + 14 * UI,
+      { size: 9 * UI, weight: 800, color: sup.col, align: 'left', track: 1.4 });
+    emojiCentered(sup.emoji, cx + 34 * UI, y + 34 * UI, 20 * UI);
+    txt(ja ? sup.ja : sup.en, cx + 50 * UI, y + 34 * UI,
+      { size: 15 * UI, weight: 800, color: '#ffffff', align: 'left', maxW: cw - 80 * UI });
     y += sh + 14 * UI;
   }
 
-  // 下: 弾道の見本と数値。以前は弾道だけで縦の4分の1を使っていたので、
-  //   1本の帯に収めて、数値は4本から2本にまとめた。
-  const pw2 = cw - 40 * UI;
-  drawTrajPreview(c, cx + 20 * UI, y, pw2, 44 * UI);
-  y += 52 * UI;
+  // --- 投げるもの ---
+  //   「必殺技」と「ふだんの弾」が区別できないという指摘があったので、
+  //   こちらにも見出しを付けて、必殺技の欄と対になるようにする。
+  //   飛び方の名前は枠の中に置いていたが、枠が低い端末では走る弾と重なった。
+  //   見出しと同じ行の右端に出す —— 高さも節約できる。
+  txt(ja ? 'なげるもの' : 'SHOT', cx + 20 * UI, y,
+    { size: 9 * UI, weight: 800, color: COL.mute, align: 'left', track: 1.4 });
+  const tp0 = TRAJ_PREVIEW[c.traj || 'straight'];
+  if (tp0) txt(ja ? tp0.name : tp0.en, cx + cw - 20 * UI, y,
+    { size: 10.5 * UI, weight: 800, color: c.shot, align: 'right', maxW: cw * 0.55 });
+  y += 8 * UI;
+  drawTrajPreview(c, cx + 18 * UI, y, cw - 36 * UI, trajH);
+  y += trajH + 12 * UI;
 
-  const stats = statsOf(c);
-  const pair = [
-    { label: ja ? 'ちから' : 'POWER', v: (stats[0].v + stats[3].v) / 2 },
-    { label: ja ? 'はやさ' : 'SPEED', v: (stats[1].v + stats[2].v) / 2 },
-  ];
-  pair.forEach((st, i) => {
-    const ry = y + i * 20 * UI;
-    txt(st.label, cx + 18 * UI, ry, { size: 9.5 * UI, weight: 700, color: COL.mute, align: 'left' });
-    const bx2 = cx + 78 * UI, bw2 = cw - 96 * UI;
+  // --- 数値(4本・全部実際に効いている値) ---
+  rows0.forEach((st, i) => {
+    const ry = y + i * ROW + ROW * 0.5;
+    txt(ja ? st.ja : st.en, cx + 18 * UI, ry,
+      { size: 9.5 * UI, weight: 700, color: COL.mute, align: 'left', maxW: 76 * UI });
+    const bx2 = cx + 100 * UI, bw2 = cw - 118 * UI;
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
     roundRect(bx2, ry - 5 * UI, bw2, 9 * UI, 4.5 * UI); ctx.fill();
     ctx.fillStyle = c.col;
     roundRect(bx2, ry - 5 * UI, Math.max(9 * UI, bw2 * (0.08 + st.v * 0.92)), 9 * UI, 4.5 * UI); ctx.fill();
   });
-  y += 44 * UI;
+  y += ROW * rows0.length;
 
-  // 特記(貫通/減速/広がり)は持っているキャラだけ
+  // --- 説明文 ---
+  //   「ファーマーとベイカーの違いが正直わからない」と言われた。
+  //   棒4本だけでは差が伝わらないので、得手不得手を文章で置く。
+  //   **読める大きさが入るときだけ**出す。読めない字は無いのと同じ。
+  if (loreH) {
+    wrapTxt(ja ? c.lore : c.loreEn, W / 2, y + 4 * UI, cw - 44 * UI,
+      { size: loreS, weight: 600, color: 'rgba(198,214,240,0.82)', lineH: 1.42, maxLines: 3 });
+  }
+
+  // --- 特記 ---
   const marks = [c.pierce ? (ja ? 'つらぬく' : 'PIERCE') : '', c.slow ? (ja ? 'おそくする' : 'SLOW') : '',
                  c.spread ? (ja ? 'ひろがる' : 'WIDE') : ''].filter(Boolean);
-  if (marks.length) txt(marks.join(' · '), W / 2, y, { size: 10 * UI, weight: 700, color: c.shot, maxW: cw - 30 });
+  if (marks.length) txt(marks.join(' · '), W / 2, top + ch2 - 13 * UI,
+    { size: 10 * UI, weight: 700, color: c.shot, maxW: cw - 30 });
 
-  return top + ch2;   // 呼び出し側が「カードの下端」を知れるように返す
+  return top + ch2;
 }
 
 function drawCharGrid() {
@@ -1240,26 +1294,13 @@ function drawSuper() {
   const sup = SUPERS[game.superKind]; if (!sup) return;
   const p = game.player, now = performance.now();
   const fused = game.superFusion >= 2;
-  const k = Math.min(1, game.superAge / 260);              // 立ち上がり
-  const fade = Math.min(1, game.superT / 320);             // 終わりぎわ
+  const k = Math.min(1, game.superAge / 260);
+  const fade = Math.min(1, game.superT / 320);
   ctx.save();
   ctx.globalAlpha = k * fade;
 
-  switch (game.superKind) {
-    case 'blizzard': {
-      // 画面全体を白く霞ませ、雪を降らせる。「止まった」ことが色で分かる。
-      ctx.fillStyle = `rgba(180,225,255,${0.16 + (fused ? 0.1 : 0)})`;
-      ctx.fillRect(0, 0, W, H);
-      for (let i = 0; i < (fused ? 44 : 24); i++) {
-        const t2 = now * 0.0006 + i * 1.7;
-        const x = (i * 97 + (t2 * 40) % W) % W;
-        const y = ((t2 * 180) + i * 53) % (H + 40) - 20;
-        emojiCentered('❄️', x, y, 14 * UI, 0.55);
-      }
-      break;
-    }
-    case 'beam': {
-      // 進む方向へ極太の光柱。射線が見えるから狙う気になる。
+  switch (sup.kind) {
+    case 'lane': {
       const a = fwAngle(), wide = 54 * UI * (fused ? 1.7 : 1) * k;
       ctx.translate(p.x, p.y); ctx.rotate(a);
       const far = Math.max(W, H) * 1.2;
@@ -1267,15 +1308,12 @@ function drawSuper() {
       g2.addColorStop(0, 'rgba(255,255,255,0.95)');
       g2.addColorStop(0.4, `rgba(255,226,122,${fused ? 0.85 : 0.68})`);
       g2.addColorStop(1, 'rgba(255,140,60,0)');
-      ctx.fillStyle = g2;
-      ctx.fillRect(0, -wide, far, wide * 2);
+      ctx.fillStyle = g2; ctx.fillRect(0, -wide, far, wide * 2);
       ctx.fillStyle = 'rgba(255,255,255,0.92)';
       ctx.fillRect(0, -wide * 0.22, far, wide * 0.44);
       break;
     }
-    case 'nova':
-    case 'quake': {
-      // 広がる輪。何重にも出して「押し出している」感じにする。
+    case 'ring': {
       const rMax = Math.max(W, H) * 0.85 * (fused ? 1.3 : 1);
       const rings = fused ? 4 : 2;
       for (let i = 0; i < rings; i++) {
@@ -1284,21 +1322,99 @@ function drawSuper() {
         ctx.arc(p.x, p.y, Math.max(1, prog * rMax), 0, Math.PI * 2);
         ctx.strokeStyle = sup.col;
         ctx.globalAlpha = k * fade * (1 - prog) * 0.9;
-        ctx.lineWidth = (game.superKind === 'quake' ? 16 : 9) * (1 - prog * 0.5);
+        ctx.lineWidth = 16 * (1 - prog * 0.5);
         ctx.stroke();
       }
       break;
     }
-    case 'swarm':
-      ctx.globalAlpha = 1;
-      for (const pet of game.superPets) emojiCentered(Save.char().emoji, pet.x, pet.y, 20 * UI, 0.95);
+    case 'freeze':
+      ctx.fillStyle = `rgba(180,225,255,${0.16 + (fused ? 0.1 : 0)})`;
+      ctx.fillRect(0, 0, W, H);
+      for (let i = 0; i < (fused ? 44 : 24); i++) {
+        const t2 = now * 0.0006 + i * 1.7;
+        emojiCentered('❄️', (i * 97 + (t2 * 40) % W) % W, ((t2 * 180) + i * 53) % (H + 40) - 20, 14 * UI, 0.55);
+      }
       break;
-    case 'feast':
+    case 'stink': {
+      const r = 120 * UI * (fused ? 1.6 : 1) * k;
+      const g3 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      g3.addColorStop(0, 'rgba(168,216,107,0.42)'); g3.addColorStop(1, 'rgba(168,216,107,0)');
+      ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'wall': {
+      // 守りの技。木が並んで「ここから先は通れない」線を作る。
+      const lineProg = fwSpan() * 0.66;
+      ctx.globalAlpha = k * fade * 0.9;
+      const n = Math.ceil((isVert() ? W : H) / (30 * UI)) + 1;
+      for (let i = 0; i < n; i++) {
+        const lat = (i + 0.5) * (30 * UI);
+        const pos = posFromPL(lineProg, lat);
+        emojiCentered('🌲', pos.x, pos.y, 26 * UI, 0.9);
+      }
+      break;
+    }
+    case 'pets':
+      ctx.globalAlpha = 1;
+      for (const pet of game.superPets) emojiCentered(sup.pet || '🐾', pet.x, pet.y, 22 * UI, 0.95);
+      break;
+    case 'rain':
+    case 'harvest':
       ctx.globalAlpha = 1;
       for (const f2 of game.superFood) emojiCentered(f2.e, f2.x, f2.y, f2.s * 1.6);
       break;
+    case 'chain': {
+      // 敵から敵へ飛び移る雷。線が繋がって見えることが技の説明になっている。
+      ctx.strokeStyle = sup.col; ctx.lineWidth = 4 * UI;
+      ctx.shadowColor = sup.col; ctx.shadowBlur = 12;
+      for (const l of (game.superChain || [])) {
+        ctx.beginPath();
+        ctx.moveTo(l.ax, l.ay);
+        // ぎざぎざに折る(直線だと雷に見えない)
+        const seg = 3;
+        for (let i = 1; i < seg; i++) {
+          const t2 = i / seg;
+          const mx = l.ax + (l.bx - l.ax) * t2, my = l.ay + (l.by - l.ay) * t2;
+          ctx.lineTo(mx + (Math.random() * 18 - 9), my + (Math.random() * 18 - 9));
+        }
+        ctx.lineTo(l.bx, l.by);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case 'orbit':
+      ctx.globalAlpha = 1;
+      for (const o of (game.superOrbit || [])) emojiCentered(sup.orbit || '🍕', o.x, o.y, 30 * UI);
+      break;
+    case 'sweep': {
+      const sw = game.superSweep; if (!sw) break;
+      ctx.globalAlpha = k * fade;
+      if (sw.side) {
+        const g4 = ctx.createLinearGradient(sw.pos - sw.thick / 2, 0, sw.pos + sw.thick / 2, 0);
+        g4.addColorStop(0, sup.col + '00'); g4.addColorStop(0.5, sup.col + 'cc'); g4.addColorStop(1, sup.col + '00');
+        ctx.fillStyle = g4; ctx.fillRect(sw.pos - sw.thick / 2, 0, sw.thick, H);
+      } else {
+        const g4 = ctx.createLinearGradient(0, sw.pos - sw.thick / 2, 0, sw.pos + sw.thick / 2);
+        g4.addColorStop(0, sup.col + '00'); g4.addColorStop(0.5, sup.col + 'cc'); g4.addColorStop(1, sup.col + '00');
+        ctx.fillStyle = g4; ctx.fillRect(0, sw.pos - sw.thick / 2, W, sw.thick);
+      }
+      break;
+    }
+    case 'missiles':
+    case 'bones':
+    case 'eggs':
+      ctx.globalAlpha = 1;
+      for (const m of (game.superShots || [])) {
+        if (m.spin != null) {
+          ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(m.spin);
+          emojiCentered(m.e, 0, 0, 22 * UI); ctx.restore();
+        } else {
+          emojiCentered(m.e, m.x, m.y, 22 * UI);
+        }
+      }
+      break;
     case 'wish': {
-      // 何が起きるか分からない技。色そのものが移り変わる。
       const hue = (now * 0.12) % 360;
       ctx.fillStyle = `hsla(${hue},80%,65%,0.14)`;
       ctx.fillRect(0, 0, W, H);
@@ -1307,20 +1423,9 @@ function drawSuper() {
       }
       break;
     }
-    case 'stink': {
-      // においの雲。自機のまわりが安全地帯だと分かる形。
-      const r = 120 * UI * (fused ? 1.6 : 1) * k;
-      const g3 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
-      g3.addColorStop(0, 'rgba(168,216,107,0.42)');
-      g3.addColorStop(1, 'rgba(168,216,107,0)');
-      ctx.fillStyle = g3;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
   }
   ctx.restore();
 
-  // 技の名前。合体したときだけ「合体」と分かる出方にする。
   if (game.superAge < 1100) {
     const ja2 = getLang() === 'ja';
     label((fused ? '✨ ' : '') + (ja2 ? sup.ja : sup.en) + (fused ? ' ✨' : ''),
