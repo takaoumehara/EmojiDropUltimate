@@ -122,3 +122,17 @@ test('補間は全員ぶん進む', () => {
   assert.notEqual(after[0], before[0], '1人目が目標へ寄ること');
   assert.notEqual(after[1], before[1], '2人目も寄ること');
 });
+
+test('ホストの引き継ぎ指名を受けると役割が変わり、engine に知らせる', () => {
+  const c = fresh();
+  c.role = 'guest';
+  let called = 0;
+  c.onBecomeHost = () => { called++; };
+  c.becomeHost();
+  assert.equal(c.role, 'host');
+  assert.equal(called, 1);
+  // 二度目は何も起きない(同じ通知が繰り返し届いても世界を作り直さない)
+  c.becomeHost();
+  assert.equal(called, 1);
+  c.onBecomeHost = null;
+});

@@ -66,6 +66,10 @@ function buildSnap() {
             Math.round(b.maxHp), Math.round((b.scale || 1) * 100), b.dying > 0 ? 1 : 0, b.revived ? 1 : 0] : null,
     w: Math.round(game.warnT),
     lv: game.lives,
+    // ステージの経過時間も配る。ホストが抜けて誰かが引き継いだとき、
+    //   これが無いと引き継いだ側は 0 秒から数え直し、ボスがもう一度
+    //   最初から来ることになる。数値ひとつで済むので常に載せる。
+    st: Math.round(game.stageTime),
   };
 }
 
@@ -89,6 +93,7 @@ function rebuildFromSnap(s) {
   game.bells = s.l.map(([x, y, idx, size]) => ({ x, y, idx, size, phase: 0, prog: 0, lat: 0, hits: 0 }));
   game.warnT = s.w;
   if (typeof s.lv === 'number') game.lives = s.lv;        // 残機はチーム共有(ホストが管理)
+  if (typeof s.st === 'number') game.stageTime = s.st;    // 引き継ぎに備えて進行度も合わせる
   if (s.s) {
     if (!game.boss) spawnBoss();
     const b = game.boss;
@@ -1141,6 +1146,32 @@ export function startCoop() {
 }
 // ゲスト: ホストの開始合図(共有種つき)を受けて同時スタート
 Coop.onStartGame = () => startCoop();
+
+// ホストが抜けた → 残った誰かが世界の計算を引き取る。
+//
+//   ゲストの画面にある敵は「見た目を再現したもの」で、動きの内部状態
+//   (進行度・揺れの位相・発射のタイマー)を持っていない。そのまま動かすと
+//   一斉に瞬間移動する。なので**道中の敵と弾は流す**。
+//   代わりに、失うと理不尽なもの — スコア・残機・ステージの進行度・
+//   戦っているボスとその残りHP — は全部そのまま引き継ぐ。
+//   一番大事な「ボス戦の途中で投げ出される」がこれで起きない。
+Coop.onBecomeHost = () => {
+  if (!game.coop || (game.state !== 'play' && game.state !== 'warn')) return;
+  game.enemies = []; game.eBullets = []; game.bells = [];
+  game.nextWave = 1200;    // 引き継いだ直後に湧かせない(呼吸を置く)
+  const b = game.boss;
+  if (b) {
+    // 表示用に追っていた共有HPが、ここからは正になる
+    Coop.initBoss(b.maxHp);
+    Coop.bossShared = b.hp;
+    b.x = b.tx !== undefined ? b.tx : b.x;
+    b.y = b.ty !== undefined ? b.ty : b.y;
+    // 既に一度蘇っているボスを、引き継いだ側がもう一度蘇らせないようにする
+    b.revives = b.revived ? 0 : 1;
+  }
+  popup(W / 2, H * 0.42, t('coop_host_left'), '#ffd27f');
+  Snd.warning();
+};
 // ホストがボスを倒した → ゲストも同じ撃破演出へ
 Coop.onBossDown = () => { if (game.boss && !game.finale) bossDefeated(); };
 // ホスト: 相方が当てた敵に実ダメージを与える(判定の正はホスト)

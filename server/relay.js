@@ -127,9 +127,18 @@ export class Relay {
 
   _onClose(member) {
     const room = member.room;
+    const wasHost = member.role === 'host';
     room.remove(member.id);
-    if (room.size === 0) this.rooms.delete(room.code);
-    else room.announce();   // 残った人に「相方が抜けた」と伝わる
+    if (room.size === 0) { this.rooms.delete(room.code); return; }
+    // ホストが抜けたら、残っている中で一番早く来た人に引き継ぐ。
+    //   ホストは世界を計算している側なので、空席のままだと敵が止まって
+    //   全員の画面が凍る。誰がホストかは全員が同じ答えを持つ必要があるので、
+    //   サーバーが決めて全員に伝える。
+    if (wasHost) {
+      const next = [...room.members.values()].sort((a, b) => a.id - b.id)[0];
+      if (next) next.role = 'host';
+    }
+    room.announce();   // 残った人に「相方が抜けた」「ホストが変わった」が伝わる
   }
 
   /** 誰も喋らなくなった部屋を畳む。定期的に呼ぶ。 */

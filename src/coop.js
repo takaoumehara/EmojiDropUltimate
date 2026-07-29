@@ -148,6 +148,16 @@ export const Coop = {
     this.peers.clear();
     this.bossShared = 0; this.bossSharedMax = 0; this.localDmg = 0;
   },
+  /**
+   * ホストを引き取る。中継サーバーが「前のホストが抜けたので次はあなた」と
+   * 指名したときに呼ばれる。engine 側で世界の計算を引き継ぐ。
+   */
+  onBecomeHost: null,   // engine が設定
+  becomeHost() {
+    if (this.role === 'host') return;
+    this.role = 'host';
+    if (this.onBecomeHost) this.onBecomeHost();
+  },
   /** 相方が抜けた(中継サーバーが顔ぶれの変化を教えてくれる)。 */
   dropPeer(id) {
     this.peers.delete(id);

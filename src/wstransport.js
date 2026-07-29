@@ -88,6 +88,9 @@ export class WsTransport {
     const ids = (o.members || []).map(m => String(m.id));
     this.members = ids.length;
     this.myId = String(o.you);
+    // ホストが抜けると、サーバーが残った中の誰かをホストに指名する。
+    //   指名されたら世界の計算を引き取る(でないと全員の画面で敵が止まる)。
+    if (o.role === 'host' && this.c.role !== 'host') this.c.becomeHost();
     // 抜けた人の機体を画面に残さない。時間切れを待たずに消せる。
     for (const p of [...this.c.peers.keys()]) {
       if (!ids.includes(String(p))) this.c.dropPeer(p);

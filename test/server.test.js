@@ -242,3 +242,40 @@ test('別のあいことばの部屋には漏れない', async () => {
     a.close(); b.close();
   });
 });
+
+test('ホストが抜けたら、残った中で一番早く来た人に引き継がれる', async () => {
+  await withServer(async ({ url }) => {
+    const cs = [];
+    for (let i = 0; i < 3; i++) { const c = client(url, 'HANDVR'); await c.opened; cs.push(c); }
+    const first = await cs[0].until(m => m.t === '_room' && m.members.length === 3);
+    assert.equal(first.role, 'host');
+    const secondId = cs[1].got.find(m => m.t === '_room').you;
+
+    // ホストが抜ける
+    cs[0].close();
+
+    // 2番目に来た人がホストになり、それが全員に伝わる
+    const r1 = await cs[1].until(m => m.t === '_room' && m.members.length === 2 && m.role === 'host');
+    assert.equal(r1.you, secondId, '一番早く来た残りの人が引き継ぐこと');
+    const r2 = await cs[2].until(m => m.t === '_room' && m.members.length === 2);
+    assert.equal(r2.role, 'guest', '3番目の人はゲストのまま');
+    assert.equal(r2.members.find(m => m.id === secondId).role, 'host',
+      '誰がホストかについて全員が同じ答えを持つこと');
+    cs[1].close(); cs[2].close();
+  });
+});
+
+test('引き継いだ人がさらに抜けたら、次の人へ渡る', async () => {
+  await withServer(async ({ url }) => {
+    const cs = [];
+    for (let i = 0; i < 3; i++) { const c = client(url, 'CHANHZ'); await c.opened; cs.push(c); }
+    await cs[2].until(m => m.t === '_room' && m.members.length === 3);
+    const thirdId = cs[2].got.find(m => m.t === '_room').you;
+    cs[0].close();
+    await cs[1].until(m => m.t === '_room' && m.role === 'host');
+    cs[1].close();
+    const r = await cs[2].until(m => m.t === '_room' && m.members.length === 1 && m.role === 'host');
+    assert.equal(r.you, thirdId, '最後のひとりが引き継ぐこと');
+    cs[2].close();
+  });
+});
