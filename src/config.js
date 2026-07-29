@@ -301,12 +301,15 @@ export const CHARS = [
     lore: '長い光の線が一瞬で貫く。速くて貫通するが、次の一発まで間が空く。',
     loreEn: 'A long bolt pierces instantly. Fast, but slow to recharge.' },
 
+  // 「広い」を弾の数ではなく **1発の大きさ** で出す。
+  //   前は最初から3方向に撒いていて、押しただけで強い —— 手応えがなかった。
+  //   1発は1発。ただしその1発が大きいので、雑に撃っても当たる。
   { id: 'pizza', emoji: '🍕', name: 'ピザ', en: 'PIZZA', col: '#ff8a4d',
-    shot: '#ffc07a', shotEmoji: '🍕', speed: 0.92, fire: 1.3, size: 4.2, spread: 1, pierce: 0, slow: 0,
+    shot: '#ffc07a', shotEmoji: '🍕', speed: 0.92, fire: 1.3, size: 8.8, spread: 0, pierce: 0, slow: 0,
     bspeed: 0.8, traj: 'short', dmg: 1,
-    tag: '横に広い・近距離', tagEn: 'Wide but short',
-    lore: '扇状に広く撒くが、途中で落ちる。近づいてナンボ。',
-    loreEn: 'Sprays wide, drops early. Get close.' },
+    tag: '大きいが近距離', tagEn: 'Big but short',
+    lore: '一切れが大きいので狙いが甘くても当たる。ただし途中で落ちる。近づいてナンボ。',
+    loreEn: 'One huge slice — sloppy aim still connects. But it drops early. Get close.' },
 
   { id: 'unicorn', emoji: '🦄', name: 'ユニコーン', en: 'UNICORN', col: '#e879f9',
     shot: '#f5b8ff', shotEmoji: '✨', speed: 1, fire: 1.3, size: 5, spread: 0, pierce: 1, slow: 0,
@@ -350,12 +353,14 @@ export const CHARS = [
     lore: 'ぐるぐる回りながら進む。狙いはつけにくいが、当たれば敵が凍って鈍る。',
     loreEn: 'Corkscrews forward. Hard to aim, but it freezes what it touches.' },
 
+  // ツリーも3方向をやめた。1枚の葉が **止まらずに列を薙ぐ**(貫通)。
+  //   横に流れるので狙って当てられない。当たったときだけ大きい。
   { id: 'tree', emoji: '🌲', name: 'ツリー', en: 'TREE', col: '#67c96a',
-    shot: '#a8e8a0', shotEmoji: '🍃', speed: 0.88, fire: 1.3, size: 4.6, spread: 1, pierce: 0, slow: 0,
+    shot: '#a8e8a0', shotEmoji: '🍃', speed: 0.88, fire: 1.3, size: 6.5, spread: 0, pierce: 1, slow: 0,
     bspeed: 0.72, traj: 'drift', dmg: 1,
-    tag: '風に流れて広がる', tagEn: 'Drifts on the wind',
-    lore: '葉は風に流されて横へ広がっていく。数で覆うが、まっすぐは飛ばない。',
-    loreEn: 'Leaves drift sideways as they rise. Covers ground, never goes straight.' },
+    tag: '流れて列を薙ぐ', tagEn: 'Drifts, mows a column',
+    lore: '葉は風に流されて横へ逃げるが、当たった敵を止めずに突き抜けていく。狙うより置く。',
+    loreEn: 'The leaf drifts away from your aim, but passes through everything it touches. Place it, do not aim it.' },
 
   { id: 'dog', emoji: '🦮', name: 'イヌ', en: 'DOG', col: '#d9a066',
     shot: '#f0e2c8', shotEmoji: '🦴', speed: 1.22, fire: 0.9, size: 4.2, spread: 0, pierce: 0, slow: 0,
@@ -371,12 +376,14 @@ export const CHARS = [
     lore: 'バナナは弧を描いて飛ぶのでまっすぐ当たらない。当たれば一番重い。',
     loreEn: 'Bananas arc, so they never go where you point. But nothing hits harder.' },
 
+  // 最速の連射に値札を付ける。前は「速く撃てて弾も速くてまっすぐ」で、
+  //   短所が身のこなしだけだった。ミルクは **遅い**。手数は出るが届くのに時間がかかる。
   { id: 'cow', emoji: '🐄', name: 'ウシ', en: 'COW', col: '#eaeaea',
     shot: '#ffffff', shotEmoji: '🥛', speed: 0.95, fire: 0.72, size: 4.4, spread: 0, pierce: 0, slow: 0,
-    bspeed: 1.05, traj: 'straight', dmg: 1,
-    tag: '最速の連射', tagEn: 'Fastest fire',
-    lore: 'とにかく手数。1発は軽いので、硬い敵には時間がかかる。',
-    loreEn: 'Sheer volume. Each hit is light, so armour takes a while.' },
+    bspeed: 0.7, traj: 'straight', dmg: 1,
+    tag: '最速の連射・遅い弾', tagEn: 'Fastest fire, slowest shot',
+    lore: 'とにかく手数。ただしミルクは一番遅いので、遠くの敵には届くまで待つことになる。',
+    loreEn: 'Sheer volume — but the slowest shot in the game, so distant enemies take a while.' },
 
   { id: 'chicken', emoji: '🐓', name: 'ニワトリ', en: 'CHICKEN', col: '#ff8a80',
     shot: '#ffd7b0', shotEmoji: '🥚', speed: 0.98, fire: 1.5, size: 5.4, spread: 0, pierce: 0, slow: 0,
@@ -444,6 +451,38 @@ export function todayKey() {
 // 弾道の見本線。カード画面で「どう飛ぶか」を絵で見せるためのもの。
 //   実装(engine の applyTraj)を figures にしたものなので、片方だけ変えないこと。
 //   x は 0=発射点 → 1=画面奥、y は横ずれ(-1..1)。
+/**
+ * 飛び方から決まる2つの軸。
+ *
+ * 「ファーマーとベイカーの違いが正直わからない」と言われた。棒4本(威力・
+ * 連射・弾速・身のこなし)では、ファーマーがベイカーに全部勝っているように
+ * 見える。実際の差は **狙ったところへ行くか** と **どこまで届くか** で、
+ * どちらも数字になっていなかった。ここで数字にして、カードにも出す。
+ *
+ *   acc   … 狙いどおりに飛ぶ度合い。1.0 = まっすぐ
+ *   range … 届く距離。近距離キャラの短所を数字にする
+ *
+ * 飛び方に紐づけて1か所で持つ。16人ぶんを手で書くと必ずズレる。
+ */
+export const TRAJ_TRAITS = {
+  straight: { acc: 1.00, range: 1.0 },
+  accel:    { acc: 0.95, range: 1.0 },
+  beam:     { acc: 1.00, range: 1.0 },
+  seek:     { acc: 1.00, range: 1.0 },   // 追尾。曲がるが必ず寄っていく
+  lure:     { acc: 1.00, range: 1.0 },
+  grow:     { acc: 0.95, range: 1.0 },
+  split:    { acc: 0.85, range: 1.0 },
+  wave:     { acc: 0.75, range: 1.0 },
+  bounce:   { acc: 0.60, range: 1.0 },
+  spiral:   { acc: 0.60, range: 1.0 },
+  scatter:  { acc: 0.55, range: 1.0 },
+  drift:    { acc: 0.45, range: 1.0 },
+  curve:    { acc: 0.40, range: 1.0 },
+  short:    { acc: 0.90, range: 0.45 },
+  decel:    { acc: 0.90, range: 0.50 },
+};
+export function trajTrait(k) { return TRAJ_TRAITS[k || 'straight'] || TRAJ_TRAITS.straight; }
+
 export const TRAJ_PREVIEW = {
   straight: { name: 'まっすぐ', en: 'Straight', pts: [[0, 0], [1, 0]] },
   accel:    { name: '加速',     en: 'Accelerates', pts: [[0, 0], [0.12, 0], [0.3, 0], [0.6, 0], [1, 0]], speed: 1 },

@@ -1,7 +1,7 @@
 // ============================================================
 // render.js — 描画(読みやすさ優先: 大きめ・視認性の高いサンセリフ)
 // ============================================================
-import { BELLS, clamp, stageTint, CHARS, STAGES, TRAJ_PREVIEW } from './config.js';
+import { BELLS, clamp, stageTint, CHARS, STAGES, TRAJ_PREVIEW, trajTrait } from './config.js';
 import { W, H, ctx, UI, SAFE, DPR } from './env.js';
 import { game } from './state.js';
 import { stage, dirDef, fwAngle, fwSpan, isVert, posFromPL } from './geo.js';
@@ -869,6 +869,9 @@ function statsOf(c) {
     { ja: 'れんしゃ', en: 'RATE', v: norm(1 / c.fire, all.map(x => 1 / x.fire)) },
     // たまのはやさ(頼まれて追加)。
     { ja: 'たまのはやさ', en: 'SHOT SPEED', v: norm(c.bspeed, all.map(x => x.bspeed)) },
+    // ねらい。「ファーマーはベイカーに全部勝っている」ように見えた原因が
+    //   これが出ていなかったこと。散らばる弾は当たらない —— それが値段。
+    { ja: 'ねらい', en: 'AIM', v: norm(trajTrait(c.traj).acc, all.map(x => trajTrait(x.traj).acc)) },
     // 身のこなし = 当たり判定の小ささ。engine の hitR と同じ式から出す。
     { ja: 'みのこなし', en: 'AGILITY', v: norm(c.speed, all.map(x => x.speed)) },
   ];
@@ -980,7 +983,7 @@ function drawOneCard(c, ja, bottom) {
   const pad = 16 * UI;
   const sup0 = SUPERS[superKeyOf(c.id)];
   const rows0 = statsOf(c);
-  const marksH = (c.pierce || c.slow || c.spread) ? 22 * UI : 8 * UI;
+  const marksH = (c.pierce || c.slow || c.spread || c.size >= 6.5) ? 22 * UI : 8 * UI;
   // 伸縮するのは3つ(顔・飛び方の絵・棒の間隔)。まず素の大きさで組んで、
   //   入らなければ **その3つだけ** を同じ率で縮める。個別に下限で止めると、
   //   飛び方の絵だけが潰れて「割れる」が見えなくなる。
@@ -1074,7 +1077,9 @@ function drawOneCard(c, ja, bottom) {
 
   // --- 特記 ---
   const marks = [c.pierce ? (ja ? 'つらぬく' : 'PIERCE') : '', c.slow ? (ja ? 'おそくする' : 'SLOW') : '',
-                 c.spread ? (ja ? 'ひろがる' : 'WIDE') : ''].filter(Boolean);
+                 c.spread ? (ja ? 'ひろがる' : 'WIDE') : '',
+                 // 「弾が大きい」は当たりやすさそのもの。数字の棒には出ないので印にする。
+                 (c.size >= 6.5 ? (ja ? 'たまがおおきい' : 'BIG SHOT') : '')].filter(Boolean);
   if (marks.length) txt(marks.join(' · '), W / 2, top + ch2 - 13 * UI,
     { size: 10 * UI, weight: 700, color: c.shot, maxW: cw - 30 });
 
