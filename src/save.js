@@ -20,6 +20,8 @@ const DEF = {
   cleared: 0,   // 現在の章で制覇したステージのビットマスク(1<<i)
   resume: 0,    // 次に挑むステージ番号(つづきから)
   rp: null,     // 死んだ地点(ステージ内の進行度)
+  diff: 1,      // むずかしさ 0=やさしい 1=ふつう 2=むずかしい
+  shake: 1,     // 画面のゆれ(0にすると揺れ・閃光・粒子を抑える)
   chapter: 0,   // いま挑んでいる章(0=第1章)
 };
 
@@ -113,6 +115,12 @@ export const Save = {
     return done;
   },
   resumeStage() { const r = this.data.resume | 0; return r > 0 && r < 6 ? r : 0; },
+  // むずかしさ。Director の自動調整とは別に、明示のつまみを持たせる。
+  //   自動調整だけだと「子供に渡すときに弱くする」ができない。
+  diff() { const d = this.data.diff; return d === 0 || d === 2 ? d : 1; },
+  setDiff(d) { this.data.diff = d === 0 || d === 2 ? d : 1; this.persist(); },
+  shake() { return this.data.shake === 0 ? 0 : 1; },
+  setShake(v) { this.data.shake = v ? 1 : 0; this.persist(); },
   // 死んだ地点(ステージ内のどこまで進んでいたか)。ステージ番号だけだと
   // 「つづき」がいつも頭からになり、同じ道のりを何度もやり直すことになる。
   setResumePoint(stage, time, wave) {

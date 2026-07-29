@@ -5,35 +5,56 @@
 import { clamp } from './config.js';
 import { getLang } from './i18n.js';
 
+// 端末の位置情報は一切使わない。
+//   以前は navigator.geolocation で正確な座標を取り、第三者API2社へ送っていた。
+//   子供が遊ぶゲームでそれは重すぎるので、**タイムゾーンから地域を推定**する方式にした。
+//   タイムゾーンは端末内の設定で、外に送るのは「その都市の固定座標」だけ。
+//   結果として許可ダイアログが消え、逆ジオコーディングのAPIも1社まるごと不要になった。
+export const CITIES = [
+  { id: 'tokyo',    tz: ['Asia/Tokyo'],                       lat: 35.68, lon: 139.76, ja: '東京',        en: 'Tokyo' },
+  { id: 'osaka',    tz: [],                                   lat: 34.69, lon: 135.50, ja: '大阪',        en: 'Osaka' },
+  { id: 'sapporo',  tz: [],                                   lat: 43.06, lon: 141.35, ja: '札幌',        en: 'Sapporo' },
+  { id: 'okinawa',  tz: [],                                   lat: 26.21, lon: 127.68, ja: '沖縄',        en: 'Okinawa' },
+  { id: 'seoul',    tz: ['Asia/Seoul'],                       lat: 37.57, lon: 126.98, ja: 'ソウル',      en: 'Seoul' },
+  { id: 'taipei',   tz: ['Asia/Taipei'],                      lat: 25.03, lon: 121.57, ja: '台北',        en: 'Taipei' },
+  { id: 'singapore',tz: ['Asia/Singapore', 'Asia/Kuala_Lumpur'], lat: 1.35, lon: 103.82, ja: 'シンガポール', en: 'Singapore' },
+  { id: 'sydney',   tz: ['Australia/Sydney', 'Australia/Melbourne'], lat: -33.87, lon: 151.21, ja: 'シドニー', en: 'Sydney' },
+  { id: 'sf',       tz: ['America/Los_Angeles', 'America/Vancouver'], lat: 37.77, lon: -122.42, ja: 'サンフランシスコ', en: 'San Francisco' },
+  { id: 'newyork',  tz: ['America/New_York', 'America/Toronto'], lat: 40.71, lon: -74.01, ja: 'ニューヨーク', en: 'New York' },
+  { id: 'london',   tz: ['Europe/London', 'Europe/Dublin'],   lat: 51.51, lon: -0.13,  ja: 'ロンドン',    en: 'London' },
+  { id: 'paris',    tz: ['Europe/Paris', 'Europe/Berlin', 'Europe/Madrid'], lat: 48.86, lon: 2.35, ja: 'パリ', en: 'Paris' },
+];
+
+function savedCity() {
+  try { return localStorage.getItem('edu_city') || ''; } catch (e) { return ''; }
+}
+export function setCity(id) {
+  try { localStorage.setItem('edu_city', id); } catch (e) { /* 保存できなくても動く */ }
+}
+// タイムゾーンから地域を当てる。当たらなければ東京。位置情報の許可は一切求めない。
+export function pickCity() {
+  const saved = savedCity();
+  const byId = CITIES.find(c => c.id === saved);
+  if (byId) return byId;
+  let tz = '';
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { /* 取れない環境 */ }
+  return CITIES.find(c => c.tz.includes(tz)) || CITIES[0];
+}
+
 export const Weather = {
-  loaded: false, failed: false, place: '',
+  loaded: false, failed: false, place: '', city: null,
   temp: null, wind: 0, code: 0, isDay: 1, kind: 'clear',
   mods: { enemySpeed: 1, spawnMul: 1, scoreMul: 1, windLat: 0, lightning: false, fog: false, rain: false, snow: false, night: false },
   effects: [], // {ja, en}
 
   async load() {
-    let lat = 35.68, lon = 139.76, place = getLang() === 'ja' ? '東京(既定)' : 'Tokyo (default)';
-    try {
-      const pos = await new Promise((res, rej) => {
-        if (!navigator.geolocation) return rej();
-        navigator.geolocation.getCurrentPosition(res, rej, { timeout: 3500, maximumAge: 600000 });
-      });
-      lat = pos.coords.latitude; lon = pos.coords.longitude;
-      place = `N${lat.toFixed(1)} E${lon.toFixed(1)}`;
-    } catch (e) { /* 位置情報なし */ }
-    this.place = place;
-    // 都市名(キー不要の逆ジオコーディング)。失敗しても座標表示のまま続行。
-    try {
-      const gl = getLang() === 'ja' ? 'ja' : 'en';
-      const gr = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=${gl}`);
-      const gj = await gr.json();
-      const city = gj.city || gj.locality || gj.principalSubdivision;
-      if (city) this.place = city;
-    } catch (e) { /* 都市名なしでも動く */ }
+    const city = pickCity();
+    this.city = city;
+    this.place = getLang() === 'ja' ? city.ja : city.en;
     try {
       const ctrl = new AbortController();
       const to = setTimeout(() => ctrl.abort(), 6000);
-      const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`, { signal: ctrl.signal });
+      const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current_weather=true`, { signal: ctrl.signal });
       clearTimeout(to);
       const j = await r.json();
       const cw = j.current_weather;
@@ -42,6 +63,13 @@ export const Weather = {
       this.loaded = true;
     } catch (e) { this.failed = true; return; }
     this.applyMods();
+  },
+
+  // 設定から地域を変えたとき: 効果を作り直す
+  async reload() {
+    this.loaded = false; this.failed = false; this.effects = [];
+    this.mods = { enemySpeed: 1, spawnMul: 1, scoreMul: 1, windLat: 0, lightning: false, fog: false, rain: false, snow: false, night: false };
+    await this.load();
   },
 
   applyMods() {

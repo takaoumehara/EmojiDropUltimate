@@ -4,13 +4,14 @@
 import { ctx, DPR, resize } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
-import { Weather } from './weather.js';
+import { Weather, CITIES, pickCity, setCity } from './weather.js';
 import { update, initStars, togglePause, toTitle, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue, openCoopLobby, startCoop } from './engine.js';
 import { draw } from './render.js';
 import { keys, updateMuteIcon } from './input.js';
 import { Save } from './save.js';
 import { Coop } from './coop.js';
 import { toggleLang, getLang } from './i18n.js';
+import { Diag } from './diag.js';
 
 // デバッグ用ハンドル(DevTools から状態確認・操作できる。無害)
 window.EDU = { get game() { return game; }, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue, toTitle, openCoopLobby, startCoop, Coop, Weather, Save };
@@ -28,6 +29,7 @@ if (_join.length === 6) {
 // 起動スプラッシュ(数秒でタイトルへ。タップでスキップ可)
 game.state = 'splash'; game.splashT = 2000;
 
+Diag.boot();   // 例外の捕捉とプレイ記録。ここより前に落ちた分は拾えないので最初に。
 resize();
 window.addEventListener('resize', resize);
 // 端末回転: iOS は回転直後に寸法が確定しないため、少し遅らせて数回測り直す。
@@ -50,17 +52,50 @@ pauseBtn.addEventListener('click', () => { Snd.init(); togglePause(); });
 homeBtn.addEventListener('click', () => { if (game.state !== 'title') toTitle(); });
 
 // === 設定パネル(音・言語をタイトルの絵文字と被らない位置へ集約) ===
+const DIFF_JA = ['やさしい', 'ふつう', 'むずかしい'];
+const DIFF_EN = ['EASY', 'NORMAL', 'HARD'];
 function syncSettings() {
   const ja = getLang() === 'ja';
-  document.getElementById('setSoundL').textContent = ja ? 'サウンド' : 'Sound';
-  document.getElementById('setSoundV').textContent = Snd.muted ? 'OFF' : 'ON';
-  document.getElementById('setLangL').textContent = ja ? '言語' : 'Language';
-  document.getElementById('setLangV').textContent = ja ? '日本語' : 'English';
-  document.getElementById('setResetL').textContent = ja ? '進行データを消す' : 'Clear progress';
-  document.getElementById('setResetV').textContent = ja ? 'リセット' : 'RESET';
+  const T = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  T('setDiffL', ja ? 'むずかしさ' : 'Difficulty');
+  T('setDiffV', (ja ? DIFF_JA : DIFF_EN)[Save.diff()]);
+  T('setSoundL', ja ? 'サウンド' : 'Sound');
+  T('setSoundV', Snd.muted ? 'OFF' : 'ON');
+  T('setCityL', ja ? '地域(天気)' : 'Region (weather)');
+  T('setCityV', (() => { const c = Weather.city || pickCity(); return ja ? c.ja : c.en; })());
+  T('setMotionL', ja ? '画面のゆれ' : 'Screen shake');
+  T('setMotionV', Save.shake() ? (ja ? 'あり' : 'ON') : (ja ? 'ひかえめ' : 'REDUCED'));
+  T('setLangL', ja ? '言語' : 'Language');
+  T('setLangV', ja ? '日本語' : 'English');
+  T('setDiagL', ja ? '動作レポート' : 'Diagnostics');
+  T('setDiagV', ja ? 'みる' : 'VIEW');
+  T('setResetL', ja ? '進行データを消す' : 'Clear progress');
+  T('setResetV', ja ? 'リセット' : 'RESET');
 }
 setBtn.addEventListener('click', e => { e.stopPropagation(); Snd.init(); setPanel.classList.toggle('show'); syncSettings(); });
 document.getElementById('setSound').addEventListener('click', () => { Snd.init(); updateMuteIcon(Snd.toggleMute()); syncSettings(); });
+document.getElementById('setDiff').addEventListener('click', () => { Save.setDiff((Save.diff() + 1) % 3); syncSettings(); });
+document.getElementById('setMotion').addEventListener('click', () => { Save.setShake(!Save.shake()); syncSettings(); });
+// 天気の地域。位置情報は使わないので、当たっていなければここで直す。
+document.getElementById('setCity').addEventListener('click', async () => {
+  const cur = (Weather.city || pickCity()).id;
+  const i = CITIES.findIndex(c => c.id === cur);
+  const next = CITIES[(i + 1) % CITIES.length];
+  setCity(next.id);
+  Weather.city = next;
+  syncSettings();
+  await Weather.reload();
+  syncSettings();
+});
+// 端末内に貯めた不具合とプレイ記録をまとめて渡せるようにする(自動送信はしない)
+document.getElementById('setDiag').addEventListener('click', async () => {
+  const text = Diag.report();
+  try {
+    if (navigator.share) { await navigator.share({ title: 'EMOJI DROP 動作レポート', text }); return; }
+    await navigator.clipboard.writeText(text);
+    alert((getLang() === 'ja' ? 'コピーしました:\n\n' : 'Copied:\n\n') + text);
+  } catch (e) { alert(text); }
+});
 document.getElementById('setLang').addEventListener('click', () => { Snd.init(); toggleLang(); syncSettings(); });
 // 章の進行を消して第1章からやり直す(タイトルの極小ボタンより誤爆しない)
 document.getElementById('setReset').addEventListener('click', () => {

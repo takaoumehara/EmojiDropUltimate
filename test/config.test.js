@@ -374,3 +374,40 @@ test('TRAJ_PREVIEW: every trajectory the game uses has a picture to show on its 
     }
   }
 });
+
+// === 位置情報を使わないこと(ストア申告に直結するので、コードで縛る) ===
+test('privacy: the game never asks for device location', async () => {
+  // 一度でも navigator.geolocation を呼ぶと「正確な位置情報の収集」を申告する必要が出る。
+  // 天気連動はタイムゾーン推定で足りるので、呼び出し自体をコードから禁じる。
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const dir = new URL('../src/', import.meta.url).pathname;
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.js')) continue;
+    const body = fs.readFileSync(path.join(dir, f), 'utf8');
+    const code = body.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+    assert.ok(!/navigator\s*\.\s*geolocation/.test(code),
+      `src/${f} calls navigator.geolocation — that forces a precise-location privacy disclosure`);
+  }
+});
+
+test('privacy: no third-party host is contacted except the weather API', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  // 自動で通信する先(1つだけ)と、ユーザーが「共有」を押したときだけ開くリンク先。
+  // どちらも docs/privacy.md に書いてある。新しい宛先が増えたらここで落ちる。
+  const AUTO = ['api.open-meteo.com'];
+  const SHARE_ONLY = ['twitter.com', 'line.me', 'www.facebook.com'];
+  const ALLOWED = [...AUTO, ...SHARE_ONLY];
+  const dir = new URL('../src/', import.meta.url).pathname;
+  const hosts = new Set();
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.js')) continue;
+    const body = fs.readFileSync(path.join(dir, f), 'utf8');
+    for (const m of body.matchAll(/https?:\/\/([a-z0-9.-]+)/gi)) hosts.add(m[1].toLowerCase());
+  }
+  for (const h of hosts) {
+    assert.ok(ALLOWED.includes(h),
+      `src/ contacts "${h}" — every third-party host has to appear in docs/privacy.md, so add it there and here deliberately`);
+  }
+});

@@ -1312,7 +1312,8 @@ export function draw() {
       ctx.restore();
       drawHUD();
       drawBossReveal();
-      if (game.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, 0.85)})`; ctx.fillRect(0, 0, W, H); }
+      // 閃光も「ひかえめ」設定で弱める(光過敏への配慮)
+      if (game.flash > 0) { const fq = Save.shake() ? 0.85 : 0.3; ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, fq)})`; ctx.fillRect(0, 0, W, H); }
       break;
     }
     case 'finale': drawFinale(); break;

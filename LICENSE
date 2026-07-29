@@ -1,0 +1,16 @@
+Copyright (c) 2026 Takao Umehara. All rights reserved.
+
+This software and its source code are the property of the copyright holder.
+You may view this repository. You may not redistribute it, publish it under
+your own name, or sell it, in whole or in part, without written permission.
+
+Notes on what this project does NOT own:
+
+  * Emoji artwork. This game bundles no emoji images. Every emoji is drawn as
+    text with the platform's own font (Apple Color Emoji, Noto Color Emoji,
+    Segoe UI Emoji), so the artwork belongs to those vendors and is never
+    redistributed by this project. See docs/emoji.html.
+  * Weather data comes from Open-Meteo (CC BY 4.0) and is fetched at runtime.
+
+If you would rather release this openly later, MIT is the usual choice and
+replacing this file is all it takes.

@@ -21,6 +21,28 @@ async function redis(cmd) {
 const okCode = c => /^[A-Z2-9]{6}$/.test(c || '');
 const okKind = k => k === 'offer' || k === 'answer';
 
+// レート制限。無いと第三者に叩かれて KV の無料枠と費用が飛ぶ。
+//   Redis の INCR + EX で「1分あたり何回」を数えるだけ。
+//   KV そのものが落ちている時に遊べなくなる方が損なので、
+//   数えられなかった場合は通す(fail-open)。
+const RATE_WINDOW = 60;      // 秒
+const RATE_MAX = 40;         // 1分あたり(2人で遊ぶ分には十分すぎる)
+function clientKey(req) {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const ip = fwd || req.headers['x-real-ip'] || 'unknown';
+  return 'rl:' + ip;
+}
+async function overRateLimit(req) {
+  try {
+    const key = clientKey(req);
+    const n = await redis(['INCR', key]);
+    if (n === 1) await redis(['EXPIRE', key, String(RATE_WINDOW)]);
+    return n > RATE_MAX;
+  } catch (e) {
+    return false;   // 数えられないなら通す(遊べなくする方が害が大きい)
+  }
+}
+
 // WebRTC の接続先候補(STUN=自分の外側アドレス発見 / TURN=直通不可時の中継)。
 //   携帯回線や厳しいNAT同士だと STUN だけでは直通が張れないため TURN が要る。
 //   独自の TURN を使う場合は Vercel に TURN_URLS / TURN_USERNAME / TURN_CREDENTIAL を設定。
@@ -63,6 +85,10 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    if (await overRateLimit(req)) {
+      res.setHeader('Retry-After', String(RATE_WINDOW));
+      return res.status(429).json({ error: 'rate_limited' });
+    }
     if (req.method === 'GET') {
       const code = String(req.query.code || '').toUpperCase();
       const want = String(req.query.want || '');

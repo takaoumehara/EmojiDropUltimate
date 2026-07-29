@@ -16,6 +16,7 @@ import { SHARE_URL } from './sharecard.js';
 import { Leaderboard } from './leaderboard.js';
 import { openShare } from './ui.js';
 import { Coop } from './coop.js';
+import { Diag } from './diag.js';
 
 // ストレージ無効環境でも落ちないように
 // 配列を複製してシャッフル(元データは壊さない)
@@ -28,6 +29,16 @@ function shuffled(arr) {
 function trySetHi(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
 const COOP_HP_MUL = 2.2; // 共闘ボスは二人がかり前提で硬くする
+
+// むずかしさ。Director の自動調整の「上」に掛ける固定倍率。
+//   自動調整だけだと、子供に渡すときに明示的に弱くできない。
+//   やさしい = 敵が遅く・少なく、残機が多く、こちらの弾が速い。
+const DIFF = [
+  { enemySpeed: 0.78, spawn: 1.35, lives: 5, bullet: 1.15, bossHp: 0.75 },  // やさしい
+  { enemySpeed: 1,    spawn: 1,    lives: 3, bullet: 1,    bossHp: 1 },     // ふつう
+  { enemySpeed: 1.18, spawn: 0.82, lives: 2, bullet: 0.95, bossHp: 1.3 },   // むずかしい
+];
+export const diffMods = () => DIFF[Save.diff()];
 
 // === ふたりでプレイ: ホスト権威型の同期 ===
 //   敵・弾・ベル・ボスは「ホストの計算結果だけ」を正とし、ゲストはそれを映す。
@@ -115,9 +126,11 @@ export function particles(x, y, n, color, mul = 1) {
 }
 export function popup(x, y, text, color = '#ffdd44') { game.popups.push({ x, y, text, color, life: 1 }); }
 function explosion(x, y, size, color) {
-  particles(x, y, size * 3, color, 1.5);
-  particles(x, y, size, '#ffffff', 0.8);
-  game.shake = Math.min(game.shake + size * 0.5, CFG.MAX_SHAKE);
+  // 「画面のゆれ ひかえめ」では粒子も揺れも抑える(酔い・光過敏への配慮)
+  const q = Save.shake() ? 1 : 0.35;
+  particles(x, y, Math.round(size * 3 * q), color, 1.5);
+  particles(x, y, Math.round(size * q), '#ffffff', 0.8);
+  game.shake = Math.min(game.shake + size * 0.5 * q, CFG.MAX_SHAKE);
 }
 
 export function initStars() {
@@ -183,7 +196,7 @@ function fire() {
   p.muzzle = 1;
   Snd.shoot();
   const ch = Save.char();
-  const spd = CFG.BULLET_SPEED * (ch.bspeed || 1) * (p.swiftT > 0 ? 1.5 : 1);   // 重い物ほど遅く飛ぶ = 何を投げたか見える
+  const spd = CFG.BULLET_SPEED * (ch.bspeed || 1) * (p.swiftT > 0 ? 1.5 : 1) * diffMods().bullet;   // 重い物ほど遅く飛ぶ = 何を投げたか見える
   const boom = p.boomT > 0;
   // dx,dy = 飛ばす向き(単位ベクトル)。うしろ撃ち・よこ撃ちはここを差し替えるだけ。
   const mk = (ox, spread = 0, dx = fx, dy = fy, smul = 1, ssize = 1) => {
@@ -246,7 +259,7 @@ function killPlayer() {
     setTimeout(() => {
       if (game.state !== 'play' && game.state !== 'warn') return;
       recordRunEnd({ daily: game.daily });
-      markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
+      Diag.runEnded(); markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
     }, 900);
   } else {
     setTimeout(() => { if (game.state === 'play' || game.state === 'warn') resetPlayer(); }, 500);
@@ -335,7 +348,7 @@ function updateEnemies(dt) {
     const e = game.enemies[i];
     if (e.delay > 0) { e.delay -= dt * 1000; continue; }
     if (e.slowT > 0) e.slowT -= dt * 1000;               // 💩 で鈍っている間
-    const spd = e.speed * wMod.enemySpeed * (e.slowT > 0 ? 0.45 : 1) * dt;
+    const spd = e.speed * wMod.enemySpeed * diffMods().enemySpeed * (e.slowT > 0 ? 0.45 : 1) * dt;
     const prog0 = e.prog;
     switch (e.type) {
       case 'straight': e.prog += spd; break;
@@ -405,7 +418,7 @@ function spawnBoss() {
   const st = stage();
   const styleKey = (st.boss.style && BOSS_STYLES[st.boss.style]) ? st.boss.style : STYLE_KEYS[game.stageIndex % STYLE_KEYS.length];
   const style = BOSS_STYLES[styleKey];
-  const hp = Math.round(st.boss.hp * (game.coop ? COOP_HP_MUL : 1)); // 共闘は二人がかり前提で硬く
+  const hp = Math.round(st.boss.hp * (game.coop ? COOP_HP_MUL : 1) * diffMods().bossHp); // 共闘は二人がかり前提で硬く
   game.boss = {
     prog: -80, targetProg: game.coop ? 195 : 150, lat: latSpan() / 2, latPhase: 0,
     hp, maxHp: hp, phase: 0,
@@ -639,6 +652,7 @@ function bossDefeated() {
   else if (game.stageIndex >= game.stages.length - 1) { kind = 'victory'; recordRunEnd({}); }
   else kind = 'stage';
   const big = kind === 'victory' || kind === 'coop';
+  Diag.stageFinished(game.stageIndex);
   game.finale = { t: 0, dur: big ? 3400 : 2300, kind, bx, by, emoji, bonus, snd: false };
   game.state = 'finale';
   game.flash = 0.95; game.shake = CFG.MAX_SHAKE;
@@ -750,7 +764,7 @@ function updateStage(dt) {
     game.nextWave -= dt * 1000;
     if (game.nextWave <= 0) {
       spawnWave();
-      const base = (2900 - game.stageIndex * 260) * Director.spawnMul / Weather.mods.spawnMul;
+      const base = (2900 - game.stageIndex * 260) * Director.spawnMul * diffMods().spawn / Weather.mods.spawnMul;
       game.nextWave = Math.max(1000, base + rand(-400, 400));
     }
     updateMercyBell(dt);
@@ -1019,13 +1033,18 @@ function updateShake(dt) {
 function saveHi() {
   if (game.score > game.hi) { game.hi = game.score; trySetHi('edu_hiscore', String(game.hi)); }
 }
-function freshGame() { const hi = game.hi; setGame(newGame()); game.hi = hi; Director.reset(); Save.startRun(); }
+function freshGame() {
+  const hi = game.hi; setGame(newGame()); game.hi = hi;
+  game.lives = diffMods().lives;    // むずかしさで残機が変わる(やさしい=5、むずかしい=2)
+  Director.reset(); Save.startRun();
+}
 
 export function startRun(from = 0, resume = false) {
   Snd.init(); freshGame();
   game.stages = chapterStages(Save.chapter(), STAGES);   // 章ごとに6ステージ
   game.chapter = Save.chapter();
   const idx = clamp(from, 0, game.stages.length - 1);
+  Diag.runStarted();
   // タイトルの「つづき」も、前回死んだところから始める
   if (resume) {
     const r = Save.resumePoint();
@@ -1107,14 +1126,14 @@ Coop.onPartnerDied = () => {
   if (game.lives <= 0) {
     Coop.send({ t: 'over' });
     recordRunEnd({});
-    markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
+    Diag.runEnded(); markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
   }
 };
 // ゲスト: ホストから終了の合図
 Coop.onGameOver = () => {
   if (game.state === 'over' || game.state === 'victory') return;
   recordRunEnd({});
-  markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
+  Diag.runEnded(); markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
 };
 
 function recordRunEnd({ daily = false } = {}) {
@@ -1174,7 +1193,7 @@ export function doContinue() {
   const r = Save.resumePoint();
   if (r && r.stage === game.stageIndex) game.resumeAt = { time: r.time, wave: r.wave };
   startStage(game.stageIndex);
-  game.lives = CFG.MAX_LIVES; game.bombs = 1;
+  game.lives = diffMods().lives; game.bombs = 1;
 }
 export function togglePause() {
   if (game.state === 'play' || game.state === 'warn') {
