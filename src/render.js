@@ -917,6 +917,7 @@ function drawCharCard() {
   const cur = Save.charIndex();
   const drag = game.charDrag || 0;
   const bottom = H - SAFE.bottom;
+  let cardBottom = 0;   // カードの下端。案内文が枠線に重ならないように使う
   // 前後のカードも端だけ覗かせて「めくれる」ことを伝える
   for (const off of [-1, 0, 1]) {
     const i = (cur + off + CHARS.length) % CHARS.length;
@@ -924,7 +925,8 @@ function drawCharCard() {
     if (Math.abs(dx) > W) continue;
     ctx.save(); ctx.translate(dx, 0);
     ctx.globalAlpha = off === 0 ? 1 : 0.45;
-    drawOneCard(CHARS[i], ja, bottom);
+    const cb = drawOneCard(CHARS[i], ja, bottom);
+    if (off === 0) cardBottom = cb;
     ctx.restore();
   }
   ctx.globalAlpha = 1;
@@ -936,7 +938,9 @@ function drawCharCard() {
     ctx.fillStyle = i === cur ? c.col : 'rgba(255,255,255,0.28)';
     ctx.beginPath(); ctx.arc(x, dotY, i === cur ? 3.6 : 2.2, 0, Math.PI * 2); ctx.fill();
   });
-  txt(ja ? '← スワイプでキャラを見る →' : '← swipe to browse →', W / 2, dotY - 16 * UI,
+  // カードの枠線の上に文字が乗っていた。枠の下端より下に置く。
+  txt(ja ? '← スワイプでキャラを見る →' : '← swipe to browse →',
+    W / 2, Math.max(dotY - 16 * UI, cardBottom + 13 * UI),
     { size: 10 * UI, weight: 600, color: COL.mute, maxW: W * 0.9 });
 
   // 下部のボタン(指の届く位置にまとめる)
@@ -957,55 +961,70 @@ function drawCharCard() {
 
 function drawOneCard(c, ja, bottom) {
   const cw = Math.min(W * 0.9, 380), cx = (W - cw) / 2;
-  // 中身の高さぶんだけにする。余らせると間延びして読みにくい。
-  const room = bottom - 148 * UI - (SAFE.top + 8 * UI);
-  const ch2 = Math.min(room, 408 * UI);
-  // 下のボタン群のすぐ上に接地させる(上に浮かせると宙ぶらりんに見える)
+  const room = bottom - 152 * UI - (SAFE.top + 8 * UI);
+  // 要素を減らしたぶん、枠も中身に合わせて縮める。
+  //   高さを決め打ちにすると、下に大きな空白が残って間延びして見える。
+  const hasMarks = !!(c.pierce || c.slow || c.spread);
+  const need = (16 + 88 + 22 + 26 + 66 + 52 + 44 + 16 + (hasMarks ? 18 : 0)) * UI;
+  const ch2 = Math.min(room, need);
   const top = SAFE.top + 8 * UI + Math.max(0, room - ch2);
   surface(cx, top, cw, ch2, { r: 22, fill: 'rgba(12,17,36,0.9)', border: c.col, lw: 2.5 });
-  // 上半分: 大きな絵文字と名前
-  const gy = top + ch2 * 0.045;
-  const glow = ctx.createRadialGradient(W / 2, gy + 44 * UI, 4, W / 2, gy + 44 * UI, 62 * UI);
+
+  // 上: 大きな絵文字と名前。ここが「誰か」を決める。
+  let y = top + 16 * UI;
+  const glow = ctx.createRadialGradient(W / 2, y + 40 * UI, 4, W / 2, y + 40 * UI, 56 * UI);
   glow.addColorStop(0, c.col + '55'); glow.addColorStop(1, c.col + '00');
-  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(W / 2, gy + 44 * UI, 62 * UI, 0, Math.PI * 2); ctx.fill();
-  emojiCentered(c.emoji, W / 2, gy + 44 * UI, 72 * UI);
-  txt(ja ? c.name : c.en, W / 2, gy + 104 * UI,
-    { size: 22 * UI, weight: 800, color: c.col, family: FONT_DISPLAY, maxW: cw - 30 });
-  txt(ja ? c.tag : c.tagEn, W / 2, gy + 130 * UI,
-    { size: 12 * UI, weight: 700, color: COL.sub, maxW: cw - 30 });
-  txt(ja ? c.lore : c.loreEn, W / 2, gy + 154 * UI,
-    { size: 11 * UI, weight: 500, color: COL.mute, maxW: cw - 40 });
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(W / 2, y + 40 * UI, 56 * UI, 0, Math.PI * 2); ctx.fill();
+  emojiCentered(c.emoji, W / 2, y + 40 * UI, 64 * UI);
+  y += 88 * UI;
+  txt(ja ? c.name : c.en, W / 2, y, { size: 21 * UI, weight: 800, color: c.col, family: FONT_DISPLAY, maxW: cw - 30 });
+  y += 22 * UI;
+  txt(ja ? c.tag : c.tagEn, W / 2, y, { size: 11.5 * UI, weight: 700, color: COL.sub, maxW: cw - 34 });
+  y += 26 * UI;
 
-  // 投げる物
-  const iy = gy + 182 * UI;
-  txt(ja ? 'なげるもの' : 'THROWS', cx + 18 * UI, iy, { size: 9.5 * UI, weight: 700, color: COL.mute, align: 'left', track: 1.4 });
-  if (c.shotEmoji) emojiCentered(c.shotEmoji, cx + 32 * UI, iy + 24 * UI, 26 * UI);
-  else {
-    ctx.fillStyle = c.shot;
-    ctx.fillRect(cx + 26 * UI, iy + 14 * UI, 12 * UI, 20 * UI);
+  // 中: 必殺技。**いまキャラを選ぶ一番の理由がこれ**なので、
+  //   説明文や数値より前に、専用の枠で見せる。
+  const sup = SUPERS[superKeyOf(c.id)];
+  if (sup) {
+    const sh = 52 * UI;
+    surface(cx + 14 * UI, y, cw - 28 * UI, sh,
+      { r: 12, fill: 'rgba(255,255,255,0.05)', border: sup.col + '88', lw: 1.5 });
+    emojiCentered(sup.emoji, cx + 36 * UI, y + sh * 0.5, 22 * UI);
+    txt(ja ? sup.ja : sup.en, cx + 56 * UI, y + 15 * UI,
+      { size: 13 * UI, weight: 800, color: sup.col, align: 'left', maxW: cw - 84 * UI });
+    txt(ja ? sup.jaDesc : sup.enDesc, cx + 56 * UI, y + 34 * UI,
+      { size: 9.5 * UI, weight: 500, color: COL.mute, align: 'left', maxW: cw - 88 * UI });
+    y += sh + 14 * UI;
   }
-  // 弾道の見本
-  const pw2 = cw - 82 * UI;
-  drawTrajPreview(c, cx + 62 * UI, iy + 6 * UI, pw2, 62 * UI);
 
-  // 数値
-  const sy = iy + 84 * UI;
-  statsOf(c).forEach((st, i) => {
-    const ry = sy + i * 21 * UI;
-    txt(ja ? st.ja : st.en, cx + 18 * UI, ry, { size: 9.5 * UI, weight: 700, color: COL.mute, align: 'left' });
+  // 下: 弾道の見本と数値。以前は弾道だけで縦の4分の1を使っていたので、
+  //   1本の帯に収めて、数値は4本から2本にまとめた。
+  const pw2 = cw - 40 * UI;
+  drawTrajPreview(c, cx + 20 * UI, y, pw2, 44 * UI);
+  y += 52 * UI;
+
+  const stats = statsOf(c);
+  const pair = [
+    { label: ja ? 'ちから' : 'POWER', v: (stats[0].v + stats[3].v) / 2 },
+    { label: ja ? 'はやさ' : 'SPEED', v: (stats[1].v + stats[2].v) / 2 },
+  ];
+  pair.forEach((st, i) => {
+    const ry = y + i * 20 * UI;
+    txt(st.label, cx + 18 * UI, ry, { size: 9.5 * UI, weight: 700, color: COL.mute, align: 'left' });
     const bx2 = cx + 78 * UI, bw2 = cw - 96 * UI;
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
     roundRect(bx2, ry - 5 * UI, bw2, 9 * UI, 4.5 * UI); ctx.fill();
     ctx.fillStyle = c.col;
     roundRect(bx2, ry - 5 * UI, Math.max(9 * UI, bw2 * (0.08 + st.v * 0.92)), 9 * UI, 4.5 * UI); ctx.fill();
   });
-  // 特記(貫通/減速/広がり)
+  y += 44 * UI;
+
+  // 特記(貫通/減速/広がり)は持っているキャラだけ
   const marks = [c.pierce ? (ja ? 'つらぬく' : 'PIERCE') : '', c.slow ? (ja ? 'おそくする' : 'SLOW') : '',
                  c.spread ? (ja ? 'ひろがる' : 'WIDE') : ''].filter(Boolean);
-  if (marks.length) {
-    txt(marks.join(' · '), W / 2, sy + 4 * 21 * UI + 6 * UI,
-      { size: 10 * UI, weight: 700, color: c.shot, maxW: cw - 30 });
-  }
+  if (marks.length) txt(marks.join(' · '), W / 2, y, { size: 10 * UI, weight: 700, color: c.shot, maxW: cw - 30 });
+
+  return top + ch2;   // 呼び出し側が「カードの下端」を知れるように返す
 }
 
 function drawCharGrid() {
