@@ -140,6 +140,27 @@ export function initStars() {
       game.stars.push({ x: rand(0, W), y: rand(0, H), l, size: rand(1, 2.6) * (1 + l * 0.3), b: rand(0.3, 1) });
 }
 
+// === ゲーム内時間の待ち ===
+// 「0.5秒後に復活」「0.9秒後にゲームオーバー」を setTimeout(実時間)で待つと、
+//   ゲームの時計(dt)と別の時計で走ることになり、次の3つで壊れる。
+//   1. タブが裏に回ると setTimeout は間引かれ、復活だけ取り残される
+//   2. 画面を持たないサーバー上でゲームを進めると、実時間が来ないので永久に復活しない
+//   3. 死んだ直後にタイトルへ戻って新しく始めると、前の run の復活が新しい run に発火する
+//   dt で進む同じ時計に載せれば、3つとも消える。timers は game に持たせてあるので、
+//   run を作り直した瞬間に古い待ちは自然に捨てられる。
+function after(ms, fn) { (game.timers || (game.timers = [])).push({ t: ms, fn }); }
+
+function updateTimers(dt) {
+  const q = game.timers;
+  if (!q || !q.length) return;
+  const ms = dt * 1000;
+  const due = [];
+  const rest = [];
+  for (const it of q) { it.t -= ms; (it.t <= 0 ? due : rest).push(it); }
+  game.timers = rest;
+  for (const it of due) it.fn();
+}
+
 // === プレイヤー ===
 function resetPlayer() {
   const p = game.player, home = playerHome();
@@ -250,19 +271,19 @@ function killPlayer() {
   // 共闘は残機をチームで共有する。ゲストはホストに申告し、復活可否はホストの残機に従う。
   if (isGuest()) {
     Coop.send({ t: 'died' });
-    setTimeout(() => { if ((game.state === 'play' || game.state === 'warn') && game.lives > 0) resetPlayer(); }, 500);
+    after(500, () => { if ((game.state === 'play' || game.state === 'warn') && game.lives > 0) resetPlayer(); });
     return;
   }
   game.lives--;
   if (game.coop && game.lives <= 0) Coop.send({ t: 'over' });
   if (game.lives <= 0) {
-    setTimeout(() => {
+    after(900, () => {
       if (game.state !== 'play' && game.state !== 'warn') return;
       recordRunEnd({ daily: game.daily });
       Diag.runEnded(); markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
-    }, 900);
+    });
   } else {
-    setTimeout(() => { if (game.state === 'play' || game.state === 'warn') resetPlayer(); }, 500);
+    after(500, () => { if (game.state === 'play' || game.state === 'warn') resetPlayer(); });
   }
 }
 
@@ -1252,6 +1273,7 @@ export function update(dt, keys) {
         updateBullets(dt);
       }
       updateBg(dt);
+      updateTimers(dt);
       updateParticles(dt);
       updatePopups(dt);
       updateShake(dt);

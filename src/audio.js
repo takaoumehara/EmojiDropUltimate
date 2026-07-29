@@ -251,6 +251,10 @@ export const Snd = {
     // setTimeout は数ms単位でずれる。先読みして「絶対時刻」で予約すれば、
     //   タブが少し詰まってもリズムは揺れない。
     this.bgmTimer = setInterval(() => this._tick(), 25);
+    // Node(サーバー/テスト)では、この 25ms タイマーだけでイベントループが
+    //   生き続けてプロセスが終わらない。unref があれば「これ1本のために
+    //   待たない」と伝える。ブラウザの setInterval は数値を返すので何もしない。
+    if (this.bgmTimer && typeof this.bgmTimer.unref === 'function') this.bgmTimer.unref();
     this._tick();
   },
 
