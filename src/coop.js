@@ -9,6 +9,7 @@
 // ============================================================
 import { Save } from './save.js';
 import { CHARS } from './config.js';
+import { relayUrl, DualTransport } from './wstransport.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 紛らわしい文字を除外
 function makeCode() {
@@ -31,6 +32,15 @@ async function iceConfig() {
     if (r.ok) { const j = await r.json(); if (j.iceServers && j.iceServers.length) iceCache = j.iceServers; }
   } catch (e) { /* 取得失敗時は既定を使う */ }
   return (iceCache = iceCache || ICE_FALLBACK);
+}
+
+// 中継サーバーが設定されていれば直結と併走させ、無ければ直結だけを試す。
+//   設定は index.html の <meta name="coop-relay">。書かなければ挙動は今まで通りで、
+//   サーバーは完全に任意のまま。
+function makeTransport(coop, role, code) {
+  const url = relayUrl();
+  const rtc = () => new RtcTransport(coop, role, code);
+  return url ? new DualTransport(coop, role, code, rtc, url) : rtc();
 }
 
 export const Coop = {
@@ -60,15 +70,17 @@ export const Coop = {
     this.active = true; this.role = 'host';
     this.code = makeCode();
     this.seed = (Math.floor(Math.random() * 1e9)) >>> 0;
-    this._connect(new RtcTransport(this, 'host', this.code));
+    this._connect(makeTransport(this, 'host', this.code));
   },
   join(code) {
     code = String(code || '').toUpperCase().replace(/[^A-Z2-9]/g, '');
     if (code.length !== 6) return;
     this.reset();
     this.active = true; this.role = 'guest'; this.code = code;
-    this._connect(new RtcTransport(this, 'guest', code));
+    this._connect(makeTransport(this, 'guest', code));
   },
+  /** ロビー表示用: いま何で繋がっているか('p2p' | 'relay' | '')。 */
+  via() { return this.transport && this.transport.via ? this.transport.via : (this.p2p ? 'p2p' : ''); },
   _connect(tr) {
     this.transport = tr; this.status = 'connecting';
     tr.init().catch(e => {

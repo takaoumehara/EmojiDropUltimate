@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,maximum-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#05050f">
+<!-- 中継サーバー(任意)。設定すると、直結が張れない回線どうしでも2人プレイが繋がる。
+     直結と同時に試して速い方を使うので、繋がる回線ではこれまでと同じ速さのまま。
+     空のままなら中継は一切使わず、これまで通り端末どうしの直結だけで動く。
+     立て方: node server/index.js → server/README.md
+     例) <meta name="coop-relay" content="wss://relay.example.com"> -->
+<meta name="coop-relay" content="">
 <title>EMOJI DROP ULTIMATE</title>
 <meta name="description" content="方向がガラッと変わる絵文字シューティング。リアル天気連動AI・学習ボス・AIステージ無限生成。">
 <meta property="og:type" content="website">
