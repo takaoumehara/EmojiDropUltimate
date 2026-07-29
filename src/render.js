@@ -405,8 +405,10 @@ function drawEnemies() {
     ctx.save(); ctx.translate(e.x, e.y); ctx.font = `${e.size * 2}px serif`;
     inkEmoji();
     if (e.blink > 0) ctx.globalAlpha = 0.25 + 0.75 * (1 - e.blink / 0.35);
-    ctx.fillText(e.emoji, 0, 0);
-    if (e.flash > 0) { ctx.globalAlpha = clamp(e.flash, 0, 1); ctx.fillText('✨', 0, 0); ctx.globalAlpha = 1; }
+    // 送り幅で中央寄せすると絵が右にずれる。当たり判定は x,y なので、
+    //   ずれたままだと「当たっていないのに死ぬ」に見える。実際の描画範囲で合わせる。
+    emojiCentered(e.emoji, 0, 0, e.size * 2);
+    if (e.flash > 0) emojiCentered('✨', 0, 0, e.size * 2, clamp(e.flash, 0, 1));
     if (e.maxHp > 2) {
       const bw = e.size * 1.6;
       ctx.fillStyle = '#222'; ctx.fillRect(-bw / 2, -e.size - 8, bw, 3.5);
@@ -433,13 +435,13 @@ function drawBoss() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '68px serif';
   inkEmoji();                              // オーラの半透明が乗るとボスが透けて見える
   if (b.dying > 0) ctx.globalAlpha = 0.35 + 0.4 * Math.abs(Math.sin(performance.now() * 0.02));
-  ctx.fillText(stage().boss.emoji, 0, 0);
+  emojiCentered(stage().boss.emoji, 0, 0, 96);
   if (b.revived) {                       // 蘇った印。同じ絵文字でも別物だと分かる
     ctx.globalAlpha = 0.55 + 0.25 * Math.sin(performance.now() * 0.006);
-    ctx.font = '84px serif'; ctx.fillText('🔥', 0, 6);
+    emojiCentered('🔥', 0, 6, 84);
   }
   ctx.globalAlpha = 1;
-  if (b.flash > 0) { ctx.globalAlpha = clamp(b.flash * 0.7, 0, 1); ctx.font = '74px serif'; ctx.fillText('💥', 0, 0); ctx.globalAlpha = 1; }
+  if (b.flash > 0) emojiCentered('💥', 0, 0, 74, clamp(b.flash * 0.7, 0, 1));
   if (BossAI.thinking > 0) { ctx.font = '22px serif'; ctx.fillText('🧠', 40, -42); }
   ctx.restore();
   if (!b.entering) {
@@ -490,7 +492,7 @@ function drawBells() {
     ctx.fillStyle = bt.color + '55'; ctx.beginPath(); ctx.arc(0, 0, bl.size + 5, 0, Math.PI * 2); ctx.fill();
     ctx.font = `${bl.size * 2}px serif`; ctx.textAlign = 'center';
     inkEmoji();                            // 光背の 55(=33%) がベルに乗って薄くなっていた
-    ctx.fillText('🔔', 0, 0);
+    emojiCentered('🔔', 0, 0, bl.size * 2);
     const locked = !game.player.dead && Math.hypot(bl.x - game.player.x, bl.y - game.player.y) < BELL_LOCK_R;
     ctx.strokeStyle = bt.color; ctx.lineWidth = locked ? 3 : 2;
     if (!locked) ctx.setLineDash([4, 4]);          // 未確定は破線、確定したら実線
@@ -547,7 +549,12 @@ function drawHUD() {
     + (p.sideT > 0 ? ` · ↔︎${Math.ceil(p.sideT / 1000)}` : '');
   txt(st8, pad, H - 24 * UI - bot, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'left', baseline: 'top', shadow: 0.7 });
   const slabel = game.coop ? '👥' : game.endless ? ('W' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('' + (game.stageIndex + 1));
-  txt(`${slabel} ${stage().emoji}${dirDef().arrow}`, W - 14 * UI - SAFE.right, H - 24 * UI - bot, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'right', baseline: 'top', shadow: 0.7 });
+  // 右下の表示。**絵文字を末尾に置くと画面の外へはみ出す** —— 絵文字は
+  //   measureText の送り幅より広く描かれることがあり、右揃えの基準が
+  //   実際の右端と合わない。文字を末尾にして、余白も指の届く幅まで広げる。
+  const dirName = { up: '↑', right: '→', down: '↓', left: '←' }[stage().dir] || '';
+  txt(`${stage().emoji} ${slabel}${dirName}`, W - 22 * UI - SAFE.right, H - 24 * UI - bot,
+    { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'right', baseline: 'top', shadow: 0.7 });
   if (game.coop) drawCoopHud();
   if (Director.msg && Director.msgT > 0) {
     ctx.globalAlpha = clamp(Director.msgT, 0, 1);
@@ -617,7 +624,7 @@ function drawSplash() {
     const e2 = 1 - Math.pow(1 - d, 3);
     ctx.globalAlpha = e2 * 0.95;
     ctx.font = `${Math.round(26 * UI)}px serif`;
-    ctx.fillText(e, W / 2 + (i - 1.5) * 48 * UI, vy(0.40) - 20 * UI + (1 - e2) * 40);
+    emojiCentered(e, W / 2 + (i - 1.5) * 48 * UI, vy(0.40) - 20 * UI + (1 - e2) * 40, 25 * UI);
   });
   ctx.globalAlpha = 1;
   wordmark(W / 2, vy(0.485), 0.94 + ein * 0.06, ein);
@@ -644,13 +651,14 @@ function drawTitle() {
   ctx.font = `${Math.round(25 * UI)}px serif`;
   crew.forEach((e, i) => {
     const cx = W / 2 + (i - 2.5) * 40 * UI, cyy = ey + Math.sin(time * 2.2 + i * 0.9) * 6;
-    ctx.fillText(e, cx, cyy);   // 光背は敷かない(絵文字がぼやけて見えるため)
+    emojiCentered(e, cx, cyy, 25 * UI);   // 光背は敷かない(絵文字がぼやけて見えるため)
   });
   ctx.restore();
   wordmark(W / 2, vy(0.205));
 
   // 天気チップ(中央・都市名つき)。天気が何をするのかを一言で明示。
   const wy = vy(0.30);
+  let weatherBottom = wy + 14 * UI;   // ここより下に世界マップを置く
   if (Weather.loaded) {
     const line = `${Weather.icon()}  ${Weather.place}  ${Math.round(Weather.temp)}°`;
     f(13 * UI, 600);
@@ -659,6 +667,7 @@ function drawTitle() {
     txt(line, W / 2, wy, { size: 13 * UI, weight: 600, color: '#e6efff' });
     txt(ja ? '実際の天気が今日のルールを変えます' : "Live weather rewrites today's rules",
       W / 2, wy + 27 * UI, { size: 10.5 * UI, weight: 500, color: COL.mute });
+    weatherBottom = wy + 36 * UI;
   } else {
     txt(Weather.failed ? (ja ? '天気オフライン — 標準ルール' : 'Weather offline — standard rules') : t('locating'),
       W / 2, wy, { size: 11.5 * UI, weight: 500, color: COL.mute });
@@ -669,11 +678,15 @@ function drawTitle() {
   const bw = Math.min(W * 0.82, 348), bx = (W - bw) / 2;
   const streak = Save.streakAtRisk();
   let h1 = 64 * UI, h2 = 58 * UI, h3 = 52 * UI, gap = 11 * UI;
-  let top = wy + 48 * UI;
+  // 世界マップは top より 46*UI 上に描かれるので、その上端が
+  //   天気の下端より下に来るところまで top を押し下げる。
+  //   Chrome の URL バーで縦が短い端末では、ここが効かないと必ず重なる。
+  const mapH = 46 * UI;
+  let top = Math.max(wy + 48 * UI, weatherBottom + mapH + 14 * UI);
   const avail = vy(0.885) - top;
   const need = h1 + gap + h2 + gap + h3 + (streak ? 26 * UI : 0) + 44 * UI;
   if (need > avail) { const k = avail / need; h1 *= k; h2 *= k; h3 *= k; gap *= k; }
-  else top += (avail - need) * 0.4;
+  else top += (avail - need) * 0.62;   // 下に穴が空いていたので、もう少し下へ寄せる
   let by = top;
 
   // 制覇マップ: 6つの世界のうちどこまで進んだかを一目で(=目標が見える)
@@ -729,13 +742,24 @@ function drawTitle() {
   const halfB = (bw - 9 * UI) / 2;
   drawBtnSub('coop', bx, by, halfB, h3, t('coop'), t('coop_sub'), COL.mint, '👥');
   // キャラクター選択(いま選んでいるキャラを見せる)
+  // 「キャラ」の見出しと絵文字を手で詰めた座標に置いていたため、
+  //   日本語の「キャラ」(3文字)には収まっても英語の "FIGHTER" では重なり、
+  //   しかも2段目に同じ名前がもう一度出ていた。上段=見出し、下段=絵文字+名前。
   const myc = Save.char();
-  surface(bx + halfB + 9 * UI, by, halfB, h3, { r: 14, fill: 'rgba(13,19,40,0.82)', border: myc.col, lw: 2 });
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = `${Math.round(20 * UI)}px serif`;
-  ctx.fillText(myc.emoji, bx + halfB + 9 * UI + halfB / 2 - 26 * UI, by + h3 * 0.42);
-  txt(ja ? 'キャラ' : 'FIGHTER', bx + halfB + 9 * UI + halfB / 2 + 12 * UI, by + h3 * 0.37, { size: 13 * UI, weight: 700, color: myc.col, maxW: halfB - 44 * UI });
-  txt(ja ? myc.name : myc.en, bx + halfB + 9 * UI + halfB / 2, by + h3 * 0.74, { size: 10 * UI, weight: 500, color: COL.sub, maxW: halfB - 14 * UI });
+  const cbx = bx + halfB + 9 * UI, ccx = cbx + halfB / 2;
+  surface(cbx, by, halfB, h3, { r: 14, fill: 'rgba(13,19,40,0.82)', border: myc.col, lw: 2 });
+  txt(ja ? 'キャラをかえる' : 'CHANGE', ccx, by + h3 * 0.3,
+    { size: 9.5 * UI, weight: 700, color: myc.col, track: 1, maxW: halfB - 14 * UI });
+  {
+    const nm = ja ? myc.name : myc.en;
+    const is = 17 * UI, gap = 7 * UI;
+    f(12 * UI, 700);
+    const tw = Math.min(ctx.measureText(nm).width, halfB - is - gap - 18 * UI);
+    const left = ccx - (is + gap + tw) / 2;
+    emojiCentered(myc.emoji, left + is / 2, by + h3 * 0.66, is);
+    txt(nm, left + is + gap, by + h3 * 0.66,
+      { size: 12 * UI, weight: 700, color: '#e6efff', align: 'left', maxW: tw });
+  }
   game.menuBtns.push({ id: 'chars', x: bx + halfB + 9 * UI, y: by, w: halfB, h: h3 });
   by += h3;
 
@@ -759,17 +783,20 @@ function drawBtnSub(id, x, y, w, h, main, sub, color, icon) {
   surface(x, y, w, h, { r: 14, fill: 'rgba(13,19,40,0.82)', border: color, lw: 2 });
   const pad = 14 * UI, cx = x + w / 2, ty = y + h * 0.37;
   if (icon) {
-    const fs = 14.5 * UI, is = 15 * UI, gap = 6 * UI;
+    const fs = 14.5 * UI, is = 15 * UI, gap = 9 * UI;
+    // 絵文字の幅を固定値で見積もると、実際に描かれる絵が文字に食い込む
+    //   (端末によって送り幅より広く描かれる)。毎回実測する。
+    ctx.save();
+    ctx.font = `${Math.round(is)}px serif`;
+    const im = ctx.measureText(icon);
+    const iw = Math.max(is, (im.actualBoundingBoxRight || 0) + (im.actualBoundingBoxLeft || 0) || im.width);
+    ctx.restore();
     f(fs, 700);
     const tw = ctx.measureText(main).width;
-    const total = is + gap + tw;
+    const total = iw + gap + tw;
     const left = cx - total / 2;
-    ctx.save();
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.font = `${Math.round(is)}px serif`; ctx.fillStyle = '#fff';
-    ctx.fillText(icon, left, ty);
-    ctx.restore();
-    txt(main, left + is + gap, ty, { size: fs, weight: 700, color, align: 'left' });
+    emojiCentered(icon, left + iw / 2, ty, is);
+    txt(main, left + iw + gap, ty, { size: fs, weight: 700, color, align: 'left' });
   } else {
     txt(main, cx, ty, { size: 14.5 * UI, weight: 700, color, maxW: w - pad });
   }
@@ -1043,7 +1070,7 @@ function drawCoopLobby() {
   let statusBottom = 0;            // 接続表示+顔ぶれの下端。ボタンはこれより下に置く
 
   txt(t('coop'), W / 2, vy(0.085), { size: 21 * UI, weight: 800, color: COL.mint, family: FONT_DISPLAY });
-  txt(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, vy(0.122), { size: 11 * UI, weight: 500, color: COL.mute });
+  txt(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, vy(0.118), { size: 10.5 * UI, weight: 500, color: COL.mute });
 
   game.menuBtns = [];
   const bw = Math.min(W * 0.82, 348), bx = (W - bw) / 2;
@@ -1052,7 +1079,7 @@ function drawCoopLobby() {
     // QR(かざすだけ) + あいことば
     const joinUrl = Coop.inviteUrl();
     const box = Math.min(W * 0.40, 142 * UI);
-    const qy = vy(0.255);
+    const qy = vy(0.27);
     const ok = drawQR(joinUrl, W / 2, qy, box);
     if (!ok) txt('QR --', W / 2, qy, { size: 12 * UI, color: COL.mute });
     txt(ja ? 'カメラでかざすだけ' : 'SCAN TO JOIN', W / 2, qy + box / 2 + 18 * UI,
@@ -1070,8 +1097,9 @@ function drawCoopLobby() {
       txt(tx, x + half / 2, my + 18 * UI, { size: 11.5 * UI, weight: 700, color: sel ? '#0c1a16' : COL.sub });
       game.menuBtns.push({ id, x, y: my, w: half, h: 36 * UI });
     };
-    chip('coopModeStory', bx, ja ? 'オリジナル' : 'Original', Coop.mode === 'story', COL.sky);
-    chip('coopModeAi', bx + half + 9 * UI, ja ? 'AI生成' : 'AI stage', Coop.mode === 'ai', COL.violet);
+    // ホーム側と**同じ言葉**を使う。ここだけ「AI生成」と呼ぶと別機能に見える。
+    chip('coopModeStory', bx, t('mode_story'), Coop.mode === 'story', COL.sky);
+    chip('coopModeAi', bx + half + 9 * UI, t('mode_endless'), Coop.mode === 'ai', COL.violet);
   } else if (!joining) {
     txt(ja ? 'あいことば' : 'ROOM CODE', W / 2, vy(0.30), { size: 9.5 * UI, weight: 600, color: COL.mute, track: 1.8 });
     txt(Coop.code || '------', W / 2, vy(0.36), { size: 38 * UI, weight: 800, color: '#fff', track: 5 * UI });
@@ -1191,7 +1219,7 @@ function drawOnePartner(p, now, dt) {
     sh.shots = [];
     ctx.save(); ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now * 0.006);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `${Math.round(20 * UI)}px serif`; ctx.fillText('💫', px, py);
+    emojiCentered('💫', px, py, 20 * UI);
     ctx.restore();
     txt(p.name, px, py - 26 * UI, { size: 9 * UI, weight: 600, color: '#8899aa', shadow: 0.8 });
     return;
@@ -1215,7 +1243,7 @@ function drawOnePartner(p, now, dt) {
   ctx.fillStyle = pch.col; ctx.beginPath(); ctx.arc(0, 0, 17, 0, Math.PI * 2); ctx.fill();
   ctx.globalAlpha = 1;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = `${Math.round(26 * UI)}px serif`; inkEmoji(); ctx.fillText(pch.emoji, 0, 0);   // 薄さは globalAlpha 側で付ける
+  emojiCentered(pch.emoji, 0, 0, 26 * UI);
   ctx.restore();
   txt(p.name, px, py - 26 * UI, { size: 9 * UI, weight: 600, color: pch.col, shadow: 0.8 });
 }
@@ -1251,13 +1279,12 @@ function drawIntro() {
   ctx.fillStyle = 'rgba(0,0,10,0.55)'; ctx.fillRect(0, 0, W, H);
   const slide = tt < 0.2 ? (0.2 - tt) * 5 * 60 : 0;
   label(game.aiMode ? '✨ AI STAGE ✨' : (t('stage') + ' ' + (game.stageIndex + 1)), W / 2, vy(0.30) - slide, '#8fd3ff', 14 * UI);
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(56 * UI)}px serif`;
-  ctx.fillText(st.emoji, W / 2, vy(0.42) - slide);
+  emojiCentered(st.emoji, W / 2, vy(0.42) - slide, 56 * UI);
   label(st.name, W / 2, vy(0.52) - slide, '#ffffff', 22 * UI);
   label(st.en, W / 2, vy(0.565) - slide, '#aab', 11 * UI);
   const pulse = 1 + Math.sin(performance.now() * 0.008) * 0.18;
   ctx.save(); ctx.translate(W / 2, vy(0.69)); ctx.scale(pulse, pulse);
-  ctx.font = `${Math.round(46 * UI)}px serif`; ctx.fillText(d.arrow, 0, 0); ctx.restore();
+  emojiCentered(d.arrow, 0, 0, 46 * UI); ctx.restore();
   label(t('dir_' + st.dir), W / 2, vy(0.77), '#ffd700', 14 * UI);
 }
 
@@ -1298,7 +1325,7 @@ function drawFinale() {
   // 回転しながら崩れ落ちて消えるボス
   ctx.save(); ctx.translate(F.bx, F.by); ctx.rotate(k * 7); ctx.scale(1 + k * 1.6, 1 + k * 1.6);
   ctx.globalAlpha = clamp(1 - k * 1.15, 0, 1);
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '72px serif'; ctx.fillText(F.emoji, 0, 0);
+  emojiCentered(F.emoji, 0, 0, 72);
   ctx.globalAlpha = 1; ctx.restore();
   drawParticles();
   ctx.restore();
@@ -1348,7 +1375,7 @@ function drawVictory() {
   ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
   drawParticles();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(52 * UI)}px serif`;
-  ctx.fillText(game.coop ? '👥' : '🏆', W / 2, vy(0.24));
+  emojiCentered(game.coop ? '👥' : '🏆', W / 2, vy(0.24), 44 * UI);
   const jaV = getLang() === 'ja';
   const vTitle = game.coop ? (jaV ? `${Coop.partyLabel(true)} と共闘クリア!` : `Co-op clear with ${Coop.partyLabel(false)}!`)
     : game.aiMode ? t('ai_clear')
