@@ -103,6 +103,19 @@ export const Save = {
 
   // === 進行状況: 6ステージ = 1章。章を制覇すると次の章が開く ===
   chapter() { return this.data.chapter | 0; },
+
+  // ボス終盤の「直前に引いた札」。**端末に残す**のが肝で、game に置くと
+  //   遊び直すたびに空に戻り、毎回同じ札を引きうる。プレイヤーが飽きるのは
+  //   1回のプレイの中ではなく、繰り返し遊んだときなので、跨いで覚える必要がある。
+  recentStands() { return Array.isArray(this.data.stands) ? this.data.stands : []; },
+  pushStand(k) {
+    const a = this.recentStands();
+    a.push(k);
+    while (a.length > 2) a.shift();
+    this.data.stands = a;
+    this.persist();
+    return a;
+  },
   isCleared(i) { return !!(this.data.cleared & (1 << i)); },
   clearedCount() { let n = 0; for (let i = 0; i < 6; i++) if (this.isCleared(i)) n++; return n; },
   // ステージ制覇を記録。章を全制覇したら true を返す(勝利演出→次章解放)

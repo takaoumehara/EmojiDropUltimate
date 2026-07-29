@@ -217,9 +217,12 @@ export const Coop = {
       // ゲスト: ボス撃破。スナップショットは state が finale に移った時点で止まるので、
       //   「ボスが消えた世界」は永久に届かない。撃破だけは明示的に伝える必要がある。
       case 'bd': if (this.onBossDown) this.onBossDown(); break;
+      // ゲスト: ホストが終盤に何を引いたか。世界そのものはスナップショットで
+      //   届くが、演出と「形見」の効果は各自の画面で焚く必要がある。
+      case 'ls': if (this.onLastStand) this.onLastStand(String(o.k || '')); break;
     }
   },
-  onPartnerHit: null, onPartnerDied: null, onGameOver: null, onBossDown: null,   // engine が設定
+  onPartnerHit: null, onPartnerDied: null, onGameOver: null, onBossDown: null, onLastStand: null,   // engine が設定
 
   // ホスト → ゲスト: ワールド状態(敵・弾・ベル・ボス)を一定間隔で送る
   _lastSnap: 0,

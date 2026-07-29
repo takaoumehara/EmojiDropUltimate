@@ -40,6 +40,9 @@ export function newGame() {
     stats: { shots: 0, hits: 0, kills: 0, deathTimes: [], killTimes: [] },
     overBtns: [], menuBtns: [],
     timers: [],   // ゲーム内時間で待つ処理(復活・決着)。engine.js の after() が積む
+    standKind: null,    // 終盤に引いた札('revive'|'split'|'flee'|'greed'|'legacy')
+    standHistory: [],   // 直前2回に引いた札。3連続で同じにならないように
+    bossGrudge: 0,      // 逃がしたボスの数。次の面のボスが硬くなる
     charView: 'card', charDrag: 0, charReturn: null,   // キャラ選択: カード/一覧・スワイプ量・戻り先
   };
 }

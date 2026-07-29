@@ -28,14 +28,20 @@ function shuffled(arr) {
 
 function trySetHi(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
-// 共闘ボスは人数がかり前提で硬くする。ひとり増えるごとに 1.1 倍。
-//   人数ぶんそのまま倍にしないのは、頭数が増えると避けるのも簡単になるわけではなく、
-//   むしろ画面が賑やかになって当たりやすくなるため。3人=2.42倍 / 4人=2.66倍。
+// 共闘ボスの硬さ。**人数に比例させる。**
+//   4人いれば毎秒の火力もほぼ4倍になる。前は「ひとり増えて1.11倍」にしていたが、
+//   これだと4人で挑むとボスが2倍以上の速さで溶けて、手応えがまるで無くなっていた。
+//   ひとりあたりの戦闘時間が人数によらず一定になるよう、素直に人数を掛ける。
+//   2人 ×2.2 / 3人 ×3.3 / 4人 ×4.4。
 const COOP_HP_MUL = 2.2;
-const coopHpMul = n => COOP_HP_MUL * (1 + (Math.max(2, n) - 2) * 0.11);
-// 残機はチームで共有する。2人なら3機で釣り合っていたが、4人が同じ3機を
-//   分け合うと、ひとりの事故で全員が終わる。ひとり増えるごとに1機足す。
-const coopLives = n => CFG.MAX_LIVES + Math.max(0, Math.max(2, n) - 2);
+const coopHpMul = n => COOP_HP_MUL * Math.max(2, n) / 2;
+// 攻撃の激しさも人数で上げる。硬いだけのボスは「長い」だけで「強い」ではない。
+//   4人だと弾の量が 1.45 倍になり、避ける仕事も人数ぶん増える。
+const coopAtkMul = n => 1 + (Math.max(2, n) - 2) * 0.225;
+// 残機はチームで共有する。ソロは1人で3機なので、人数で割ると共闘のほうが
+//   ずっと厳しかった(2人で3機 = ひとり1.5機)。ひとり2機ぶん + 1 を配る。
+//   2人=5 / 3人=7 / 4人=9。多すぎるように見えるが、共有で全員の事故が同じ財布から出る。
+const coopLives = n => Math.max(2, n) * 2 + 1;
 
 // むずかしさ。Director の自動調整の「上」に掛ける固定倍率。
 //   自動調整だけだと、子供に渡すときに明示的に弱くできない。
@@ -533,7 +539,9 @@ function spawnBoss() {
   const st = stage();
   const styleKey = (st.boss.style && BOSS_STYLES[st.boss.style]) ? st.boss.style : STYLE_KEYS[game.stageIndex % STYLE_KEYS.length];
   const style = BOSS_STYLES[styleKey];
-  const hp = Math.round(st.boss.hp * (game.coop ? coopHpMul(Coop.playerCount()) : 1) * diffMods().bossHp);
+  // 逃がしたボスは次の面で強くなって出る。失敗が次の形を変える。
+  const grudge = 1 + Math.min(0.6, (game.bossGrudge || 0) * 0.2);
+  const hp = Math.round(st.boss.hp * (game.coop ? coopHpMul(Coop.playerCount()) : 1) * diffMods().bossHp * grudge);
   game.boss = {
     prog: -80, targetProg: game.coop ? 195 : 150, lat: latSpan() / 2, latPhase: 0,
     hp, maxHp: hp, phase: 0,
@@ -546,7 +554,8 @@ function spawnBoss() {
     scale: game.coop ? 2.15 : 1,   // ふたりで挑む時は画面を圧するサイズに
     // 「倒した」と思わせてから蘇る。1面だけで起きて2面3面で起きないと
     //   「たまたま」に見えて驚きにならないので、**全ボスが必ず一度は蘇る**。
-    revives: 1,
+    // 終盤に引ける札の数。人数が多いほど二段構えになる。
+    stands: standCount(), stand: null, fleeing: 0,
     dying: 0, revived: false,
     // 突進の予備動作。蘇ってから使う。
     dashT: 0, dashing: 0, dashVx: 0, dashVy: 0,
@@ -589,11 +598,22 @@ function updateBoss(dt) {
       Snd.zap();
     }
   }
+  // 逃走中。背を向けて奥へ下がりながら弾を撒く。
+  //   追い詰めたはずが逃げるので、「あと少し」が「間に合うか」に変わる。
+  //   逃がしても終わりではなく、次のステージのボスが恨みを抱えて出てくる。
+  if (b.fleeing > 0 && b.dying <= 0) {
+    b.fleeing -= dt * 1000;
+    b.prog -= 150 * dt;
+    b.lat += Math.sin(b.fleeing * 0.004) * 90 * dt;
+    const pos = posFromPL(b.prog, b.lat); b.x = pos.x; b.y = pos.y;
+    if (Math.random() < dt * 10) particles(b.x, b.y, 2, '#4ad6a0');
+    if (b.fleeing <= 0 || b.prog < -70) { bossEscaped(); return; }
+  }
   if (b.dying > 0) {                       // 倒したと思わせている最中
     b.dying -= dt * 1000;
     b.flash = 1;
     if (Math.random() < dt * 14) explosion(b.x + rand(-60, 60), b.y + rand(-60, 60), 6, '#ffd700');
-    if (b.dying <= 0) bossRevive();
+    if (b.dying <= 0) runLastStand();
     return;
   }
   if (b.entering) {
@@ -625,7 +645,9 @@ function updateBoss(dt) {
       if (b.atkT <= 0 && !b.returning) {
         const ph = (b.phases || BOSS_PHASES)[b.phase];
         const atk = ph.attacks[b.atkIdx % ph.attacks.length];
-        b.atkT = atk.interval * rand(0.78, 1.24); b.atkIdx++;   // 間隔をゆらして読ませない
+        // 人数が多いほど攻撃の間隔が詰まる。硬くするだけでは「長い」だけで「強い」にならない。
+        b.atkT = atk.interval * rand(0.78, 1.24) / (game.coop ? coopAtkMul(Coop.playerCount()) : 1);
+        b.atkIdx++;   // 間隔をゆらして読ませない
         bossAttack(b, atk);
       }
     }
@@ -705,12 +727,55 @@ function damageBoss(dmg) {
   if (b.hp <= 0) bossDepleted();
 }
 
-// HPが尽きた。まだ復活が残っていれば「倒したと思わせる間」に入る。
+// === 終盤の抽選(ラストスタンド) ===
+//
+// 以前は「全ボスが必ず一度、同じ形で蘇る」だった。一度でも見れば
+// 二度目からは驚きではなく手順になり、「どうせ蘇るんでしょ」で終わる。
+// 直したのは演出ではなく**構造**で、HPが尽きた瞬間に何が起きるかを
+// 毎回引き直す。「何も起きずに勝つ回」も札の1枚に入れてあるので、
+// 蘇りを前提に構えることもできない。
+//
+//   revive … 蘇る(以前の唯一の答え。いまは5枚のうちの1枚)
+//   split  … 分身が出る。全部が同時に襲ってくる
+//   flee   … 逃げ出す。追いつけば即撃破、逃がすと次のボスが強い
+//   greed  … 画面に残っているベルを吸い込んで強くなる
+//   legacy … 何も起きない。ただし形見が残り、こちらが強くなる
+const LAST_STANDS = ['revive', 'split', 'flee', 'greed', 'legacy'];
+
+/**
+ * 次に引く札を決める。
+ * - 直前2回に出た札は引かない(3連続で同じにならない)
+ * - greed は画面にベルが残っているときだけ。**盤面が札を決める**ので、
+ *   同じステージでも毎回同じ抽選にならない
+ */
+function pickLastStand() {
+  // 履歴は端末に残す。game に置くと遊び直すたびに空へ戻り、
+  //   「前回と同じ札」が普通に出てしまう。飽きるのは繰り返した先なので、
+  //   プレイを跨いで覚えていないと意味がない。
+  const recent = Save.recentStands();
+  let pool = LAST_STANDS.filter(k => !recent.includes(k));
+  if (!game.bells.length) pool = pool.filter(k => k !== 'greed');
+  if (!pool.length) pool = LAST_STANDS.filter(k => k !== 'greed' || game.bells.length);
+  const k = pick(pool);
+  Save.pushStand(k);
+  return k;
+}
+
+/** このボスに何回ラストスタンドを持たせるか。人数が多いほど終盤が長い。 */
+function standCount() {
+  if (!game.coop) return 1;
+  return Coop.playerCount() >= 3 ? 2 : 1;   // 3〜4人は終盤が二段構え
+}
+
+// HPが尽きた。まだ札が残っていれば「倒したと思わせる間」に入る。
 function bossDepleted() {
   const b = game.boss;
   if (!b || b.dying > 0) return;
-  if (b.revives > 0) {
-    // ここで即バナーを出すと種明かしになる。まず完全に倒れたように見せる。
+  if (b.stands > 0) {
+    b.stands--;
+    // 何を引いたかはここで決めるが、見せるのは間が明けてから。
+    //   先に見せると「今回は分裂か」と身構えられて、驚きが消える。
+    b.stand = pickLastStand();
     b.dying = 1500; b.hp = 0; b.charging = false; b.returning = false;
     Snd.kill(); Snd.bomb(); Snd.stopBGM();
     game.flash = 0.9; game.shake = CFG.MAX_SHAKE;
@@ -719,11 +784,137 @@ function bossDepleted() {
   bossDefeated();
 }
 
+/** 間が明けた。引いた札をめくる。 */
+function runLastStand() {
+  const b = game.boss;
+  if (!b) return;
+  const k = b.stand || 'revive';
+  b.stand = null; b.dying = 0;
+  // 相方には結果ではなく「何が起きたか」を伝える。世界そのものは
+  //   スナップショットで届くが、演出と形見の効果は各自で焚く必要がある。
+  if (game.coop && isHost()) Coop.send({ t: 'ls', k });
+  applyLastStand(k);
+}
+
+function applyLastStand(k) {
+  game.standKind = k;
+  game.bossRevealT = 2400;
+  switch (k) {
+    case 'split': standSplit(); break;
+    case 'flee': standFlee(); break;
+    case 'greed': standGreed(); break;
+    case 'legacy': standLegacy(); break;
+    default: bossRevive(); break;
+  }
+}
+// ゲスト: ホストが引いた札を同じように焚く
+Coop.onLastStand = k => {
+  if (!game.boss || game.finale) return;
+  game.standKind = k; game.bossRevealT = 2400;
+  if (k === 'legacy') grantLegacy();          // 形見は各自の機体に効く
+  else if (k === 'revive') { game.boss.revived = true; game.boss.col = '#ff3b5c'; }
+  Snd.warning();
+};
+
+// --- 分裂: 同じ姿の分身が出る。小さくならないので圧が減らない ---
+function standSplit() {
+  const b = game.boss;
+  b.hp = Math.round(b.maxHp * 0.55);
+  b.scale = Math.max(1, (b.scale || 1) * 0.78);
+  b.col = '#b76bff';
+  b.phase = Math.max(1, b.phase);
+  const n = game.coop ? Math.min(4, Coop.playerCount()) : 2;
+  const st = stage();
+  for (let i = 0; i < n; i++) {
+    const lat = clamp(latSpan() * (i + 1) / (n + 1), 60, latSpan() - 60);
+    game.enemies.push({
+      id: nextEid++, ti: 0,
+      move: null, mvT: 0, mvS: 0, mph: rand(0, Math.PI * 2), blink: 0,
+      type: 'shooter', emoji: st.boss.emoji,
+      hp: 14, maxHp: 14, speed: 34, pts: 1400, size: 30,
+      amp: 40, freq: 1.4, shootRate: 0.5,
+      prog: b.prog * 0.6, lat0: lat, lat, phase: rand(0, Math.PI * 2),
+      shootT: rand(300, 900), delay: i * 120, flash: 0,
+      locked: false, lockLat: 0, x: -999, y: -999,
+      sq: null, progOff: 0, diving: false, shard: true,
+    });
+  }
+  explosion(b.x, b.y, 20, '#b76bff');
+  game.flash = 1; game.shake = CFG.MAX_SHAKE;
+  if (game.coop && isHost()) Coop.initBoss(b.maxHp);
+  Snd.warning(); Snd.startBGM(stage(), game.stageIndex, 'boss');
+}
+
+// --- 逃走: 追い詰めたはずが背を向ける。追いつけば即撃破、逃がせば次が強い ---
+function standFlee() {
+  const b = game.boss;
+  b.hp = Math.round(b.maxHp * 0.2);
+  b.fleeing = 5600; b.returning = false; b.charging = false;
+  b.col = '#4ad6a0';
+  explosion(b.x, b.y, 14, '#4ad6a0');
+  if (game.coop && isHost()) Coop.initBoss(b.maxHp), (Coop.bossShared = b.hp);
+  Snd.warning(); Snd.startBGM(stage(), game.stageIndex, 'boss');
+}
+
+// --- 強欲: 拾い残したベルを吸い込んで強くなる ---
+//   「拾い忘れ」が初めて罰になる。次からベルの見え方が変わる。
+function standGreed() {
+  const b = game.boss;
+  const n = game.bells.length;
+  for (const bl of game.bells) { particles(bl.x, bl.y, 8, '#ffd700'); }
+  game.bells = [];
+  // 喰ったベルの数だけ本当に硬くなる。1個で 22% 増し。
+  //   ここを「割合で戻す」書き方にすると、ベルが少ない回はむしろ弱く復帰して
+  //   「強欲」の名前が嘘になる。最大値そのものを上げる。
+  b.maxHp = Math.round(b.maxHp * (1 + 0.22 * Math.min(4, n)));
+  b.hp = b.maxHp;
+  b.scale = Math.min((b.scale || 1) * 1.3, game.coop ? 2.9 : 1.95);
+  b.col = '#ffd700';
+  b.phase = 2; b.atkT = 600;
+  b.dashT = rand(2200, 3600); b.revived = true;   // 突進も解禁する
+  explosion(b.x, b.y, 22, '#ffd700');
+  game.flash = 1; game.shake = CFG.MAX_SHAKE;
+  if (game.coop && isHost()) Coop.initBoss(b.maxHp);
+  Snd.warning(); Snd.startBGM(stage(), game.stageIndex, 'boss');
+}
+
+// --- 形見: 何も起きない。そのまま倒れ、こちらが強くなる ---
+//   「必ず何かが起きる」と身構えさせないために、**起きない回**が要る。
+function standLegacy() {
+  grantLegacy();
+  game.score += 4000;
+  bossDefeated();
+}
+
+// 逃げ切られた。撃破ではないので大きな加点は無い。
+//   代わりに次のステージのボスが「恨み」を1つ抱えて出てくる。
+//   失敗が次の面の形を変えるので、逃がした回だけ違うステージになる。
+function bossEscaped() {
+  const b = game.boss;
+  if (!b) return;
+  game.bossGrudge = (game.bossGrudge || 0) + 1;
+  game.score += 800;
+  popup(W / 2, H * 0.4, t('boss_escaped'), '#4ad6a0');
+  if (game.coop && isHost()) Coop.send({ t: 'bd' });
+  Snd.warning();
+  bossDefeated();
+}
+
+function grantLegacy() {
+  const p = game.player;
+  p.power = Math.min(4, p.power + 1);
+  game.bombs = Math.min(5, game.bombs + 1);
+  game.lives++;
+  popup(p.x, p.y - 40, '🎗️', '#ffd27f');
+  particles(p.x, p.y, 20, '#ffd27f');
+  Snd.power ? Snd.power() : Snd.bell();
+}
+
 // 復活。別物だと一目で分かるように、大きさ・色・名前・音を全部変える。
 function bossRevive() {
   const b = game.boss;
   if (!b) return;
-  b.revives--; b.revived = true; b.dying = 0;
+  b.revived = true; b.dying = 0;
   // 大きくなるぶん、定位置を奥へ押し下げる。そうしないとHPバーとホームボタンに
   // 頭がめり込む。共闘は元から2.15倍なので、上限を決めて画面を潰さない。
   b.scale = Math.min((b.scale || 1) * 1.75, game.coop ? 2.9 : 1.95);
@@ -1249,7 +1440,7 @@ Coop.onBecomeHost = () => {
     b.x = b.tx !== undefined ? b.tx : b.x;
     b.y = b.ty !== undefined ? b.ty : b.y;
     // 既に一度蘇っているボスを、引き継いだ側がもう一度蘇らせないようにする
-    b.revives = b.revived ? 0 : 1;
+    b.stands = Math.min(b.stands || 0, 1);   // 引き継いだ側が札を配り直さない
   }
   popup(W / 2, H * 0.42, t('coop_host_left'), '#ffd27f');
   Snd.warning();

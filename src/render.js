@@ -459,19 +459,26 @@ function drawBoss() {
 
 // 復活した瞬間だけ大きく出す。ここを出さないと「倒したのに死なない」バグに見える。
 function drawBossReveal() {
-  const t = game.bossRevealT || 0;
-  if (t <= 0) return;
+  // ここを t という名前にすると i18n の t() を覆い隠す。
+  //   描画専用の残り時間なので left と呼ぶ。
+  const left = game.bossRevealT || 0;
+  if (left <= 0) return;
   const ja = getLang() === 'ja';
   const nm = ja ? stage().boss.name : stage().boss.en;
-  const k = Math.min(1, (2400 - t) / 220);            // 出るときだけ素早く拡大
+  const k = Math.min(1, (2400 - left) / 220);            // 出るときだけ素早く拡大
   ctx.save();
-  ctx.globalAlpha = Math.min(1, t / 400);
+  ctx.globalAlpha = Math.min(1, left / 400);
   ctx.translate(W / 2, vy(0.34));
   ctx.scale(0.6 + k * 0.4, 0.6 + k * 0.4);
-  txt(ja ? 'まだ終わっていない' : 'NOT OVER YET', 0, -30 * UI,
-    { size: 15 * UI, weight: 800, color: '#ffd0dc', maxW: W * 0.84 });
-  txt(ja ? `真・${nm}` : `TRUE ${nm}`, 0, 4 * UI,
-    { size: 30 * UI, weight: 800, color: '#ff2d6f', family: FONT_DISPLAY, maxW: W * 0.9 });
+  // 終盤に何を引いたかで見出しが変わる。同じ文字が出ないこと自体が、
+  //   「今回は何だ」を作っている。色も札ごとに変えて、一目で別物に見せる。
+  const kind = game.standKind || 'revive';
+  const COL_BY = { revive: '#ff2d6f', split: '#b76bff', flee: '#4ad6a0', greed: '#ffd700', legacy: '#ffd27f' };
+  const c = COL_BY[kind] || '#ff2d6f';
+  txt(t('ls_' + kind), 0, -30 * UI,
+    { size: 15 * UI, weight: 800, color: '#ffe4ec', maxW: W * 0.84 });
+  txt(t('ls_' + kind + '_n').replace('{n}', nm), 0, 4 * UI,
+    { size: 30 * UI, weight: 800, color: c, family: FONT_DISPLAY, maxW: W * 0.9 });
   ctx.restore();
 }
 
@@ -529,7 +536,11 @@ function drawHUD() {
   }
   const p = game.player;
   ctx.font = `${Math.round(17 * UI)}px serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText('❤️'.repeat(Math.max(0, game.lives)) + (game.bombs ? '  ' + '💣'.repeat(game.bombs) : ''), pad, H - 46 * UI - bot);
+  // 共闘は残機がチーム共有で人数ぶん増える。6個を超えるとハートが横に溢れて
+  //   ボムまで押し出すので、そこからは数字にまとめる。
+  const lv = Math.max(0, game.lives);
+  const hearts = lv <= 6 ? '❤️'.repeat(lv) : '❤️×' + lv;
+  ctx.fillText(hearts + (game.bombs ? '  ' + '💣'.repeat(game.bombs) : ''), pad, H - 46 * UI - bot);
   const st8 = `PW${p.power}${p.options ? ' · OP' + p.options : ''}${p.shield ? ' · 🛡️' : ''}${p.boost ? ' · 💨' : ''}`
     + (p.boomT > 0 ? ` · 🪃${Math.ceil(p.boomT / 1000)}` : '')
     + (p.rearT > 0 ? ` · ⬇︎${Math.ceil(p.rearT / 1000)}` : '')
