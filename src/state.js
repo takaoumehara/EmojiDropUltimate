@@ -56,6 +56,9 @@ export function newGame() {
     superOrbit: [],     // 自機の周りを回る腕
     superSweep: null,   // 画面を横切る帯
     superAt: 0,         // 自分が撃った時刻。合体の受付判定に使う
+    // === きずな(共闘のみ) ===
+    //   相方とのあいだに張る線。触れた敵を切る。ひとりでは張れない。
+    tether: null,       // tether.js の newTetherState()。共闘の初回更新で作る
     charView: 'card', charDrag: 0, charReturn: null,   // キャラ選択: カード/一覧・スワイプ量・戻り先
   };
 }

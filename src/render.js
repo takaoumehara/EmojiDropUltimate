@@ -13,7 +13,8 @@ import { Save } from './save.js';
 import { Coop } from './coop.js';
 import { BELL_LOCK_R } from './engine.js';
 import { SUPERS, superKeyOf, SUPER_MAX } from './super.js';
-import { txt, wrapTxt, wrapLines, surface, scrim, roundPath, COL, FONT_UI, FONT_DISPLAY } from './theme.js';
+import { TETHER } from './tether.js';
+import { txt, gtxt, wrapTxt, wrapLines, surface, scrim, roundPath, COL, FONT_UI, FONT_DISPLAY } from './theme.js';
 import { qrMatrix } from './qr.js';
 
 // 画面の縦位置は「実際に使える範囲」の割合で置く。
@@ -602,6 +603,10 @@ function drawHUD() {
     ctx.globalAlpha = clamp((5200 - game.stageTime) / 1000, 0, 0.9);
     txt(t('hint_move'), W / 2, H - 196 * UI - bot, { size: 12 * UI, weight: 700, color: '#fff', shadow: 0.95, maxW: W * 0.9 });
     txt(t('hint_bomb'), W / 2, H - 178 * UI - bot, { size: 12 * UI, weight: 700, color: '#fff', shadow: 0.95, maxW: W * 0.9 });
+    // きずなは見れば分かる作りにしてあるが、**切れる**ことは見ただけでは
+    //   分からない。ふたりのときだけ、最初の面で一度言う。
+    if (game.coop) txt(t('tether_hint'), W / 2, H - 160 * UI - bot,
+      { size: 11.5 * UI, weight: 700, color: '#a8e9ff', shadow: 0.95, maxW: W * 0.9 });
     ctx.globalAlpha = 1;
   }
 }
@@ -1473,6 +1478,116 @@ function drawSuperGauge() {
 // === みんなでプレイ: 相方の機体(自分の画面に相方が飛ぶ) ===
 //   弾の見た目は相方ごとに別に持つ。ひとつの配列を共有すると、
 //   3人以上のとき全員の弾が同じ場所から出ているように見えてしまう。
+/**
+ * きずな。**このゲームで一番目立つ線**にする。
+ *   短いとき = 太くて白い芯が通る(鋭い)
+ *   伸びたとき = 細くなって色が抜ける(弱い)
+ *   軋んでいるとき = 赤く弾けて、切れる寸前だと分かる
+ * 「見れば強さが分かる」ことが要る。数字で説明できない場所なので。
+ */
+function drawTether() {
+  const st = game.tether;
+  if (!st) return;
+  const now = performance.now();
+
+  // 切れた直後の名残。何が起きたのか分かるように一瞬だけ残す
+  if (st.flash > 0 && !st.links.length) {
+    ctx.save();
+    ctx.globalAlpha = st.flash * 0.7;
+    emojiCentered('💔', W / 2, H * 0.5, 46 * UI);
+    ctx.restore();
+  }
+  if (!st.links.length) return;
+
+  for (const L of st.links) {
+    const tight = 1 - clamp((L.len - TETHER.TIGHT) / (TETHER.LOOSE - TETHER.TIGHT), 0, 1);
+    const wob = L.strain ? 5.5 : 1.6;
+    // 線を数点に割って揺らす。まっすぐな直線だと「張力」が出ない
+    const N = 10;
+    const pts = [];
+    for (let i = 0; i <= N; i++) {
+      const k = i / N;
+      const nx = -(L.by - L.ay), ny = (L.bx - L.ax);
+      const nl = Math.hypot(nx, ny) || 1;
+      const s = Math.sin(k * Math.PI) * Math.sin(now * (L.strain ? 0.03 : 0.008) + k * 7) * wob;
+      pts.push([L.ax + (L.bx - L.ax) * k + (nx / nl) * s, L.ay + (L.by - L.ay) * k + (ny / nl) * s]);
+    }
+    const path = () => {
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    };
+    ctx.save();
+    ctx.lineCap = 'round';
+    const col = L.strain ? '#ff5a5a' : '#8fe9ff';
+    // 外側のにじみ
+    ctx.globalAlpha = (L.strain ? 0.5 : 0.34) * (0.7 + tight * 0.3);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = (TETHER.HITW * 2) * (0.55 + tight * 0.45);
+    path(); ctx.stroke();
+    // 芯。短いほど白く太くなる = 強さがそのまま見える
+    ctx.globalAlpha = L.strain ? 0.8 : 1;
+    ctx.strokeStyle = L.strain ? '#ffd0d0' : '#ffffff';
+    ctx.lineWidth = 1.6 + tight * 3.4;
+    path(); ctx.stroke();
+    ctx.restore();
+
+    // 線の上を光が走る。止まっていても「生きている」ことが分かる
+    const k = (now * 0.0009) % 1;
+    const idx = Math.min(N, Math.floor(k * N));
+    const [sx, sy] = pts[idx];
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    emojiCentered(L.strain ? '⚡' : '✨', sx, sy, (13 + tight * 9) * UI);
+    ctx.restore();
+  }
+
+  // 軋みの警告。**線の真ん中に出す。**
+  //   画面の上に固定すると、ボスの体力バーや相方の名前と重なって、
+  //   一番混んでいる瞬間に一番読めなくなる。見ている場所は線の上。
+  if (st.strainT > 0.15) {
+    const L = st.links.reduce((a, b) => (b.len > (a ? a.len : 0) ? b : a), null);
+    if (L) {
+      const p = st.strainT / TETHER.BREAK;
+      const mx = (L.ax + L.bx) / 2, my = (L.ay + L.by) / 2;
+      // 線の上に文字を重ねない。線と垂直にずらす
+      const nx = -(L.by - L.ay), ny = (L.bx - L.ax), nl = Math.hypot(nx, ny) || 1;
+      const off = 22 * UI;
+      // 文字は中央そろえなので、**自分の幅の半分**を残して寄せる。
+      //   画面の 0.2〜0.8 に中心を置くだけでは、長い訳語が端で切れる。
+      const maxW = W * 0.5, half = maxW / 2 + 6 * UI;
+      const tx = clamp(mx + (nx / nl) * off, half, W - half);
+      const ty = clamp(my + (ny / nl) * off, H * 0.1, H * 0.9);
+      gtxt(t('tether_strain'), tx, ty,
+        { size: 12 * UI, weight: 800, color: '#ff9a9a', alpha: 0.5 + 0.5 * Math.abs(Math.sin(now * 0.02)), maxW });
+      const bw = 76 * UI, bx = tx - bw / 2, by = ty + 11 * UI;
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      roundRect(bx, by, bw, 4.5 * UI, 2.5 * UI); ctx.fill();
+      ctx.fillStyle = '#ff5a5a';
+      roundRect(bx, by, bw * (1 - p), 4.5 * UI, 2.5 * UI); ctx.fill();
+    }
+  }
+
+  // 烙印。**文字を足さずにボスそのものを光らせる。**
+  //   弾幕の真ん中に一行増やすと、それは情報ではなく散らかりになる。
+  //   「いま通る」はボスを見れば分かるようにする。
+  const b = game.boss;
+  if (st.branded && b) {
+    const r = 42 * (b.scale || 1);
+    const puls = 0.55 + 0.45 * Math.abs(Math.sin(now * 0.014));
+    ctx.save();
+    ctx.globalAlpha = puls;
+    ctx.strokeStyle = '#ffe27a';
+    ctx.lineWidth = 3.5 * UI;
+    ctx.beginPath(); ctx.arc(b.x, b.y, r + 10 * UI + puls * 5 * UI, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = puls * 0.35;
+    ctx.lineWidth = 12 * UI;
+    ctx.beginPath(); ctx.arc(b.x, b.y, r + 10 * UI + puls * 5 * UI, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+    // 弱点を突いている印。短い記号ひとつなら読み取りの負担にならない
+    emojiCentered('💥', b.x + r * 0.72, b.y - r * 0.72, (17 + puls * 5) * UI);
+  }
+}
+
 const pShotsOf = new Map();
 let pLastT = 0;
 function drawPartners() {
@@ -1688,7 +1803,7 @@ export function draw() {
     case 'play': case 'warn': {
       ctx.save(); ctx.translate(game.shakeX, game.shakeY);
       drawBackground(); drawWeatherFx(); drawBells(); drawEnemies(); drawBoss();
-      drawBullets(); drawSuper(); drawPartners(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
+      drawBullets(); drawSuper(); drawTether(); drawPartners(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
       ctx.restore();
       drawHUD();
       drawBossReveal();

@@ -18,6 +18,7 @@ import { openShare } from './ui.js';
 import { Coop } from './coop.js';
 import { Diag } from './diag.js';
 import { SUPERS, superKeyOf, SUPER_MAX, SUPER_GAIN, FUSION_WINDOW, fusionMul } from './super.js';
+import { TETHER, updateTether, newTetherState, bossDamageMul } from './tether.js';
 
 // ストレージ無効環境でも落ちないように
 // 配列を複製してシャッフル(元データは壊さない)
@@ -1120,6 +1121,10 @@ function bossAttack(b, atk) {
 }
 
 function damageBoss(dmg) {
+  // きずながボスにかかっているあいだは弾がよく通る。線そのものはボスを削らない
+  //   —— 削れるようにすると、離れて放っておくだけで勝ててしまう。
+  //   「ふたりで挟んで、そのあいだに撃ちこむ」形にだけ褒美を出す。
+  dmg *= bossDamageMul(game.tether);
   gainSuper(SUPER_GAIN.bossHit * dmg);
   const b = game.boss;
   if (!b || b.entering) return;
@@ -1432,6 +1437,37 @@ const MAX_BELLS = 3;                    // 画面に溜めない。溜まると�
 //   ボス戦で丸腰のまま殴られ続けるのは「難しい」ではなく「詰み」なので、
 //   1ステージ2回までだけ救いを入れる。取れる位置に出し、色も最初から役に立つものにする。
 const MERCY_MAX = 2, MERCY_GAP = 12000;
+/**
+ * きずなを進める。
+ *
+ * 位置は「自分 → 参加順の相方」で数珠つなぎにする。倒れている人は飛ばす
+ * —— 復活待ちの機体に線が伸びていると、休んでいるだけで貢献してしまう。
+ * ダメージを入れるのはホストだけ(ゲストは描くための状態だけ作る)。
+ */
+function updateTetherStep(dt) {
+  if (!game.tether) game.tether = newTetherState();
+  const st = game.tether;
+  if (!game.coop) { st.links.length = 0; st.branded = false; return; }
+  const p = game.player;
+  const pts = [];
+  if (!p.dead) pts.push({ x: p.x, y: p.y });
+  for (const q of Coop.livePeers()) if (q.alive) pts.push({ x: q.x * W, y: q.y * H });
+  updateTether(dt, pts, st, {
+    host: !isGuest(),
+    enemies: game.enemies,
+    boss: game.boss,
+    hurt: (e, dmg) => damageEnemy(e, dmg),
+    onBreak: () => {
+      game.shake = Math.min(game.shake + 6, CFG.MAX_SHAKE);
+      popup(W / 2, H * 0.42, t('tether_snap'), '#ff6a6a');
+      Snd.hit();
+    },
+    // 線で切った敵はゲージに乗せる。合体技へつながって、
+    //   「離れずに寄り添って戦う」が必殺技の回転につながる。
+    onCut: () => gainSuper(SUPER_GAIN.kill * 0.6),
+  });
+}
+
 function inTrouble() {
   const p = game.player;
   return game.lives <= 1 || (game.bossActive && p.power <= 1 && !p.shield);
@@ -2061,6 +2097,7 @@ export function update(dt, keys) {
         updateBullets(dt);
       }
       updateBg(dt);
+      updateTetherStep(dt);
       updateSuper(dt);
       updateTimers(dt);
       updateParticles(dt);
