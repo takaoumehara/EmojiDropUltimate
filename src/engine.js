@@ -65,7 +65,11 @@ function buildSnap() {
   const b = game.boss;
   return {
     t: 'w',
-    e: game.enemies.filter(e => e.delay <= 0).map(e => [e.id, Math.round(e.x), Math.round(e.y), e.ti, e.hp, e.maxHp]),
+    // 敵の種類は「ステージの敵リストの番号」でしか送らない。分裂の分身は
+    //   ボスの顔をした特別な敵で、その番号に載っていないので、印を1つ足す。
+    //   これが無いとゲストの画面では分身が普通の雑魚に見え、一番の見せ場で
+    //   全員が別のものを見ることになる。
+    e: game.enemies.filter(e => e.delay <= 0).map(e => [e.id, Math.round(e.x), Math.round(e.y), e.ti, e.hp, e.maxHp, e.shard ? 1 : 0]),
     b: game.eBullets.map(x => [Math.round(x.x), Math.round(x.y), Math.round(x.vx), Math.round(x.vy), x.size, x.boss ? 1 : 0]),
     l: game.bells.map(x => [Math.round(x.x), Math.round(x.y), x.idx, x.size]),
     s: b ? [Math.round(b.x), Math.round(b.y), Math.round(b.hp), b.entering ? 1 : 0, b.phase,
@@ -86,10 +90,14 @@ let lastSnapAt = -1;
 function rebuildFromSnap(s) {
   const st = stage();
   const prev = new Map(game.enemies.map(e => [e.id, e]));
-  game.enemies = s.e.map(([id, x, y, ti, hp, maxHp]) => {
+  game.enemies = s.e.map(([id, x, y, ti, hp, maxHp, shard]) => {
     const o = prev.get(id);
     if (o) { o.tx = x; o.ty = y; o.hp = hp; return o; }   // 目標位置だけ更新(実座標は補間)
     const type = st.enemies[ti] || st.enemies[0];
+    // 分裂の分身はボスの顔・大きさで描く。敵リストの番号では表せない。
+    if (shard) {
+      return { id, x, y, tx: x, ty: y, ti, hp, maxHp, size: 30, emoji: st.boss.emoji, shard: true, delay: 0, flash: 0 };
+    }
     return { id, x, y, tx: x, ty: y, ti, hp, maxHp, size: type.size, emoji: type.emoji, delay: 0, flash: 0 };
   });
   game.eBullets = s.b.map(([x, y, vx, vy, size, boss]) => ({

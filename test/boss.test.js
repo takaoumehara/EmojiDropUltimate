@@ -215,3 +215,47 @@ test('共有残機は人数ぶん増える', async () => {
     assert.equal(n * 2 + 1, want, `${n}人なら${want}機`);
   }
 });
+
+test('分身はゲストの画面でも「ボスの顔」で描かれる', async () => {
+  // スナップショットは敵の種類をステージの敵リストの番号でしか送らない。
+  // 分身はその番号に載っていない特別な敵なので、印を足さないと
+  // ゲストの画面では普通の雑魚に見える —— 一番の見せ場で全員が別のものを見る。
+  const h = await boot({ seed: 8 });
+  const { Coop } = await import('../src/coop.js');
+  Coop.reset();
+  Coop.active = true; Coop.role = 'host'; Coop.connected = true;
+  Coop.onMsg({ t: 'hello', name: 'P2' }, '2');
+
+  h.engine.startRun(0);
+  sim(h, { steps: 200, bot: Bot.idle });
+  now(h).coop = true;
+  now(h).stageTime = h.geo.stage().dur - 200;
+  sim(h, { steps: 60 * 40, bot: Bot.idle, until: q => !!q.boss });
+  // 協力中のボスHPは毎フレーム Coop.bossShared から上書きされる。
+  //   boss.hp を直接いじっても戻されるので、共有プールの側を尽きさせる。
+  Coop.bossShared = 0; now(h).boss.hp = 0;
+  sim(h, { steps: 60 * 3, bot: Bot.idle, until: q => q.boss && q.boss.dying > 0 });
+  assert.ok(now(h).boss.dying > 0, '「倒したと思わせる間」に入ること');
+  now(h).boss.stand = 'split';
+  sim(h, { steps: 60 * 4, bot: Bot.idle, until: q => q.standKind === 'split' });
+
+  const g = now(h);
+  const shards = g.enemies.filter(e => e.shard);
+  assert.ok(shards.length >= 2, `ホスト側に分身が居ること (${shards.length})`);
+  const bossEmoji = h.geo.stage().boss.emoji;
+  assert.equal(shards[0].emoji, bossEmoji, 'ホストの画面ではボスの顔');
+
+  // ホストが配るスナップショットに、分身だと分かる印が乗っているか
+  let sent = null;
+  Coop.send = o => { if (o && o.t === 'w') sent = o; };
+  // 分身は少しずつ現れる(delay)。全員が出るまで待たないと配信に乗らない。
+  sim(h, { steps: 40, bot: Bot.idle });
+  // ワールド配信は実時間で 66ms に絞られている。歩数で回すテストでは
+  //   その 66ms が経たないので、絞りを開けてから1歩進める。
+  Coop._lastSnap = 0;
+  sim(h, { steps: 1, bot: Bot.idle });
+  Coop.reset(); shutdown(h);
+  assert.ok(sent, 'ワールドが配信されていること');
+  const rows = sent.e.filter(r => r[6] === 1);
+  assert.ok(rows.length >= 2, `分身の印が乗っていること (${rows.length}件)`);
+});
