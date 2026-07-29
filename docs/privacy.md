@@ -39,8 +39,17 @@
 | このゲームのサーバー (`/api/signal`) | あいことば(6文字)と、接続用の技術情報(SDP) | 「ふたりでプレイ」で相手と出会うため。**5分で自動的に消えます** |
 | STUN / TURN サーバー | 接続用のネットワーク情報 | 2台の端末を直接つなぐため |
 | このゲームのサーバー (`/api/score`) | スコアと、あなたが入力した表示名 | ランキング表示のため(任意) |
+| 中継サーバー(**設置されている場合のみ**) | あいことば、表示名、ゲーム中の位置・スコア | 端末同士が直接つながれない回線でも遊べるようにするため |
 
-**「ふたりでプレイ」の対戦中の通信は、サーバーを経由しません**(端末同士の直接通信)。
+**「みんなでプレイ」の通信は、まず端末同士の直接通信を試します。**
+直接つながれない回線どうしのために中継サーバーを置くことがあり、その場合は
+ゲーム中のやりとり(自機の位置・スコア・ボスへの与ダメ)が中継サーバーを通ります。
+
+中継サーバーは**通すだけで、何も保存しません**。部屋は最後の通信から10分で消え、
+サーバーが持つ記録は「いま何部屋・何人か」という数だけです。
+**誰が誰と遊んだかも、何をしたかも残りません。**
+中継サーバーが設置されているかどうかは、配布されている `index.html` の
+`coop-relay` の行を見れば分かります(空なら中継は一切使いません)。
 
 ### 共有ボタンについて
 
@@ -90,9 +99,18 @@ tap "Diagnostics" in Settings, and shared only if you choose to share them.
 | This game's server (`/api/signal`) | A 6-character room code and connection data (SDP) | So two players can find each other. **Deleted automatically after 5 minutes** |
 | STUN / TURN servers | Network connection candidates | To connect the two devices directly |
 | This game's server (`/api/score`) | Score and the display name you typed | Optional leaderboard |
+| A relay server (**only if one is deployed**) | Room code, display name, in-game position and score | So players whose networks cannot connect directly can still play together |
 
-**During two-player games, gameplay traffic does not pass through any server** —
-the devices talk directly to each other.
+**Co-op first tries a direct device-to-device connection.** A relay server may be
+deployed for players whose networks cannot reach each other directly; in that case
+gameplay messages (your ship's position, score, damage dealt to the boss) pass
+through it.
+
+The relay **forwards only and stores nothing**. Rooms disappear 10 minutes after
+the last message, and the only figures the server keeps are how many rooms and
+players are active right now. **No record of who played with whom, or what they
+did, is kept.** Whether a relay is deployed is visible in the `coop-relay` line
+of the shipped `index.html` — if it is empty, no relay is used at all.
 
 ### Share buttons
 
