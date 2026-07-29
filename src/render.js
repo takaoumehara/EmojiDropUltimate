@@ -1068,7 +1068,10 @@ function drawCoopLobby() {
   // 接続ステータス
   const sy = vy(0.60);
   if (Coop.connected) {
-    txt((ja ? `${Coop.partner.name} と接続` : `Connected: ${Coop.partner.name}`) + (Coop.p2p ? '  ⚡' : '  🤖'),
+    // ⚡=端末どうしの直結 / 🛰=中継サーバー経由 / 🤖=オフラインのデモ相方
+    const viaMark = Coop.via() === 'p2p' ? '  ⚡' : Coop.via() === 'relay' ? '  🛰' : '  🤖';
+    const who = Coop.partyLabel(ja);
+    txt((ja ? `${who} と接続` : `Connected: ${who}`) + viaMark,
       W / 2, sy, { size: 13 * UI, weight: 700, color: '#7CFC00' });
   } else if (Coop.status && Coop.status !== 'connecting') {
     // 失敗の理由を具体的に出す(原因が自分で分かるように)
@@ -1095,8 +1098,17 @@ function drawCoopLobby() {
   const bh = 44 * UI, gap = 8 * UI;
   if (Coop.connected) {
     // つながったら「どちらの端末でも」開始できる(ホスト待ちで詰まらない)
-    drawBtn('coopStart', bx, by, bw, 52 * UI, ja ? 'いっしょにスタート' : 'START TOGETHER', '#ffffff', true, false, 18 * UI);
+    const n = Coop.playerCount();
+    drawBtn('coopStart', bx, by, bw, 52 * UI,
+      ja ? `${n}人でスタート` : `START WITH ${n}`, '#ffffff', true, false, 18 * UI);
     by += 52 * UI + gap;
+    // 中継サーバー経由なら4人まで入れる。直結は2人まで。
+    //   まだ空きがあることを言わないと、3人目が「入れない」と思って諦める。
+    if (Coop.via() === 'relay' && n < 4) {
+      txt(ja ? `あと${4 - n}人まで、同じあいことばで入れます` : `${4 - n} more can join with the same code`,
+        W / 2, by + 2 * UI, { size: 9.5 * UI, weight: 500, color: COL.gold, maxW: bw });
+      by += 16 * UI;
+    }
     if (!host) txt(ja ? 'どちらが押してもふたり同時に始まります' : 'either player can start', W / 2, by + 2 * UI,
       { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
     if (!host) by += 16 * UI;
@@ -1112,19 +1124,31 @@ function drawCoopLobby() {
   drawBtn('coopBack', bx, by, bw, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
 }
 
-// === ふたりでプレイ: 相方の機体(自分の画面に相方が飛ぶ) ===
-let pShots = [], pShotT = 0, pLastT = 0;
-function drawPartner() {
-  if (!game.coop || !Coop.partnerFresh()) return;   // 情報が途絶えたら描かない(幽霊機防止)
-  const p = Coop.partner;
+// === みんなでプレイ: 相方の機体(自分の画面に相方が飛ぶ) ===
+//   弾の見た目は相方ごとに別に持つ。ひとつの配列を共有すると、
+//   3人以上のとき全員の弾が同じ場所から出ているように見えてしまう。
+const pShotsOf = new Map();
+let pLastT = 0;
+function drawPartners() {
+  if (!game.coop) return;
+  const live = Coop.livePeers();   // 情報が途絶えた相方は描かない(幽霊機防止)
   const now = performance.now();
   const dt = Math.min(0.05, (now - (pLastT || now)) / 1000); pLastT = now;
+  // もう居ない相方の弾を捨てる
+  for (const id of [...pShotsOf.keys()]) if (!live.some(p => p.id === id)) pShotsOf.delete(id);
+  for (const p of live) drawOnePartner(p, now, dt);
+}
+
+function drawOnePartner(p, now, dt) {
+  let sh = pShotsOf.get(p.id);
+  if (!sh) { sh = { shots: [], t: 0 }; pShotsOf.set(p.id, sh); }
+  let pShots = sh.shots;
   const px = p.x * W, py = p.y * H;
   const a = Math.atan2(dirDef().fy, dirDef().fx);
   const pch = CHARS[p.char] || CHARS[0];
   // 倒れている間は機体を消し、復活待ちの印だけ出す(撃ち続ける幽霊機をなくす)
   if (!p.alive) {
-    pShots = [];
+    sh.shots = [];
     ctx.save(); ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now * 0.006);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `${Math.round(20 * UI)}px serif`; ctx.fillText('💫', px, py);
@@ -1133,12 +1157,12 @@ function drawPartner() {
     return;
   }
   // 相方の弾(コスメ・当たり判定なし。撃ってる感を出す)
-  pShotT -= dt;
-  if (p.firing && p.alive && pShotT <= 0) {
-    pShotT = 0.13;
+  sh.t -= dt;
+  if (p.firing && p.alive && sh.t <= 0) {
+    sh.t = 0.13;
     pShots.push({ x: px + Math.cos(a) * 22, y: py + Math.sin(a) * 22, born: now });
   }
-  pShots = pShots.filter(s => now - s.born < 1000);
+  pShots = sh.shots = pShots.filter(s => now - s.born < 1000);
   for (const s of pShots) {
     const d = (now - s.born) / 1000 * 540;
     const bx = s.x + Math.cos(a) * d, byy = s.y + Math.sin(a) * d;
@@ -1156,16 +1180,27 @@ function drawPartner() {
   txt(p.name, px, py - 26 * UI, { size: 9 * UI, weight: 600, color: pch.col, shadow: 0.8 });
 }
 
-// === 2人共闘: プレイ中の相方パネル ===
+// === みんなでプレイ: プレイ中の相方パネル ===
 function drawCoopHud() {
   const c = Coop, ja = getLang() === 'ja';
-  const x = W - 12 * UI, y = 60 * UI;
-  const face = c.partner.alive ? '🧑‍🚀' : '💫';
-  label(`${face} ${c.partner.name}`, x, y, c.partner.alive ? '#4ad6a0' : '#8899aa', 12 * UI, 'right');
-  label(String(c.partner.score).padStart(6, '0'), x, y + 16 * UI, '#cfe8ff', 12 * UI, 'right');
+  const x = W - 12 * UI;
+  let y = 60 * UI;
+  const live = c.livePeers();
+  for (const p of live) {
+    const face = p.alive ? '🧑‍🚀' : '💫';
+    label(`${face} ${p.name}`, x, y, p.alive ? '#4ad6a0' : '#8899aa', 12 * UI, 'right');
+    label(String(p.score).padStart(6, '0'), x, y + 15 * UI, '#cfe8ff', 12 * UI, 'right');
+    y += 32 * UI;
+  }
+  // ボス戦の貢献。3人以上だと一人ずつ並べると場所を食うので、
+  //   「自分が何割か」だけにする。誰が何割かは知りたくなる情報ではない。
   if (c.bossSharedMax > 0 && game.bossActive) {
-    const tot = Math.max(1, c.localDmg + c.partner.dmg);
-    label((ja ? '👥 貢献 ' : '👥 ') + `${Math.round(c.localDmg / tot * 100)}% : ${Math.round(c.partner.dmg / tot * 100)}%`, x, y + 32 * UI, '#ffd27f', 11 * UI, 'right');
+    const tot = Math.max(1, c.localDmg + c.peerDmg());
+    const mine = Math.round(c.localDmg / tot * 100);
+    const txtStr = live.length > 1
+      ? (ja ? `👥 あなた ${mine}% / ${live.length + 1}人` : `👥 you ${mine}% of ${live.length + 1}`)
+      : (ja ? '👥 貢献 ' : '👥 ') + `${mine}% : ${100 - mine}%`;
+    label(txtStr, x, y, '#ffd27f', 11 * UI, 'right');
   }
 }
 
@@ -1240,7 +1275,7 @@ function drawFinale() {
   ctx.restore();
   if (F.t > 500) label(`+${F.bonus}`, W / 2, vy(0.40) + 42 * UI, '#ffe14d', 20 * UI);
   if (F.kind === 'victory' && F.t > 900) label(ja ? '✨ 全ステージ制覇 ✨' : '✨ ALL STAGES CLEAR ✨', W / 2, vy(0.40) + 72 * UI, '#b98cff', 14 * UI);
-  if (F.kind === 'coop' && F.t > 900) label(ja ? `👥 ${Coop.partner.name} と一緒に撃破!` : `👥 Beaten with ${Coop.partner.name}!`, W / 2, vy(0.40) + 72 * UI, '#4ad6a0', 14 * UI);
+  if (F.kind === 'coop' && F.t > 900) label(ja ? `👥 ${Coop.partyLabel(true)} と一緒に撃破!` : `👥 Beaten with ${Coop.partyLabel(false)}!`, W / 2, vy(0.40) + 72 * UI, '#4ad6a0', 14 * UI);
   if (game.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, 0.85)})`; ctx.fillRect(0, 0, W, H); }
 }
 
@@ -1275,7 +1310,7 @@ function drawVictory() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(52 * UI)}px serif`;
   ctx.fillText(game.coop ? '👥' : '🏆', W / 2, vy(0.24));
   const jaV = getLang() === 'ja';
-  const vTitle = game.coop ? (jaV ? `${Coop.partner.name} と共闘クリア!` : `Co-op clear with ${Coop.partner.name}!`)
+  const vTitle = game.coop ? (jaV ? `${Coop.partyLabel(true)} と共闘クリア!` : `Co-op clear with ${Coop.partyLabel(false)}!`)
     : game.aiMode ? t('ai_clear')
       : (jaV ? `第${(game.chapter | 0) + 1}章 制覇!` : `CHAPTER ${(game.chapter | 0) + 1} CONQUERED!`);
   label(vTitle, W / 2, vy(0.35), '#ffd700', game.coop ? 18 * UI : 22 * UI);
@@ -1308,7 +1343,7 @@ export function draw() {
     case 'play': case 'warn': {
       ctx.save(); ctx.translate(game.shakeX, game.shakeY);
       drawBackground(); drawWeatherFx(); drawBells(); drawEnemies(); drawBoss();
-      drawBullets(); drawPartner(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
+      drawBullets(); drawPartners(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
       ctx.restore();
       drawHUD();
       drawBossReveal();

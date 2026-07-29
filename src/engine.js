@@ -28,7 +28,14 @@ function shuffled(arr) {
 
 function trySetHi(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
-const COOP_HP_MUL = 2.2; // 共闘ボスは二人がかり前提で硬くする
+// 共闘ボスは人数がかり前提で硬くする。ひとり増えるごとに 1.1 倍。
+//   人数ぶんそのまま倍にしないのは、頭数が増えると避けるのも簡単になるわけではなく、
+//   むしろ画面が賑やかになって当たりやすくなるため。3人=2.42倍 / 4人=2.66倍。
+const COOP_HP_MUL = 2.2;
+const coopHpMul = n => COOP_HP_MUL * (1 + (Math.max(2, n) - 2) * 0.11);
+// 残機はチームで共有する。2人なら3機で釣り合っていたが、4人が同じ3機を
+//   分け合うと、ひとりの事故で全員が終わる。ひとり増えるごとに1機足す。
+const coopLives = n => CFG.MAX_LIVES + Math.max(0, Math.max(2, n) - 2);
 
 // むずかしさ。Director の自動調整の「上」に掛ける固定倍率。
 //   自動調整だけだと、子供に渡すときに明示的に弱くできない。
@@ -439,7 +446,7 @@ function spawnBoss() {
   const st = stage();
   const styleKey = (st.boss.style && BOSS_STYLES[st.boss.style]) ? st.boss.style : STYLE_KEYS[game.stageIndex % STYLE_KEYS.length];
   const style = BOSS_STYLES[styleKey];
-  const hp = Math.round(st.boss.hp * (game.coop ? COOP_HP_MUL : 1) * diffMods().bossHp); // 共闘は二人がかり前提で硬く
+  const hp = Math.round(st.boss.hp * (game.coop ? coopHpMul(Coop.playerCount()) : 1) * diffMods().bossHp);
   game.boss = {
     prog: -80, targetProg: game.coop ? 195 : 150, lat: latSpan() / 2, latPhase: 0,
     hp, maxHp: hp, phase: 0,
@@ -1128,6 +1135,7 @@ export function startCoop() {
   else st = proceduralStage(rng);
   st.dur = 34000; // 共闘は短めセッション(ソロより早くボスへ)
   game.coop = true; game.aiMode = Coop.mode !== 'story';
+  game.lives = coopLives(Coop.playerCount());
   game.stages = [st];
   startStage(0);
 }
@@ -1180,7 +1188,7 @@ export function shareRun() {
     : game.endless ? (ja ? 'エンドレスAI' : 'ENDLESS AI')
       : game.daily ? (ja ? 'デイリー ' + todayKey() : 'DAILY ' + todayKey())
         : game.aiMode ? (ja ? 'AIステージ' : 'AI STAGE') : (ja ? 'ストーリー' : 'STORY');
-  const sub = game.coop ? (ja ? `${Coop.partner.name} と共闘クリア` : `Cleared with ${Coop.partner.name}`)
+  const sub = game.coop ? (ja ? `${Coop.partyLabel(true)} と共闘クリア` : `Cleared with ${Coop.partyLabel(false)}`)
     : game.endless ? (ja ? `ワールド ${r.world} 到達` : `Reached World ${r.world}`)
       : (ja ? `ステージ ${r.world}` : `Stage ${r.world}`);
   return openShare({

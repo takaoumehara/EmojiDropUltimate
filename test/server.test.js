@@ -26,8 +26,17 @@ function client(url, code, name = '') {
   const ws = new WebSocket(`${url}/?code=${code}&name=${encodeURIComponent(name)}`);
   const got = [];
   const waiters = [];
+  // src/wstransport.js と同じ読み方をする。サーバーが作った通知は '{' で始まり、
+  //   中継されたものは "7|{...}" のように送り主の番号が頭に付く。
   ws.addEventListener('message', e => {
-    let o; try { o = JSON.parse(e.data); } catch (err) { o = e.data; }
+    const raw = String(e.data);
+    let o;
+    if (raw[0] === '{') { try { o = JSON.parse(raw); } catch (err) { o = raw; } }
+    else {
+      const bar = raw.indexOf('|');
+      try { o = JSON.parse(raw.slice(bar + 1)); o._from = raw.slice(0, bar); }
+      catch (err) { o = raw; }
+    }
     got.push(o);
     for (const w of waiters.splice(0)) w();
   });
@@ -82,6 +91,9 @@ test('同じあいことばの2人がメッセージを届けあえる', async (
     const pos = await b.until(m => m.t === 'pos');
     assert.equal(pos.s, 1234);
     assert.equal(pos.x, 0.5);
+    // 誰から来たのかがサーバーによって付いている。3人以上で機体を描き分けるのに要る。
+    const ra = a.got.find(m => m.t === '_room');
+    assert.equal(pos._from, String(ra.you), '送り主の番号が付くこと');
 
     // 逆方向も
     b.send({ t: 'dmg', d: 7 });
@@ -114,12 +126,23 @@ test('3人・4人も同じ部屋に入れる(2人固定はクライアント側�
     const last = await cs[0].until(m => m.t === '_room' && m.members.length === 4);
     assert.equal(last.members.length, 4);
 
-    // ひとりの発言が残り全員に届く
+    // ひとりの発言が残り全員に届き、全員が「誰から来たか」を同じ番号で見る
     cs[0].send({ t: 'pos', x: 0.11 });
+    const senderId = String((cs[1].got.find(m => m.t === '_room').members[0]).id);
     for (let i = 1; i < 4; i++) {
       const p = await cs[i].until(m => m.t === 'pos');
       assert.equal(p.x, 0.11);
+      assert.equal(p._from, senderId, '全員が同じ番号で送り主を識別できること');
     }
+
+    // 4人がそれぞれ喋ると、受け手には4通りの番号で届く(機体を描き分けられる)
+    for (let i = 1; i < 4; i++) cs[i].send({ t: 'hello', name: 'P' + i });
+    const seen = new Set();
+    for (let tries = 0; tries < 100 && seen.size < 3; tries++) {
+      for (const m of cs[0].got) if (m.t === 'hello') seen.add(m._from);
+      if (seen.size < 3) await new Promise(r => setTimeout(r, 30));
+    }
+    assert.equal(seen.size, 3, '3人の相方が別々の番号として見えること');
     for (const c of cs) c.close();
   });
 });

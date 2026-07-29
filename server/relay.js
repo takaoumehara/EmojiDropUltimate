@@ -41,12 +41,23 @@ class Room {
     this.members.delete(id);
     this.touchedAt = Date.now();
   }
-  /** 送り主以外の全員へ流す。 */
+  /**
+   * 送り主以外の全員へ流す。
+   *
+   * 誰から来たのかを頭に付ける("7|{...}")。3人以上だと、受け取った側は
+   * 「これは誰の機体の位置か」を知らないと描き分けられない。
+   *
+   * 送り主の名乗りを信じるのではなく、サーバーが接続そのものに紐づく番号を
+   * 付ける。こうすれば他人になりすませない。
+   * JSON として解析し直さないので、毎秒何百通あっても費用はほぼゼロ。
+   * サーバーが作ったメッセージは '{' で始まるので、受け取る側で区別できる。
+   */
   relay(fromId, text) {
     this.touchedAt = Date.now();
+    const tagged = fromId + '|' + text;
     for (const m of this.members.values()) {
       if (m.id === fromId) continue;
-      m.conn.send(text);
+      m.conn.send(tagged);
     }
   }
   /** 部屋の顔ぶれが変わったことを全員に伝える。 */

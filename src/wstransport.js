@@ -58,17 +58,15 @@ export class WsTransport {
         resolve();
       };
       ws.onmessage = e => {
-        let o; try { o = JSON.parse(e.data); } catch (err) { return; }
-        // 部屋の顔ぶれの通知はサーバーが作るもの。ゲームには渡さない。
-        if (o.t === '_room') {
-          const was = this.members;
-          this.members = (o.members || []).length;
-          // 自分が先に入っていた場合、最初の hello は誰にも届いていない。
-          //   相手が来たと分かった時点でもう一度名乗る。
-          if (this.members > was) this.hello();
-          return;
-        }
-        this.c.onMsg(o);
+        const raw = String(e.data);
+        // サーバーが作った通知は '{' で始まる。中継されたものは "7|{...}" のように
+        //   送り主の番号が頭に付く。3人以上だと、誰の機体かを知らないと描き分けられない。
+        if (raw[0] === '{') { this._server(raw); return; }
+        const bar = raw.indexOf('|');
+        if (bar < 1) return;
+        const from = raw.slice(0, bar);
+        let o; try { o = JSON.parse(raw.slice(bar + 1)); } catch (err) { return; }
+        this.c.onMsg(o, from);
       };
       ws.onerror = () => { clearTimeout(to); fail(); };
       ws.onclose = ev => {
@@ -81,6 +79,22 @@ export class WsTransport {
         this.c.status = ev && ev.code === 4001 ? 'room_full' : 'closed';
       };
     });
+  }
+
+  _server(raw) {
+    let o; try { o = JSON.parse(raw); } catch (err) { return; }
+    if (o.t !== '_room') return;
+    const was = this.members;
+    const ids = (o.members || []).map(m => String(m.id));
+    this.members = ids.length;
+    this.myId = String(o.you);
+    // 抜けた人の機体を画面に残さない。時間切れを待たずに消せる。
+    for (const p of [...this.c.peers.keys()]) {
+      if (!ids.includes(String(p))) this.c.dropPeer(p);
+    }
+    // 自分が先に入っていた場合、最初の hello は誰にも届いていない。
+    //   顔ぶれが増えたと分かった時点でもう一度名乗る。
+    if (this.members > was) this.hello();
   }
 
   hello() { this.send({ t: 'hello', name: Save.name(), ch: Save.charIndex() }); }
