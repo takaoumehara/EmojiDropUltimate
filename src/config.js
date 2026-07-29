@@ -244,6 +244,23 @@ export const PATTERNS = [
     const t = types[randInt(0, 2)];
     return [0, 1, 2, 3, 4, 5].map(i => ({ t, lat: span * (i % 2 ? 0.12 : 0.88), delay: Math.floor(i / 2) * 300 }));
   },
+  // === 隊列(インベーダー) ===
+  //   横一列に並んで行進し、端に着いたら一段下がって折り返す。
+  //   倒すほど残りが速くなる。時々1体が隊列を離れて急に突っ込んでくる。
+  //   1体ずつ流れてくる他のパターンと違い、**画面全部が同時に迫る**圧を作る。
+  (types, span) => {
+    const t = types[randInt(0, Math.min(1, types.length - 1))];
+    const cols = span < 420 ? 5 : 6, rows = 3;
+    const gap = Math.min(66, (span - 110) / (cols - 1));
+    const left = (span - gap * (cols - 1)) / 2;
+    const out = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        out.push({ t, lat: left + c * gap, delay: 0, march: { row: r, rows } });
+      }
+    }
+    return out;
+  },
 ];
 
 // === 自機キャラクター(スマブラ方式: 選ぶと見た目・弾・性能が変わる) ===

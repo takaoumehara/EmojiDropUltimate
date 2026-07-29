@@ -315,22 +315,81 @@ export function useBomb() {
 function spawnWave() {
   const st = stage();
   const list = PATTERNS[game.waveIdx % PATTERNS.length](st.enemies, latSpan());
+  // 隊列は「1体ずつ」ではなく「かたまり」として動くので、共有の台帳を1つ作る。
+  //   端に着いたか・何体残っているか・次に誰が突っ込むかは全員で1つの答えを持つ。
+  const squad = list.some(it => it.march) ? newSquad(list.length) : null;
   for (const it of list) {
     const tt = it.t;
     const lat = clamp(it.lat, 42, latSpan() - 42);
+    const m = it.march;
     game.enemies.push({
       id: nextEid++, ti: Math.max(0, st.enemies.indexOf(tt)),
-      move: MOVE_BY_EMOJI[tt.emoji] || null, mvT: rand(400, 1400), mvS: 0,
+      move: m ? null : (MOVE_BY_EMOJI[tt.emoji] || null),   // 隊列は癖より隊列が優先
+      mvT: rand(400, 1400), mvS: 0,
       mph: rand(0, Math.PI * 2), blink: 0,
-      type: tt.type, emoji: tt.emoji,
+      type: m ? 'march' : tt.type, emoji: tt.emoji,
       hp: tt.hp, maxHp: tt.hp, speed: tt.speed, pts: tt.pts, size: tt.size,
-      amp: tt.amp || 60, freq: tt.freq || 2, shootRate: tt.shootRate || 0,
+      amp: tt.amp || 60, freq: tt.freq || 2,
+      // 隊列は元の型が撃たない相手でも撃つ。並んで迫るだけでは圧が足りない。
+      shootRate: m ? Math.max(0.16, tt.shootRate || 0) : (tt.shootRate || 0),
       prog: 0, lat0: lat, lat, phase: rand(0, Math.PI * 2),
       shootT: rand(600, 1800), delay: it.delay, flash: 0,
       locked: false, lockLat: 0, x: -999, y: -999,
+      sq: squad, progOff: m ? (m.rows - 1 - m.row) * 54 : 0, diving: false,
     });
   }
   game.waveIdx++;
+}
+
+// === 隊列(インベーダー) ===
+const MARCH_STEP = 34;          // 端で折り返すときに一段進む量
+const MARCH_BASE = 46;          // 横に行進する速さ(px/秒)
+const MARCH_ACCEL = 2.4;        // 全滅間際で何倍まで速くなるか
+
+function newSquad(total) {
+  return {
+    total, latOff: 0, prog: 0, dir: Math.random() < 0.5 ? 1 : -1,
+    // 最初の1体が飛び出すまでの間。すぐには来ない方が、来たときに驚く。
+    diveT: rand(3200, 5200),
+  };
+}
+
+function updateSquads(dt) {
+  const seen = new Set();
+  for (const e of game.enemies) {
+    const sq = e.sq;
+    if (!sq || seen.has(sq)) continue;
+    seen.add(sq);
+    const members = game.enemies.filter(x => x.sq === sq && !x.diving && x.delay <= 0);
+    if (!members.length) continue;
+
+    // 減るほど速くなる。倒すほど楽になるのではなく、**追い詰められる**のが元ネタの怖さ。
+    const left = members.length / sq.total;
+    const spd = MARCH_BASE * (1 + (1 - left) * (MARCH_ACCEL - 1))
+      * Weather.mods.enemySpeed * diffMods().enemySpeed;
+
+    sq.latOff += sq.dir * spd * dt;
+    // 端に着いたか。かたまりの端で見るので、外側の1体が欠けると折り返し幅が広がる。
+    let lo = Infinity, hi = -Infinity;
+    for (const m of members) { const l = m.lat0 + sq.latOff; if (l < lo) lo = l; if (l > hi) hi = l; }
+    const span = latSpan();
+    if ((sq.dir > 0 && hi > span - 46) || (sq.dir < 0 && lo < 46)) {
+      sq.dir *= -1;
+      sq.prog += MARCH_STEP;   // 折り返すたびに一段こちらへ
+    }
+
+    // ときどき1体が隊列を離れて突っ込む。予告はしない。
+    sq.diveT -= dt * 1000;
+    if (sq.diveT <= 0) {
+      sq.diveT = rand(2600, 4600) * (0.5 + left * 0.5);   // 残りが減るほど頻繁に
+      const d = members[randInt(0, members.length - 1)];
+      if (d) {
+        d.diving = true; d.locked = false;
+        d.flash = 0.6;
+        Snd.warning();
+      }
+    }
+  }
 }
 
 // 絵柄に応じた癖を、基本の動きの「上に」足す。
@@ -377,6 +436,7 @@ function applyPersonality(e, dt, step) {
 
 function updateEnemies(dt) {
   const wMod = Weather.mods, span = fwSpan();
+  updateSquads(dt);   // 隊列は「かたまり」として先に動かす(個々はその結果を読む)
   for (let i = game.enemies.length - 1; i >= 0; i--) {
     const e = game.enemies[i];
     if (e.delay > 0) { e.delay -= dt * 1000; continue; }
@@ -401,6 +461,28 @@ function updateEnemies(dt) {
         if (!e.locked && e.prog > 70) { e.locked = true; e.lockLat = latOf(game.player); }
         e.prog += spd * (e.locked ? 1.5 : 1);
         if (e.locked) e.lat = lerp(e.lat, e.lockLat, dt * 3);
+        break;
+      case 'march':
+        if (e.diving) {
+          // 隊列を離れた1体。狙いを定めて一気に来る。カミカゼより速い。
+          if (!e.locked) { e.locked = true; e.lockLat = latOf(game.player); }
+          e.prog += spd * 3.4;
+          e.lat = lerp(e.lat, e.lockLat, dt * 2.6);
+        } else if (e.sq) {
+          // 隊列の中。位置は自分では決めず、かたまりの台帳から取る。
+          e.prog = e.sq.prog + e.progOff;
+          e.lat = e.lat0 + e.sq.latOff;
+        }
+        // 隊列も撃つ。狙い撃ちではなく、まっすぐ落とす(避ける余地を残す)。
+        e.shootT -= dt * 1000;
+        if (e.shootT <= 0 && e.prog > 40) {
+          e.shootT = 1000 / (e.shootRate * Director.shootMul);
+          const a = e.diving
+            ? Math.atan2(game.player.y - e.y, game.player.x - e.x)
+            : fwAngle();
+          const bs = CFG.EBULLET_SPEED * Director.ebSpeedMul * 0.85;
+          game.eBullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * bs, vy: Math.sin(a) * bs, size: 5 });
+        }
         break;
     }
     if (e.move) applyPersonality(e, dt, e.prog - prog0);

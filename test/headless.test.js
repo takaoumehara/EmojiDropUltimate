@@ -114,3 +114,105 @@ test('サーバーに載せられる速度で回る', async () => {
   assert.ok(realtimeFactor > 20,
     `実時間の20倍以上で回ること(=1コアで20部屋ぶんの余裕): 実測 ${realtimeFactor.toFixed(0)}倍`);
 });
+
+// ============================================================
+// 隊列(インベーダー) — 「画面全部が同時に迫る」set-piece
+// ============================================================
+
+/** 隊列のウェーブだけを狙って湧かせる。 */
+async function spawnMarch(seed = 11) {
+  const h = await boot({ seed });
+  h.engine.startRun(0);
+  sim(h, { steps: 200, bot: Bot.idle });          // intro を抜ける
+  const g = h.state.game;
+  g.waveIdx = h.config.PATTERNS.length - 1;       // 隊列は PATTERNS の最後
+  g.nextWave = 0; g.enemies = [];
+  sim(h, { steps: 4, bot: Bot.idle });
+  return { h, g, march: g.enemies.filter(e => e.type === 'march') };
+}
+
+test('隊列はひとかたまりとして湧く', async () => {
+  const { h, march } = await spawnMarch();
+  shutdown(h);
+  assert.ok(march.length >= 12, `複数列ぶん湧くこと (${march.length})`);
+  const squads = new Set(march.map(e => e.sq));
+  assert.equal(squads.size, 1, '全員が同じ台帳を共有すること(バラバラに動かない)');
+  // 3段に分かれて並んでいる
+  const rows = new Set(march.map(e => e.progOff));
+  assert.equal(rows.size, 3);
+});
+
+test('端に着いたら折り返し、そのたびに一段こちらへ進む', async () => {
+  const { h, g, march } = await spawnMarch();
+  const sq = march[0].sq;
+  let flips = 0, last = sq.dir;
+  const progAt = [];
+  for (let i = 0; i < 60 * 30; i++) {
+    h.engine.update(1 / 60, {});
+    if (sq.dir !== last) { flips++; last = sq.dir; progAt.push(sq.prog); }
+  }
+  shutdown(h);
+  assert.ok(flips >= 4, `何度も折り返すこと (${flips})`);
+  // 折り返すたびに必ず前へ出る(その場で往復し続けない)
+  for (let i = 1; i < progAt.length; i++) {
+    assert.ok(progAt[i] > progAt[i - 1], '折り返しのたびに前進すること');
+  }
+});
+
+test('隊列は画面の外へはみ出さない', async () => {
+  const { h, g, march } = await spawnMarch();
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < 60 * 25; i++) {
+    h.engine.update(1 / 60, {});
+    for (const e of g.enemies) {
+      if (e.type !== 'march' || e.diving) continue;
+      const l = h.geo.isVert() ? e.x : e.y;
+      if (l < lo) lo = l; if (l > hi) hi = l;
+    }
+  }
+  const span = h.geo.isVert() ? h.env.W : h.env.H;
+  shutdown(h);
+  assert.ok(lo > 0 && hi < span, `画面内に収まること (${lo.toFixed(0)}..${hi.toFixed(0)} / ${span})`);
+  assert.ok(hi - lo > span * 0.5, `画面の幅を実際に使って往復すること (${(hi - lo).toFixed(0)})`);
+});
+
+test('倒すほど残りが速くなる', async () => {
+  const { h, g, march } = await spawnMarch();
+  const sq = march[0].sq;
+  const rate = () => {
+    const a = sq.latOff;
+    for (let i = 0; i < 30; i++) h.engine.update(1 / 60, {});
+    return Math.abs(sq.latOff - a);
+  };
+  const full = rate();
+  // 半分倒す
+  const alive = g.enemies.filter(e => e.sq === sq);
+  for (const e of alive.slice(0, Math.floor(alive.length / 2))) {
+    g.enemies = g.enemies.filter(x => x !== e);
+  }
+  const half = rate();
+  shutdown(h);
+  assert.ok(half > full * 1.2,
+    `残りが減ったら速くなること: 満員 ${full.toFixed(1)} → 半減 ${half.toFixed(1)}`);
+});
+
+test('ときどき1体が隊列を離れて突っ込んでくる', async () => {
+  const { h, g, march } = await spawnMarch();
+  let sawDive = false, maxAtOnce = 0;
+  for (let i = 0; i < 60 * 30 && !sawDive; i++) {
+    h.engine.update(1 / 60, {});
+    const d = g.enemies.filter(e => e.diving).length;
+    maxAtOnce = Math.max(maxAtOnce, d);
+    if (d > 0) sawDive = true;
+  }
+  shutdown(h);
+  assert.ok(sawDive, '30秒のうちに必ず1体は飛び出すこと');
+  assert.ok(maxAtOnce <= 2, `一度に飛び出すのは1〜2体まで(全員来たら避けようがない): ${maxAtOnce}`);
+});
+
+test('隊列が出ても例外なく最後まで走る', async () => {
+  const { h, g } = await spawnMarch(2026);
+  const r = sim(h, { steps: 60 * 300, bot: makeHunter(h.geo) });
+  shutdown(h);
+  assert.equal(r.error, null, r.error && r.error.stack);
+});
