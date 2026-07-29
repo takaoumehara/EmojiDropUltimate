@@ -1,7 +1,7 @@
 // ============================================================
 // engine.js — ゲームロジック(更新・生成・当たり判定・状態遷移)
 // ============================================================
-import { CFG, BELLS, MAX_LIFE_BELL, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, MOVE_BY_EMOJI, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
+import { CFG, BELLS, MAX_LIFE_BELL, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, MOVE_BY_EMOJI, DIRS, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
 import { W, H, SAFE } from './env.js';
 import { game, newGame, setGame } from './state.js';
 import { stage, dirDef, fwAngle, inAngle, isVert, latSpan, fwSpan, posFromPL, invPL, latOf, playerHome } from './geo.js';
@@ -748,7 +748,8 @@ function damageBoss(dmg) {
 //   flee   … 逃げ出す。追いつけば即撃破、逃がすと次のボスが強い
 //   greed  … 画面に残っているベルを吸い込んで強くなる
 //   legacy … 何も起きない。ただし形見が残り、こちらが強くなる
-const LAST_STANDS = ['revive', 'split', 'flee', 'greed', 'legacy'];
+//   turn   … 世界の進行方向そのものが変わる(このゲームにしか無い一手)
+const LAST_STANDS = ['revive', 'split', 'flee', 'greed', 'legacy', 'turn'];
 
 /**
  * 次に引く札を決める。
@@ -800,8 +801,9 @@ function runLastStand() {
   b.stand = null; b.dying = 0;
   // 相方には結果ではなく「何が起きたか」を伝える。世界そのものは
   //   スナップショットで届くが、演出と形見の効果は各自で焚く必要がある。
-  if (game.coop && isHost()) Coop.send({ t: 'ls', k });
   applyLastStand(k);
+  // 方向転換だけは「どの向きに回ったか」も要る。各自で引くと全員バラバラになる。
+  if (game.coop && isHost()) Coop.send({ t: 'ls', k, d: k === 'turn' ? stage().dir : undefined });
 }
 
 function applyLastStand(k) {
@@ -812,15 +814,19 @@ function applyLastStand(k) {
     case 'flee': standFlee(); break;
     case 'greed': standGreed(); break;
     case 'legacy': standLegacy(); break;
+    case 'turn': standTurn(); break;
     default: bossRevive(); break;
   }
 }
 // ゲスト: ホストが引いた札を同じように焚く
-Coop.onLastStand = k => {
+Coop.onLastStand = (k, arg) => {
   if (!game.boss || game.finale) return;
   game.standKind = k; game.bossRevealT = 2400;
   if (k === 'legacy') grantLegacy();          // 形見は各自の機体に効く
   else if (k === 'revive') { game.boss.revived = true; game.boss.col = '#ff3b5c'; }
+  // 向きは各自のステージ定義を書き換えないと、自機と背景だけ元の向きのまま残る。
+  //   ホストが引いた向きをそのまま使う(各自で引くと全員バラバラになる)。
+  else if (k === 'turn' && arg) turnWorld(arg);
   Snd.warning();
 };
 
@@ -884,6 +890,56 @@ function standGreed() {
   game.flash = 1; game.shake = CFG.MAX_SHAKE;
   if (game.coop && isHost()) Coop.initBoss(b.maxHp);
   Snd.warning(); Snd.startBGM(stage(), game.stageIndex, 'boss');
+}
+
+// --- 方向転換: 世界そのものが回る ---
+//   このゲームは「進行方向がステージごとに変わる」のが芯にある。
+//   それを**ボス戦の最中に**やる。覚えた弾の避け方も、指の置き場所も、
+//   画面のどちらが「奥」かも、その場で全部作り直しになる。
+//   他のシューティングには真似のしようがない一手なので、ここに置く。
+function standTurn() {
+  const b = game.boss;
+  const from = stage().dir;
+  const to = pick(Object.keys(DIRS).filter(d => d !== from));
+  turnWorld(to);
+  b.hp = Math.round(b.maxHp * 0.5);
+  b.col = '#8fd3ff';
+  b.entering = false; b.returning = true; b.charging = false;
+  explosion(b.x, b.y, 20, '#8fd3ff');
+  game.flash = 1; game.shake = CFG.MAX_SHAKE;
+  if (game.coop && isHost()) { Coop.initBoss(b.maxHp); Coop.bossShared = b.hp; }
+  Snd.warning(); Snd.startBGM(stage(), game.stageIndex, 'boss');
+}
+
+/**
+ * 進行方向を差し替え、いま画面にあるものを新しい向きに置き直す。
+ * ホストもゲストも同じ引数で呼ぶ(各自で向きを引くと全員バラバラになる)。
+ */
+function turnWorld(to) {
+  if (!DIRS[to]) return;
+  const oldSpan = latSpan();
+  const b = game.boss;
+  // 横に長い向きと縦に長い向きでは lat の幅そのものが違う。
+  //   px のまま持ち越すと画面外へ飛ぶので、割合で持ち越す。
+  const bossLatRatio = b ? b.lat / oldSpan : 0.5;
+
+  stage().dir = to;                     // chapterStages が深いコピーを返すので定数は壊れない
+
+  if (b) {
+    b.lat = clamp(bossLatRatio * latSpan(), 60, latSpan() - 60);
+    b.targetProg = game.coop ? 195 : 150;
+    b.prog = Math.min(b.prog, b.targetProg);
+    const pos = posFromPL(b.prog, b.lat); b.x = pos.x; b.y = pos.y;
+  }
+  // 回った瞬間に古い向きの弾が残っていると、どこから来たのか読めないまま当たる。
+  //   道中の敵も同じ理由で流す。**回った直後の一拍**が、そのまま猶予になる。
+  game.eBullets = []; game.enemies = []; game.bells = [];
+  const home = playerHome();
+  const p = game.player;
+  p.x = home.x; p.y = home.y; p.trail = [];
+  p.inv = true; p.invT = Math.max(p.invT, 1200);   // 置き直した直後の事故を防ぐ
+  initStars();
+  game.bgFloats = [];
 }
 
 // --- 形見: 何も起きない。そのまま倒れ、こちらが強くなる ---

@@ -36,17 +36,17 @@ function deplete(h, { bells = 0 } = {}) {
   return g.standKind;
 }
 
-test('終盤の札は5種類すべてが実際に引かれる', async () => {
+test('終盤の札は6種類すべてが実際に引かれる', async () => {
   const h = await boot({ seed: 21 });
   const seen = new Set();
-  for (let k = 0; k < 40 && seen.size < 5; k++) {
+  for (let k = 0; k < 60 && seen.size < 6; k++) {
     if (!toBoss(h)) continue;
     const kind = deplete(h, { bells: k % 2 });
     if (kind) seen.add(kind);
   }
   shutdown(h);
-  assert.deepEqual([...seen].sort(), ['flee', 'greed', 'legacy', 'revive', 'split'],
-    `5種類すべてが出ること: ${[...seen].join(',')}`);
+  assert.deepEqual([...seen].sort(), ['flee', 'greed', 'legacy', 'revive', 'split', 'turn'],
+    `6種類すべてが出ること: ${[...seen].join(',')}`);
 });
 
 test('同じ札が続かない — 遊び直しても続かない', async () => {
@@ -147,7 +147,7 @@ test('逃走: 逃げ切られると恨みが残り、次のボスが硬くなる
 
 test('終盤が来てもゲームは最後まで走る', async () => {
   const h = await boot({ seed: 77 });
-  for (const kind of ['revive', 'split', 'flee', 'greed', 'legacy']) {
+  for (const kind of ['revive', 'split', 'flee', 'greed', 'legacy', 'turn']) {
     forceStand(h, kind, g => {
       if (kind === 'greed') g.bells.push({ x: 100, y: 300, idx: 0, size: 12, phase: 0, prog: 0, lat: 0, hits: 0 });
     });
@@ -258,4 +258,90 @@ test('分身はゲストの画面でも「ボスの顔」で描かれる', async
   assert.ok(sent, 'ワールドが配信されていること');
   const rows = sent.e.filter(r => r[6] === 1);
   assert.ok(rows.length >= 2, `分身の印が乗っていること (${rows.length}件)`);
+});
+
+// ============================================================
+// 方向転換 — このゲームにしか無い一手
+// ============================================================
+
+test('方向転換: 世界の向きが変わり、全部が新しい向きに置き直される', async () => {
+  const h = await boot({ seed: 44 });
+  toBoss(h);
+  const beforeDir = h.geo.stage().dir;
+  // 古い向きの弾が残ったまま回ると、どこから来たか読めないまま当たる
+  now(h).eBullets.push({ x: 100, y: 100, vx: 0, vy: 200, size: 5 });
+  now(h).boss.hp = 1;
+  sim(h, { steps: 60 * 3, bot: Bot.idle, until: q => q.boss && q.boss.dying > 0 });
+  now(h).boss.stand = 'turn';
+  sim(h, { steps: 60 * 4, bot: Bot.idle, until: q => q.standKind === 'turn' });
+
+  const g = now(h);
+  const afterDir = h.geo.stage().dir;
+  assert.notEqual(afterDir, beforeDir, `向きが変わること (${beforeDir} → ${afterDir})`);
+  assert.ok(g.boss, 'ボスは残ること');
+  // 縦向きと横向きでは横軸の幅そのものが違う。px のまま持ち越すと画面外へ飛ぶ。
+  assert.ok(g.boss.x > 0 && g.boss.x < h.env.W, `ボスが画面内に居ること x=${g.boss.x | 0}`);
+  assert.ok(g.boss.y > 0 && g.boss.y < h.env.H, `ボスが画面内に居ること y=${g.boss.y | 0}`);
+  // 自機は新しい向きの定位置へ
+  const home = h.geo.playerHome();
+  assert.equal(Math.round(g.player.x), Math.round(home.x));
+  assert.equal(Math.round(g.player.y), Math.round(home.y));
+  assert.equal(g.eBullets.length, 0, '古い向きの弾は流されること');
+  assert.ok(g.player.inv, '置き直した直後は無敵で、事故で死なないこと');
+  shutdown(h);
+});
+
+test('方向転換はステージ定義の定数を壊さない', async () => {
+  // stage().dir を書き換えるので、game.stages が STAGES の実体を
+  // 参照していたら、以降の全プレイの向きが変わってしまう。
+  const h = await boot({ seed: 45 });
+  const { STAGES } = h.config;
+  const original = STAGES.map(s => s.dir);
+  toBoss(h);
+  now(h).boss.hp = 1;
+  sim(h, { steps: 60 * 3, bot: Bot.idle, until: q => q.boss && q.boss.dying > 0 });
+  now(h).boss.stand = 'turn';
+  sim(h, { steps: 60 * 4, bot: Bot.idle, until: q => q.standKind === 'turn' });
+  shutdown(h);
+  assert.deepEqual(STAGES.map(s => s.dir), original, '定数側の向きは変わらないこと');
+});
+
+test('方向転換の後も最後まで走る', async () => {
+  const h = await boot({ seed: 46 });
+  toBoss(h);
+  now(h).boss.hp = 1;
+  sim(h, { steps: 60 * 3, bot: Bot.idle, until: q => q.boss && q.boss.dying > 0 });
+  now(h).boss.stand = 'turn';
+  sim(h, { steps: 60 * 4, bot: Bot.idle, until: q => q.standKind === 'turn' });
+  const r = sim(h, { steps: 60 * 180, bot: Bot.idle });
+  shutdown(h);
+  assert.equal(r.error, null, r.error && r.error.stack);
+});
+
+test('方向転換は相方にも同じ向きで伝わる', async () => {
+  // 各自で向きを引くと全員バラバラの世界になる。ホストが引いた向きを配る。
+  const h = await boot({ seed: 47 });
+  const { Coop } = await import('../src/coop.js');
+  Coop.reset();
+  Coop.active = true; Coop.role = 'host'; Coop.connected = true;
+  Coop.onMsg({ t: 'hello', name: 'P2' }, '2');
+  const sent = [];
+  const realSend = Coop.send.bind(Coop);
+  Coop.send = o => { sent.push(o); };
+
+  h.engine.startRun(0);
+  sim(h, { steps: 200, bot: Bot.idle });
+  now(h).coop = true;
+  now(h).stageTime = h.geo.stage().dur - 200;
+  sim(h, { steps: 60 * 40, bot: Bot.idle, until: q => !!q.boss });
+  Coop.bossShared = 0; now(h).boss.hp = 0;
+  sim(h, { steps: 60 * 3, bot: Bot.idle, until: q => q.boss && q.boss.dying > 0 });
+  now(h).boss.stand = 'turn';
+  sim(h, { steps: 60 * 4, bot: Bot.idle, until: q => q.standKind === 'turn' });
+
+  const dir = h.geo.stage().dir;
+  Coop.send = realSend; Coop.reset(); shutdown(h);
+  const ls = sent.find(o => o && o.t === 'ls' && o.k === 'turn');
+  assert.ok(ls, '方向転換が相方へ送られること');
+  assert.equal(ls.d, dir, '送った向きが自分の向きと一致すること');
 });

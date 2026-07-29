@@ -39,7 +39,7 @@ const MAX_PLAYERS = 4;
 
 function newPeer(id) {
   return {
-    id, name: 'FRIEND', score: 0, alive: true, dmg: 0, char: 0, seenAt: 0,
+    id, name: 'FRIEND', score: 0, alive: true, dmg: 0, char: 0, seenAt: 0, ready: false,
     x: 0.32, y: 0.85, tx: 0.32, ty: 0.85, firing: false,   // 正規化座標(0..1)
   };
 }
@@ -146,6 +146,7 @@ export const Coop = {
     this.active = false; this.connected = false; this.p2p = false;
     this.code = ''; this.seed = 0; this.status = '';
     this.peers.clear();
+    this.myReady = false;
     this.bossShared = 0; this.bossSharedMax = 0; this.localDmg = 0;
   },
   /**
@@ -169,11 +170,25 @@ export const Coop = {
 
   // スタート。どちらが押しても始まる(種はホストのものを正とする)。
   //   ゲストが押した場合はホストに依頼し、ホストが全員へ号令をかける。
+  myReady: false,
   requestStart() {
+    // 押した人が「準備できた」ことを先に配る。全員が押すのを待つ作りにはしない
+    //   —— ひとりが席を外しただけで誰も遊べなくなるほうが困る。
+    //   見えるようにするだけで、始めるのは今まで通り誰が押してもよい。
+    this.myReady = true;
+    this.send({ t: 'ready' });
     if (this.role === 'host') { this.send({ t: 'start', seed: this.seed, mode: this.mode }); return true; }
     this.send({ t: 'reqStart' });
     return false; // 自分ではまだ開始しない(ホストの号令を待つ)
   },
+  /** ロビー表示用: 自分を含めた顔ぶれ。 */
+  roster() {
+    return [
+      { id: 'me', name: Save.name(), ready: this.myReady, me: true },
+      ...this.livePeers().map(p => ({ id: p.id, name: p.name, ready: !!p.ready, me: false })),
+    ];
+  },
+  readyCount() { return this.roster().filter(r => r.ready).length; },
   startGame() { this.send({ t: 'start', seed: this.seed, mode: this.mode }); },
 
   // === プロトコル ===
@@ -197,6 +212,9 @@ export const Coop = {
           if (this.onStartGame) this.onStartGame();
         }
         break;
+      case 'ready':   // 誰が押したかをロビーに出すためだけの印
+        p.ready = true; p.seenAt = performance.now();
+        break;
       case 'reqStart': // ゲストからの開始依頼 → ホストが号令をかけて自分も開始
         if (this.role === 'host') {
           this.startGame();
@@ -219,7 +237,7 @@ export const Coop = {
       case 'bd': if (this.onBossDown) this.onBossDown(); break;
       // ゲスト: ホストが終盤に何を引いたか。世界そのものはスナップショットで
       //   届くが、演出と「形見」の効果は各自の画面で焚く必要がある。
-      case 'ls': if (this.onLastStand) this.onLastStand(String(o.k || '')); break;
+      case 'ls': if (this.onLastStand) this.onLastStand(String(o.k || ''), o.d ? String(o.d) : null); break;
     }
   },
   onPartnerHit: null, onPartnerDied: null, onGameOver: null, onBossDown: null, onLastStand: null,   // engine が設定

@@ -473,7 +473,7 @@ function drawBossReveal() {
   // 終盤に何を引いたかで見出しが変わる。同じ文字が出ないこと自体が、
   //   「今回は何だ」を作っている。色も札ごとに変えて、一目で別物に見せる。
   const kind = game.standKind || 'revive';
-  const COL_BY = { revive: '#ff2d6f', split: '#b76bff', flee: '#4ad6a0', greed: '#ffd700', legacy: '#ffd27f' };
+  const COL_BY = { revive: '#ff2d6f', split: '#b76bff', flee: '#4ad6a0', greed: '#ffd700', legacy: '#ffd27f', turn: '#8fd3ff' };
   const c = COL_BY[kind] || '#ff2d6f';
   txt(t('ls_' + kind), 0, -30 * UI,
     { size: 15 * UI, weight: 800, color: '#ffe4ec', maxW: W * 0.84 });
@@ -1039,6 +1039,8 @@ function drawCoopLobby() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const host = Coop.role === 'host';
   const joining = Coop.joinOpen;   // 合言葉フォーム表示中は QR/コードを隠す
+  let chipsBottom = 0;             // モード選択チップの下端
+  let statusBottom = 0;            // 接続表示+顔ぶれの下端。ボタンはこれより下に置く
 
   txt(t('coop'), W / 2, vy(0.085), { size: 21 * UI, weight: 800, color: COL.mint, family: FONT_DISPLAY });
   txt(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, vy(0.122), { size: 11 * UI, weight: 500, color: COL.mute });
@@ -1062,6 +1064,7 @@ function drawCoopLobby() {
 
     // 遊ぶ面
     const half = (bw - 9 * UI) / 2, my = vy(0.525);
+    chipsBottom = my + 36 * UI;
     const chip = (id, x, tx, sel, col) => {
       surface(x, my, half, 36 * UI, { r: 12, fill: sel ? col : 'rgba(13,19,40,0.82)', border: sel ? col : 'rgba(255,255,255,0.16)', lw: 2 });
       txt(tx, x + half / 2, my + 18 * UI, { size: 11.5 * UI, weight: 700, color: sel ? '#0c1a16' : COL.sub });
@@ -1077,13 +1080,33 @@ function drawCoopLobby() {
   if (joining) return;   // 以降はHTMLフォームが担当
 
   // 接続ステータス
-  const sy = vy(0.60);
+  //   顔ぶれを名前で並べるようになったぶん、この塊は縦に伸びる。
+  //   画面の割合(vy)だけで置くと、iPhone SE のような縦の短い端末では
+  //   上のモード選択チップに重なる。チップの下端より上には来ないようにする。
+  const sy = Math.max(vy(0.60), chipsBottom + 16 * UI);
   if (Coop.connected) {
     // ⚡=端末どうしの直結 / 🛰=中継サーバー経由 / 🤖=オフラインのデモ相方
     const viaMark = Coop.via() === 'p2p' ? '  ⚡' : Coop.via() === 'relay' ? '  🛰' : '  🤖';
     const who = Coop.partyLabel(ja);
     txt((ja ? `${who} と接続` : `Connected: ${who}`) + viaMark,
       W / 2, sy, { size: 13 * UI, weight: 700, color: '#7CFC00' });
+    statusBottom = sy + 10 * UI;
+    // 顔ぶれを名前で出す。人数だけだと「4人」と出ていても、
+    //   来られなかったのが誰なのか分からない。名前が並んで初めて気づける。
+    //   ✓ は「スタートを押した人」。全員が押すのを待つ作りにはしていないので、
+    //   これは合図であって関門ではない。
+    const roster = Coop.roster();
+    const cols = roster.length > 2 ? 2 : 1;
+    const cw = bw / cols;
+    roster.forEach((r, i) => {
+      const cx = bx + (i % cols) * cw + cw / 2;
+      const cy = sy + 20 * UI + Math.floor(i / cols) * 17 * UI;
+      const mark = r.ready ? '✅' : '⬜️';
+      txt(`${mark} ${r.name}${r.me ? (ja ? '(あなた)' : ' (you)') : ''}`,
+        cx, cy, { size: 10.5 * UI, weight: 600, maxW: cw - 8 * UI,
+          color: r.ready ? '#7CFC00' : COL.sub });
+      statusBottom = Math.max(statusBottom, cy + 10 * UI);
+    });
   } else if (Coop.status && Coop.status !== 'connecting') {
     // 失敗の理由を具体的に出す(原因が自分で分かるように)
     const S = {
@@ -1105,13 +1128,19 @@ function drawCoopLobby() {
       { size: 11.5 * UI, weight: 500, color: COL.gold, alpha: 0.55 + 0.45 * Math.sin(time * 4) });
   }
 
-  let by = vy(0.645);
+  // 顔ぶれは人数で縦に伸びる。ボタンを画面の割合で固定すると、
+  //   縦の短い端末(iPhone SE 等)で4人ぶんの名前と重なる。下から流し込む。
+  let by = Math.max(vy(0.645), statusBottom + 12 * UI);
   const bh = 44 * UI, gap = 8 * UI;
   if (Coop.connected) {
     // つながったら「どちらの端末でも」開始できる(ホスト待ちで詰まらない)
     const n = Coop.playerCount();
-    drawBtn('coopStart', bx, by, bw, 52 * UI,
-      ja ? `${n}人でスタート` : `START WITH ${n}`, '#ffffff', true, false, 18 * UI);
+    const rdy = Coop.readyCount();
+    // 何人が押したかをボタンに出す。押していない人が居ても始められる。
+    const btnLabel = rdy > 0 && rdy < n
+      ? (ja ? `スタート (${rdy}/${n} 準備OK)` : `START (${rdy}/${n} ready)`)
+      : (ja ? `${n}人でスタート` : `START WITH ${n}`);
+    drawBtn('coopStart', bx, by, bw, 52 * UI, btnLabel, '#ffffff', true, false, 18 * UI);
     by += 52 * UI + gap;
     // 中継サーバー経由なら4人まで入れる。直結は2人まで。
     //   まだ空きがあることを言わないと、3人目が「入れない」と思って諦める。
