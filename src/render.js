@@ -546,9 +546,10 @@ function drawPopups() {
   for (const s of game.popups) {
     ctx.globalAlpha = clamp(s.life, 0, 1);
     // 敵の位置に出るので、端で倒すと画面外へ切れる(「+150」の左半分が消える)。
-    //   画面の中へ寄せる —— どこで倒しても点が読めるほうが正しい。
-    const m = 34 * UI;
-    label(s.text, clamp(s.x, m, W - m), s.y - (1 - s.life) * 46, s.color, 13 * UI);
+    //   しかも上へ流れる演出なので、上端でも切れる。**縦も**中へ寄せる。
+    const m = 34 * UI, mv = 12 * UI;
+    label(s.text, clamp(s.x, m, W - m),
+      clamp(s.y - (1 - s.life) * 46, SAFE.top + mv, H - SAFE.bottom - mv), s.color, 13 * UI);
   }
   ctx.globalAlpha = 1;
 }
