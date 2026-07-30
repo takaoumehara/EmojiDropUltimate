@@ -809,7 +809,8 @@ function drawBtnSub(id, x, y, w, h, main, sub, color, icon) {
   surface(x, y, w, h, { r: 14, fill: 'rgba(13,19,40,0.82)', border: color, lw: 2 });
   const pad = 14 * UI, cx = x + w / 2, ty = y + h * 0.37;
   if (icon) {
-    const fs = 14.5 * UI, is = 15 * UI, gap = 9 * UI;
+    let fs = 14.5 * UI;
+    const is = 15 * UI, gap = 9 * UI;
     // 絵文字の幅を固定値で見積もると、実際に描かれる絵が文字に食い込む
     //   (端末によって送り幅より広く描かれる)。毎回実測する。
     ctx.save();
@@ -817,16 +818,20 @@ function drawBtnSub(id, x, y, w, h, main, sub, color, icon) {
     const im = ctx.measureText(icon);
     const iw = Math.max(is, (im.actualBoundingBoxRight || 0) + (im.actualBoundingBoxLeft || 0) || im.width);
     ctx.restore();
+    // 絵文字つきの行だけ上限が無かった。長い言葉を1つ足すと枠から出る。
+    //   総幅で先に縮めてから中央に置く(置いたあとで縮めると中央がずれる)。
+    const room = w - 20 * UI - iw - gap;
     f(fs, 700);
-    const tw = ctx.measureText(main).width;
-    const total = iw + gap + tw;
-    const left = cx - total / 2;
+    let tw = ctx.measureText(main).width;
+    if (tw > room && tw > 0) { fs *= room / tw; f(fs, 700); tw = ctx.measureText(main).width; }
+    const left = cx - (iw + gap + tw) / 2;
     emojiCentered(icon, left + iw / 2, ty, is);
     txt(main, left + iw + gap, ty, { size: fs, weight: 700, color, align: 'left' });
   } else {
     txt(main, cx, ty, { size: 14.5 * UI, weight: 700, color, maxW: w - pad });
   }
-  txt(sub, cx, y + h * 0.71, { size: 10 * UI, weight: 500, color: COL.sub, maxW: w - pad });
+  // 枠のすぐ内側に文字が来ると窮屈に見える。左右に見える余白を残す。
+  txt(sub, cx, y + h * 0.71, { size: 10 * UI, weight: 500, color: COL.sub, maxW: w - 26 * UI });
   game.menuBtns.push({ id, x, y, w, h });
 }
 function drawBtn(id, x, y, w, h, text, color, glow, spinner = false, fs = 15 * UI) {
@@ -1173,28 +1178,56 @@ function drawCoopLobby() {
   let chipsBottom = 0;             // モード選択チップの下端
   let statusBottom = 0;            // 接続表示+顔ぶれの下端。ボタンはこれより下に置く
 
-  txt(t('coop'), W / 2, vy(0.085), { size: 21 * UI, weight: 800, color: COL.mint, family: FONT_DISPLAY });
-  txt(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, vy(0.118), { size: 10.5 * UI, weight: 500, color: COL.mute });
+  // 見出しも割合で置くと、縦の短い端末で副題が題に食い込む(21px と 10.5px の
+  //   半分ずつで 16px 要るのに、割合の差が 15px しか無かった)。字の高さで置く。
+  const headY = SAFE.top + 24 * UI;
+  txt(t('coop'), W / 2, headY, { size: 21 * UI, weight: 800, color: COL.mint, family: FONT_DISPLAY, maxW: W * 0.72 });
+  txt(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, headY + 23 * UI,
+    { size: 10.5 * UI, weight: 500, color: COL.mute, maxW: W * 0.86 });
+  const headBottom = headY + 34 * UI;
 
   game.menuBtns = [];
   const bw = Math.min(W * 0.82, 348), bx = (W - bw) / 2;
 
   if (host && !joining) {
-    // QR(かざすだけ) + あいことば
-    const joinUrl = Coop.inviteUrl();
-    const box = Math.min(W * 0.40, 142 * UI);
-    const qy = vy(0.27);
-    const ok = drawQR(joinUrl, W / 2, qy, box);
-    if (!ok) txt('QR --', W / 2, qy, { size: 12 * UI, color: COL.mute });
-    txt(ja ? 'カメラでかざすだけ' : 'SCAN TO JOIN', W / 2, qy + box / 2 + 18 * UI,
-      { size: 9.5 * UI, weight: 600, color: COL.mint, track: 1.8 });
+    // **上半分も下から順に場所を決める。**
+    //   前は QR・あいことば・チップを画面の割合(vy)で置いていた。iPhone SE では
+    //   「カメラでかざすだけ」がコードの上に乗り、「または あいことば」が QR の
+    //   上に乗った —— 一番肝心な、友達を呼ぶ画面が読めなくなっていた。
+    //   下のボタンに要る高さを先に取り置いて、残りに QR を合わせる。
+    const rows = Coop.connected
+      ? Math.ceil(Coop.roster().length / (Coop.roster().length > 2 ? 2 : 1)) : 0;
+    const statusNeed = 26 * UI + rows * 17 * UI;
+    const btnNeed = Coop.connected
+      ? (52 + 8 + 40) * UI + (Coop.via() === 'relay' && Coop.playerCount() < 4 ? 16 * UI : 0)
+      : (44 + 8 + 44 + 8 + 40) * UI;
+    const yStart = Math.max(vy(0.145), headBottom);
+    const room = (H - SAFE.bottom) - 14 * UI - btnNeed - statusNeed - yStart;
 
-    const cy2 = vy(0.455);
-    txt(ja ? 'または あいことば' : 'OR ENTER CODE', W / 2, cy2 - 20 * UI, { size: 9.5 * UI, weight: 600, color: COL.mute, track: 1.8 });
-    txt(Coop.code || '------', W / 2, cy2 + 10 * UI, { size: 32 * UI, weight: 800, color: '#fff', track: 5 * UI });
+    const boxMax = Math.min(W * 0.40, 142 * UI);
+    // 伸縮するのは QR とすき間。文字は縮めない(読めなくなるなら出す意味がない)
+    const fixed = 12 * UI + 12 * UI + 34 * UI + 36 * UI;      // 2つの小見出し + コード + チップ
+    const gaps = 16 * UI + 18 * UI + 10 * UI + 14 * UI;
+    const k = clamp((room - fixed) / (boxMax + gaps), 0.5, 1);
+    const box = boxMax * k, g = v => v * UI * k;
+
+    const joinUrl = Coop.inviteUrl();
+    let y = yStart + box / 2;
+    const ok = drawQR(joinUrl, W / 2, y, box);
+    if (!ok) txt('QR --', W / 2, y, { size: 12 * UI, color: COL.mute });
+    y += box / 2 + g(16);
+    txt(ja ? 'カメラでかざすだけ' : 'SCAN TO JOIN', W / 2, y,
+      { size: 9.5 * UI, weight: 600, color: COL.mint, track: 1.8, maxW: bw });
+    y += 12 * UI + g(18);
+    txt(ja ? 'または あいことば' : 'OR ENTER CODE', W / 2, y,
+      { size: 9.5 * UI, weight: 600, color: COL.mute, track: 1.8, maxW: bw });
+    y += 12 * UI + g(10);
+    txt(Coop.code || '------', W / 2, y + 15 * UI,
+      { size: 30 * UI, weight: 800, color: '#fff', track: 5 * UI, maxW: bw });
+    y += 34 * UI + g(14);
 
     // 遊ぶ面
-    const half = (bw - 9 * UI) / 2, my = vy(0.525);
+    const half = (bw - 9 * UI) / 2, my = y;
     chipsBottom = my + 36 * UI;
     const chip = (id, x, tx, sel, col) => {
       surface(x, my, half, 36 * UI, { r: 12, fill: sel ? col : 'rgba(13,19,40,0.82)', border: sel ? col : 'rgba(255,255,255,0.16)', lw: 2 });
@@ -1205,8 +1238,10 @@ function drawCoopLobby() {
     chip('coopModeStory', bx, t('mode_story'), Coop.mode === 'story', COL.sky);
     chip('coopModeAi', bx + half + 9 * UI, t('mode_endless'), Coop.mode === 'ai', COL.violet);
   } else if (!joining) {
-    txt(ja ? 'あいことば' : 'ROOM CODE', W / 2, vy(0.30), { size: 9.5 * UI, weight: 600, color: COL.mute, track: 1.8 });
-    txt(Coop.code || '------', W / 2, vy(0.36), { size: 38 * UI, weight: 800, color: '#fff', track: 5 * UI });
+    // ゲスト側も見出しから流す(割合だけだと縦の短い端末で詰まる)
+    const gy = Math.max(vy(0.30), headBottom + 28 * UI);
+    txt(ja ? 'あいことば' : 'ROOM CODE', W / 2, gy, { size: 9.5 * UI, weight: 600, color: COL.mute, track: 1.8, maxW: bw });
+    txt(Coop.code || '------', W / 2, gy + 32 * UI, { size: 36 * UI, weight: 800, color: '#fff', track: 5 * UI, maxW: bw });
   }
 
   if (joining) return;   // 以降はHTMLフォームが担当
@@ -1254,11 +1289,15 @@ function drawCoopLobby() {
     }[Coop.status] || [ja ? '接続できませんでした' : 'Connection failed', ja ? 'もう一度お試しください' : 'Please try again'];
     txt(S[0], W / 2, sy - 8 * UI, { size: 11.5 * UI, weight: 700, color: '#ffb37f', maxW: bw });
     txt(S[1], W / 2, sy + 9 * UI, { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
+    statusBottom = sy + 19 * UI;
   } else {
     txt(host ? (ja ? '相方の参加を待っています…' : 'waiting for your partner…')
       : (ja ? 'ホストに接続中…' : 'connecting to host…'), W / 2, sy,
       { size: 11.5 * UI, weight: 500, color: COL.gold, alpha: 0.55 + 0.45 * Math.sin(time * 4) });
+    statusBottom = sy + 10 * UI;
   }
+  // どの枝を通っても statusBottom が立つようにする。**繋がっていないときだけ
+  //   0 のまま**だったので、下のボタンは画面の割合に戻り、チップの上に乗った。
 
   // 顔ぶれは人数で縦に伸びる。ボタンを画面の割合で固定すると、
   //   縦の短い端末(iPhone SE 等)で4人ぶんの名前と重なる。下から流し込む。
@@ -1741,19 +1780,36 @@ function drawFinale() {
 
 function drawGameOver() {
   ctx.fillStyle = 'rgba(0,0,0,0.74)'; ctx.fillRect(0, 0, W, H);
-  label(t('game_over'), W / 2, vy(0.20), '#ff3030', 30 * UI);
+  // 見出しは上から流す。ボタンは下から積む。両方を画面の割合で置くと、
+  //   ボタンが1つ増えた瞬間に下がホームバーの下へ潜る。
+  let hy = Math.max(vy(0.17), SAFE.top + 34 * UI);
+  label(t('game_over'), W / 2, hy, '#ff3030', 30 * UI); hy += 32 * UI;
   const r = game.lastResult;
-  if (r && (game.endless)) label(`${t('world')} ${r.world}`, W / 2, vy(0.28), '#b98cff', 17 * UI);
-  label(t('score') + ' ' + game.score, W / 2, vy(0.345), '#fff', 16 * UI);
-  if (game.score >= game.hi && game.score > 0) label(t('new_record'), W / 2, vy(0.40), '#ffd700', 13 * UI);
-  if (game.skinFlash > 0) label(t('new_skin') + ' ' + Save.currentSkin().name, W / 2, vy(0.44), '#7CFC00', 13 * UI);
+  if (r && game.endless) { label(`${t('world')} ${r.world}`, W / 2, hy, '#b98cff', 17 * UI); hy += 22 * UI; }
+  label(t('score') + ' ' + game.score, W / 2, hy, '#fff', 16 * UI); hy += 22 * UI;
+  if (game.score >= game.hi && game.score > 0) { label(t('new_record'), W / 2, hy, '#ffd700', 13 * UI); hy += 19 * UI; }
+  if (game.skinFlash > 0) { label(t('new_skin') + ' ' + Save.currentSkin().name, W / 2, hy, '#7CFC00', 13 * UI); hy += 19 * UI; }
+
   game.overBtns = [];
-  const bw = Math.min(W * 0.74, 330), bh = 48 * UI, bx = W / 2 - bw / 2, gap = 13 * UI;
-  let by = vy(0.50);
-  if (game.continues > 0) { overBtn('continue', bx, by, bw, bh, `${t('continue')} (${t('remain')} ${game.continues})`, '#00cc88'); by += bh + gap; }
-  overBtn('share', bx, by, bw, bh, t('share'), '#ff8bd0'); by += bh + gap;
-  overBtn('retry', bx, by, bw, bh, t('retry'), '#8fd3ff'); by += bh + gap;
-  overBtn('title', bx, by, bw, bh, t('to_title'), '#5577aa');
+  const items = [];
+  if (game.continues > 0) items.push(['continue', `${t('continue')} (${t('remain')} ${game.continues})`, '#00cc88']);
+  // **うまくいかない子に、その場で道を出す。**
+  //   むずかしさは設定パネルの中にあり、詰まっている子が自力で見つけるとは
+  //   考えにくい。行き詰まったこの画面で一度だけ差し出す。
+  //   序盤で終わったときだけ —— 先まで進めている人に出すのは失礼にあたる。
+  if (Save.diff() > 0 && game.stageIndex <= 1 && !game.coop) {
+    items.push(['easier', t('make_easier'), '#ffd166']);
+  }
+  items.push(['share', t('share'), '#ff8bd0']);
+  items.push(['retry', t('retry'), '#8fd3ff']);
+  items.push(['title', t('to_title'), '#5577aa']);
+
+  const bw = Math.min(W * 0.74, 330), bx = W / 2 - bw / 2, gap = 10 * UI;
+  const bottom = H - SAFE.bottom - 12 * UI;
+  const avail = bottom - (hy + 14 * UI);
+  const bh = clamp((avail - gap * (items.length - 1)) / items.length, 34 * UI, 48 * UI);
+  let by = bottom - (bh * items.length + gap * (items.length - 1));
+  for (const [id, text, col] of items) { overBtn(id, bx, by, bw, bh, text, col); by += bh + gap; }
 }
 function overBtn(id, x, y, w, h, text, color) {
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; roundRect(x, y, w, h, 12); ctx.fill();

@@ -85,6 +85,41 @@ test('全員がどこかで一番、どこかで最下位に近い(平均だけ�
   assert.equal(flat.length, 0, `どこかで抜きん出ていること。平べったいキャラ: ${flat.join(', ')}`);
 });
 
+test('「みのこなし」は本当に効いている(指で動かす端末でも)', async () => {
+  // 前のカードには「スピード」と書いてあったが、指でドラッグする限り
+  // その値は移動に効いていなかった —— 数字だけがそこにあった。
+  // いまは当たり判定の小ささとして効かせている。**同じ弾で、身軽な子は
+  // 当たらず、鈍い子は当たる**ことを確かめる。ここが崩れたらカードが嘘になる。
+  const h = await boot({ seed: 202 });
+  const { Save } = await import('../src/save.js');
+  const nimble = CHARS.reduce((a, c) => (c.speed > a.speed ? c : a), CHARS[0]);
+  const heavy = CHARS.reduce((a, c) => (c.speed < a.speed ? c : a), CHARS[0]);
+
+  const dies = (id, gap) => {
+    Save.setChar(CHARS.findIndex(c => c.id === id));
+    h.engine.startRun(0);
+    const g = h.state.game;
+    g.state = 'play'; g.introT = 0;
+    g.enemies.length = 0; g.eBullets.length = 0;
+    const p = g.player;
+    p.inv = false; p.invT = 0; p.shield = false;
+    const before = g.lives;
+    // 当たり判定の縁ぎわに、止まった弾を1発置く
+    g.eBullets.push({ x: p.x + gap, y: p.y, vx: 0, vy: 0, size: 2, tt: 0 });
+    sim(h, { steps: 3, bot: Bot.idle });
+    return h.state.game.lives < before || h.state.game.player.dead;
+  };
+
+  // 身軽な子には当たらず、鈍い子には当たる隙間を探す
+  let found = null;
+  for (let gap = 5; gap <= 12; gap += 0.5) {
+    if (!dies(nimble.id, gap) && dies(heavy.id, gap)) { found = gap; break; }
+  }
+  shutdown(h);
+  assert.ok(found !== null,
+    `同じ弾で結果が分かれる隙間があること (${nimble.en} speed=${nimble.speed} / ${heavy.en} speed=${heavy.speed})`);
+});
+
 test('カードの数字と実際の弾が同じ向きを向いている', async () => {
   // 弾速の棒が実際の弾速と逆だと、カードは嘘になる。
   const h = await boot({ seed: 201 });

@@ -2058,6 +2058,8 @@ export function handleOverTap(x, y) {
       if (btn.id === 'continue') doContinue();
       else if (btn.id === 'share') shareRun();
       else if (btn.id === 'retry') retryRun();
+      // 押した効果が分かるように、やり直したあとに一度だけ知らせる
+      else if (btn.id === 'easier') { Save.setDiff(Math.max(0, Save.diff() - 1)); retryRun(); popup(W / 2, H * 0.4, t('made_easier'), '#ffd166'); }
       else toTitle();
       return;
     }
