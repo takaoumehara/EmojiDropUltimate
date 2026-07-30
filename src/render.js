@@ -18,6 +18,9 @@ import { chapterOf, missionFor, finalMissionFor } from './story.js';
 import { chapterStages } from './aistage.js';
 
 // 章の面を毎フレーム組み立てるのは無駄なので、章が変わるまで持っておく。
+// メニューを持つ画面。ここに無い画面ではボタンのリストを空にする。
+const MENU_STATES = new Set(['title', 'coop', 'chars', 'clear']);
+
 let mapCache = { ch: -1, stages: null };
 function mapStages(ch) {
   if (mapCache.ch !== ch || !mapCache.stages) mapCache = { ch, stages: chapterStages(ch, STAGES) };
@@ -520,7 +523,12 @@ function drawBells() {
       ctx.font = `${Math.round(11 * UI)}px serif`; ctx.fillText('🔒', bl.size + 9, -bl.size - 2);
       ctx.globalAlpha = 1;
     }
-    label(bt.name, 0, bl.size + 16, bt.color, 10 * UI);
+    // ベルの名前は HUD の隅に入らないところだけに出す。
+    //   左上のスコアの上に「SCORE」というベル名が重なって、どちらも
+    //   読めなくなっていた。表示より **読めること** を優先する。
+    const inHud = (bl.y < 56 * UI + SAFE.top && (bl.x < 132 * UI + SAFE.left || bl.x > W - 118 * UI - SAFE.right))
+                || bl.y > H - 62 * UI - SAFE.bottom;
+    if (!inHud) label(bt.name, 0, bl.size + 16, bt.color, 10 * UI);
     ctx.restore();
   }
 }
@@ -537,7 +545,10 @@ function drawPopups() {
   ctx.textAlign = 'center';
   for (const s of game.popups) {
     ctx.globalAlpha = clamp(s.life, 0, 1);
-    label(s.text, s.x, s.y - (1 - s.life) * 46, s.color, 13 * UI);
+    // 敵の位置に出るので、端で倒すと画面外へ切れる(「+150」の左半分が消える)。
+    //   画面の中へ寄せる —— どこで倒しても点が読めるほうが正しい。
+    const m = 34 * UI;
+    label(s.text, clamp(s.x, m, W - m), s.y - (1 - s.life) * 46, s.color, 13 * UI);
   }
   ctx.globalAlpha = 1;
 }
@@ -716,10 +727,12 @@ function drawTitle() {
   // 世界マップは top より 46*UI 上に描かれるので、その上端が
   //   天気の下端より下に来るところまで top を押し下げる。
   //   Chrome の URL バーで縦が短い端末では、ここが効かないと必ず重なる。
-  const mapH = 46 * UI;
+  const mapH = 64 * UI;   // my = by - 64*UI と揃える。ずれると天気の行に重なる
   let top = Math.max(wy + 48 * UI, weatherBottom + mapH + 14 * UI);
   const avail = vy(0.885) - top;
-  const need = h1 + gap + h2 + gap + h3 + (streak ? 26 * UI : 0) + 44 * UI;
+  // マップ(絵)+ 見出しの行 の2段ぶんを取り置く。44*UI だと見出しの行が
+  //   絵の下に潜って、iPhone SE では 📖 が最後のマスに重なった。
+  const need = h1 + gap + h2 + gap + h3 + (streak ? 26 * UI : 0) + 74 * UI;
   if (need > avail) { const k = avail / need; h1 *= k; h2 *= k; h3 *= k; gap *= k; }
   else top += (avail - need) * 0.62;   // 下に穴が空いていたので、もう少し下へ寄せる
   let by = top;
@@ -730,7 +743,7 @@ function drawTitle() {
   //   最後の1枠は章のボスなので、色を変えて「大詰め」だと分かるようにする。
   const chStages = mapStages(Save.chapter());
   const done = Save.clearedCount(), res = Save.resumeStage();
-  const mw = Math.min(bw, 340), mx = (W - mw) / 2, my = by - 46 * UI;
+  const mw = Math.min(bw, 340), mx = (W - mw) / 2, my = by - 64 * UI;
   const cell = mw / chStages.length;
   const icon = Math.min(30 * UI, cell * 0.72);
   chStages.forEach((s, i) => {
@@ -750,23 +763,25 @@ function drawTitle() {
     ctx.restore();
     if (got) txt('✓', cx + cell * 0.28, my + icon * 0.5, { size: 10 * UI, weight: 800, color: '#7CFC00' });
   });
-  // 章の見出しと「ものがたり」を **同じ行で場所を分け合う**。
-  //   中央そろえの文の上に右端のボタンを置くと必ず重なる(実際に重なった)。
-  //   ボタンの幅を先に取り置いて、残りの真ん中に文を置く。
+  // 章の見出しと 📖 を **ひとつの行** として真ん中に置く。
+  //   マスと同じ幅の四角を右下に置いたら、8個目のマスに見えた。行の続きにする。
+  //   見出しは絵の下端より下(0.95倍だとマスの中に食い込む)。
   const chap = chapterOf(Save.chapter());
-  const pw = 40 * UI, ph = 30 * UI, pgap = 8 * UI;
-  const capR = mx + mw - pw - pgap;
-  const capY = my + icon * 0.95;
-  txt((ja ? `第${Save.chapter() + 1}章 ・ ${done}/${chStages.length}`
-          : `CH.${Save.chapter() + 1} · ${done}/${chStages.length}`),
-    (mx + capR) / 2, capY, { size: 10.5 * UI, weight: 700, color: done ? COL.mint : COL.gold, maxW: capR - mx - 8 * UI });
+  const capY = my + icon * 0.62 + 18 * UI;
+  const capTxt = ja ? `第${Save.chapter() + 1}章 ・ ${done}/${chStages.length}`
+                    : `CH.${Save.chapter() + 1} · ${done}/${chStages.length}`;
+  const capSize = 10.5 * UI, bookSize = 17 * UI, bookGap = 10 * UI;
+  f(capSize, 700);
+  const capW = Math.min(ctx.measureText(capTxt).width, mw - bookSize - bookGap - 12 * UI);
+  const rowW = capW + bookGap + bookSize, rowX = mx + (mw - rowW) / 2;
+  txt(capTxt, rowX, capY, { size: capSize, weight: 700, align: 'left',
+    color: done ? COL.mint : COL.gold, maxW: capW });
   // オープニングをもう一度。頼まれた「あとから見る場所」。
-  //   絵ひとつにしてあるのは、文字を入れると必ず見出しとぶつかるから。
   {
-    const px2 = mx + mw - pw, py2 = capY - ph / 2;
-    surface(px2, py2, pw, ph, { r: 9, fill: 'rgba(255,215,0,0.10)', border: 'rgba(255,215,0,0.45)', lw: 1.5 });
-    emojiCentered('📖', px2 + pw / 2, py2 + ph / 2, 15 * UI);
-    game.menuBtns.push({ id: 'story', x: px2 - 5 * UI, y: py2 - 6 * UI, w: pw + 10 * UI, h: ph + 12 * UI });
+    const bx2 = rowX + capW + bookGap;
+    emojiCentered('📖', bx2 + bookSize / 2, capY, bookSize);
+    // 絵は小さくても、指で押せる大きさ(44px相当)の当たり判定を持たせる
+    game.menuBtns.push({ id: 'story', x: bx2 - 13 * UI, y: capY - 17 * UI, w: bookSize + 26 * UI, h: 34 * UI });
   }
 
   // 主役: 単色ゴールドの実体ボタン(迷いようがない)
@@ -1992,6 +2007,13 @@ function drawVictory() {
 export function draw() {
   ctx.clearRect(0, 0, W, H);
   tickTint();
+  // **前の画面のボタンを持ち越さない。**
+  //   menuBtns は「その画面を描いた関数」が積み直す作りなので、メニューを
+  //   持たない画面に移ってもリストが残っていた。いまは当たり判定を読む側が
+  //   画面ごとに分かれているので実害は出ていないが、押せない場所に押せる
+  //   四角が残っているのは事故のもと。描く前に必ず空にする。
+  if (!MENU_STATES.has(game.state)) game.menuBtns = [];
+  if (game.state !== 'over' && game.state !== 'victory') game.overBtns = [];
   switch (game.state) {
     case 'splash': drawSplash(); break;
     case 'opening': drawOpening(); break;
