@@ -1249,7 +1249,9 @@ function drawCoopLobby() {
     //   下のボタンに要る高さを先に取り置いて、残りに QR を合わせる。
     const rows = Coop.connected
       ? Math.ceil(Coop.roster().length / (Coop.roster().length > 2 ? 2 : 1)) : 0;
-    const statusNeed = 26 * UI + rows * 17 * UI;
+    // 繋がる前は「◯秒待っています」の1行が必ず入りうる。ここに足しておかないと、
+    //   その1行のぶんだけ下のボタンが押し出され、iPhone SE で「戻る」が切れた。
+    const statusNeed = 26 * UI + rows * 17 * UI + (Coop.connected ? 0 : 18 * UI);
     const btnNeed = Coop.connected
       ? (52 + 8 + 40) * UI + (Coop.via() === 'relay' && Coop.playerCount() < 4 ? 16 * UI : 0)
       : (44 + 8 + 44 + 8 + 40) * UI;
@@ -1343,10 +1345,27 @@ function drawCoopLobby() {
     txt(S[1], W / 2, sy + 9 * UI, { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
     statusBottom = sy + 19 * UI;
   } else {
+    // **待っている理由と経過を出す。**
+    //   前はここが「相方の参加を待っています…」だけで、繋がらないのか
+    //   まだ来ていないだけなのか区別できなかった。しかも黙って2分近く待つ。
+    const secs = Math.floor(Coop.waitedSec());
     txt(host ? (ja ? '相方の参加を待っています…' : 'waiting for your partner…')
       : (ja ? 'ホストに接続中…' : 'connecting to host…'), W / 2, sy,
-      { size: 11.5 * UI, weight: 500, color: COL.gold, alpha: 0.55 + 0.45 * Math.sin(time * 4) });
+      { size: 11.5 * UI, weight: 500, color: COL.gold, alpha: 0.55 + 0.45 * Math.sin(time * 4), maxW: bw });
     statusBottom = sy + 10 * UI;
+    let note = '';
+    if (Coop.sigNote === 'net') note = ja ? '📵 通信が届いていません' : '📵 no connection';
+    else if (Coop.sigNote) note = ja ? `⚠︎ 出会いサーバーの応答が異常 (${Coop.sigNote})`
+                                    : `⚠︎ matchmaking server error (${Coop.sigNote})`;
+    else if (secs >= 12) note = host
+      ? (ja ? `${secs}秒 待っています · あいことばを伝えましたか?` : `waiting ${secs}s · did you share the code?`)
+      : (ja ? `${secs}秒 待っています · あいことばは合っていますか?` : `waiting ${secs}s · is the code correct?`);
+    else if (secs >= 3) note = ja ? `${secs}秒…` : `${secs}s…`;
+    if (note) {
+      txt(note, W / 2, sy + 17 * UI,
+        { size: 9.5 * UI, weight: 600, color: Coop.sigNote ? '#ffb37f' : COL.mute, maxW: bw });
+      statusBottom = sy + 27 * UI;
+    }
   }
   // どの枝を通っても statusBottom が立つようにする。**繋がっていないときだけ
   //   0 のまま**だったので、下のボタンは画面の割合に戻り、チップの上に乗った。

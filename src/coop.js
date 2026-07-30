@@ -124,6 +124,11 @@ export const Coop = {
   },
   _connect(tr) {
     this.transport = tr; this.status = 'connecting';
+    // いつから待っているか。**黙って待たせない**ために画面へ出す。
+    //   合図サーバーの取りこぼしは 117 秒だまって待ってから初めて見えていた。
+    //   子供はその前に諦めるし、こちらも原因が分からない。
+    this.connectAt = performance.now();
+    this.sigNote = '';
     tr.init().catch(e => {
       if (this.transport !== tr || tr.open) return;
       const m = String(e && e.message || '');
@@ -140,11 +145,18 @@ export const Coop = {
     this.status = '';
   },
 
+  /** 待ち始めてからの秒数。繋がっていれば 0。 */
+  waitedSec() {
+    if (this.connected || !this.connectAt) return 0;
+    return Math.max(0, (performance.now() - this.connectAt) / 1000);
+  },
+
   reset() {
     if (this.transport) this.transport.dispose();
     this.transport = null;
     this.active = false; this.connected = false; this.p2p = false;
     this.code = ''; this.seed = 0; this.status = '';
+    this.connectAt = 0; this.sigNote = '';
     this.peers.clear();
     this.myReady = false;
     this.bossShared = 0; this.bossSharedMax = 0; this.localDmg = 0;
@@ -382,12 +394,28 @@ class RtcTransport {
     if (r.status === 503) { this.sigDown = true; throw new Error('signal_off'); }
     if (!r.ok) throw new Error('signal ' + r.status);
   }
-  async poll(kind, tries = 90) {
+  /**
+   * 相手の返事を待つ。
+   *
+   * 90回 × 1.3秒 = **117秒** だまって回していた。ホストはその間ずっと
+   * 「相方の参加を待っています…」しか見えず、繋がらないのか待てばいいのか
+   * 区別できない。34回(約45秒)に短くし、返事が変なら **すぐ画面へ出す**。
+   */
+  async poll(kind, tries = 34) {
     for (let i = 0; i < tries; i++) {
       if (this.disposed) throw new Error('disposed');
-      const r = await fetch(`${SIG}?code=${this.code}&want=${kind}`);
+      let r;
+      try {
+        r = await fetch(`${SIG}?code=${this.code}&want=${kind}`);
+      } catch (e) {
+        // 電波が切れているだけのこともあるので回し続けるが、黙らない
+        this.c.sigNote = 'net';
+        await new Promise(res => setTimeout(res, 1300));
+        continue;
+      }
       if (r.status === 503) { this.sigDown = true; throw new Error('signal_off'); }
-      if (r.ok) { const j = await r.json(); if (j.sdp) return j.sdp; }
+      if (!r.ok) { this.c.sigNote = 'http' + r.status; }
+      else { this.c.sigNote = ''; const j = await r.json(); if (j.sdp) return j.sdp; }
       await new Promise(res => setTimeout(res, 1300));
     }
     throw new Error('timeout');

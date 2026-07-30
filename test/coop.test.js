@@ -136,3 +136,35 @@ test('ホストの引き継ぎ指名を受けると役割が変わり、engine �
   assert.equal(called, 1);
   c.onBecomeHost = null;
 });
+
+// ============================================================
+// 待っているあいだ、黙らない
+//
+// ホストは 90回 × 1.3秒 = 117秒 のあいだ「相方の参加を待っています…」
+// だけを見せられていた。繋がらないのか、まだ来ていないだけなのかが
+// 区別できず、実際に「二人プレーができない」という報告になった。
+// 経過と原因が必ず出ることを固定する。
+// ============================================================
+
+test('待ち始めた時刻が記録され、経過が読める', async () => {
+  const { Coop } = await import('../src/coop.js');
+  Coop.reset();
+  assert.equal(Coop.waitedSec(), 0, '待っていなければ0');
+  Coop.active = true; Coop.role = 'host';
+  Coop.connectAt = performance.now() - 5000;
+  Coop.connected = false;
+  const w = Coop.waitedSec();
+  assert.ok(w >= 4.5 && w <= 6, `経過が秒で読めること (${w})`);
+  Coop.connected = true;
+  assert.equal(Coop.waitedSec(), 0, '繋がったら経過は出さない');
+  Coop.reset();
+});
+
+test('reset で待ちの記録も消える(前回の秒数が残らない)', async () => {
+  const { Coop } = await import('../src/coop.js');
+  Coop.connectAt = performance.now() - 9000; Coop.sigNote = 'http500';
+  Coop.reset();
+  assert.equal(Coop.connectAt, 0);
+  assert.equal(Coop.sigNote, '');
+  assert.equal(Coop.waitedSec(), 0);
+});
