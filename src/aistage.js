@@ -4,6 +4,7 @@
 //   失敗/未接続時は端末内でユニークなステージを手続き生成する(オフラインOK)。
 // ============================================================
 import { rand, randInt, pick, clamp, STYLE_KEYS, makeRng, hashStr } from './config.js';
+import { finalStage } from './story.js';
 
 const DIRS_LIST = ['up', 'right', 'down', 'left'];
 const HEX = /^#([0-9a-fA-F]{6})$/;
@@ -103,21 +104,40 @@ export function proceduralStage(rng = Math.random, themeIdx = -1) {
 // === 章(チャプター): 6ステージで1章。制覇したら次の章が開く ===
 //   第1章は手書きの6ステージ。第2章以降はテーマから決定論生成するので、
 //   誰がいつ遊んでも同じ内容になり、章が進むほど手強くなる。
+/**
+ * 章の6面。
+ *
+ * 6面クリアで章が終わるだけだと「終わった」感じが出ない。**7面目として
+ * 章のボスを足す**(story.js の finalStage)。倒した6体が合体して出てくる。
+ * ここで足しておけば、進行・セーブ・共闘の数え方は全部そのまま通る
+ * (どれも game.stages.length を見ているので)。
+ */
 export function chapterStages(n, baseStages) {
-  if (n <= 0) return JSON.parse(JSON.stringify(baseStages));
-  // テーマが被らないよう、章ごとに決定論シャッフルしてから6つ取る
-  const order = THEMES.map((_, i) => i);
-  const shuf = makeRng(hashStr(`chapter-order-${n}`));
-  for (let i = order.length - 1; i > 0; i--) {
-    const j = Math.floor(shuf() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  const out = [];
-  for (let i = 0; i < 6; i++) {
-    const rng = makeRng(hashStr(`chapter-${n}-${i}`));
-    out.push(scaleStage(proceduralStage(rng, order[i]), 1 + n * 2 + i * 0.4));
-  }
-  return out;
+  const six = n <= 0 ? JSON.parse(JSON.stringify(baseStages)).slice(0, 6) : (() => {
+    // テーマが被らないよう、章ごとに決定論シャッフルしてから6つ取る
+    const order = THEMES.map((_, i) => i);
+    const shuf = makeRng(hashStr(`chapter-order-${n}`));
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(shuf() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const out = [];
+    for (let i = 0; i < 6; i++) {
+      const rng = makeRng(hashStr(`chapter-${n}-${i}`));
+      out.push(scaleStage(proceduralStage(rng, order[i]), 1 + n * 2 + i * 0.4));
+    }
+    return out;
+  })();
+  const raw = finalStage(n, six);
+  const fin = normalizeStage(raw);
+  // normalizeStage は知らない項目を落とし、dur を道中の長さに揃えてしまう。
+  //   最後の1面は道中を歩く場所ではないので、短さと印をここで戻す。
+  fin.finale = true;
+  fin.dur = raw.dur;
+  fin.bpm = raw.bpm;
+  const out = n <= 0 ? fin : scaleStage(fin, 1 + n * 2 + 2.4);
+  out.finale = true; out.dur = raw.dur;
+  return six.concat([out]);
 }
 
 // エンドレス用: ワールドが進むほど強く(世界1=等倍)

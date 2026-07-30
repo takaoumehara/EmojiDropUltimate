@@ -50,6 +50,11 @@ export async function boot(opt = {}) {
   const config = await import('../src/config.js');
   const geo = await import('../src/geo.js');
   const { Snd } = await import('../src/audio.js');
+  // オープニングは「一度だけ自動で出る」ので、画面なしの検査では見たことにする。
+  //   ここを外すと startRun がオープニングに寄り道して、遊びの検査が全部止まる。
+  //   オープニング自体は test/story.test.js が受け持つ。
+  const { Save } = await import('../src/save.js');
+  if (!opt.story) for (let i = 0; i < 8; i++) Save.markSawStory(i);
   // 画面なしの実行にスピーカーは無い。鳴らさないと決めておけば
   //   BGM スケジューラが毎回の刻みで空回りする分も消える。
   Snd.muted = true;

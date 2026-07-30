@@ -75,12 +75,13 @@ test('save: markCleared rollover works when stages are cleared out of numeric or
   assert.equal(Save.chapter(), 1);
 });
 
-test('save: resumeStage only returns values within (0, 6)', async () => {
+test('save: resumeStage は 1章の面数の中だけを返す', async () => {
+  // 1章は「道中6面 + 決着1面」= 7面。境界も一緒に固定する。
   const Save = await freshSave(makeMemoryLocalStorage());
   assert.equal(Save.resumeStage(), 0, 'resume=0 means "start from stage 0"');
-  Save.data.resume = 5;
-  assert.equal(Save.resumeStage(), 5);
-  Save.data.resume = 6; // out of range, should not be trusted
+  Save.data.resume = 6;
+  assert.equal(Save.resumeStage(), 6, '決着の1面もつづきの対象になること');
+  Save.data.resume = 7; // out of range, should not be trusted
   assert.equal(Save.resumeStage(), 0, 'resumeStage must guard against an out-of-range resume value');
 });
 

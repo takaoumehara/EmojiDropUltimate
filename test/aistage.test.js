@@ -141,12 +141,17 @@ test('proceduralStage: different seeds usually produce different stages', () => 
   assert.notDeepEqual(a, b, 'different seeds should not coincidentally produce identical stages');
 });
 
-test('chapterStages: returns exactly 6 stages with 6 distinct themes', () => {
+test('chapterStages: 道中6面 + 決着の1面 = 7面。道中のテーマは全部ちがう', () => {
+  // 6面だけだと「終わった」感じが出ないので、7面目に章のボスを足した。
   const stages = chapterStages(1, STAGES);
-  assert.equal(stages.length, 6, 'a chapter must contain exactly 6 stages');
+  assert.equal(stages.length, 7, 'a chapter is 6 stages plus one finale');
   for (const s of stages) assertValidChapterStage(s, 'chapterStages stage');
-  const names = stages.map(s => s.name);
-  assert.equal(new Set(names).size, 6, `chapterStages must pick 6 DISTINCT themes, got names: ${JSON.stringify(names)}`);
+  const names = stages.slice(0, 6).map(s => s.name);
+  assert.equal(new Set(names).size, 6, `the six road stages must pick 6 DISTINCT themes, got: ${JSON.stringify(names)}`);
+  const fin = stages[6];
+  assert.equal(fin.finale, true, 'the last stage must be marked as the finale');
+  assert.ok(fin.dur < stages[0].dur, 'the finale is a boss fight, not a road — it must be shorter');
+  assert.ok(fin.boss && fin.boss.hp > 0, 'the finale must have a boss');
 });
 
 test('chapterStages: deterministic per chapter number', () => {
@@ -158,14 +163,15 @@ test('chapterStages: deterministic per chapter number', () => {
 test('chapterStages: different chapters generally differ, and difficulty scales up', () => {
   const ch1 = chapterStages(1, STAGES);
   const ch2 = chapterStages(2, STAGES);
-  assert.notDeepEqual(ch1.map(s => s.name), ch2.map(s => s.name), 'consecutive chapters should not reuse the exact same theme order');
+  assert.notDeepEqual(ch1.slice(0, 6).map(s => s.name), ch2.slice(0, 6).map(s => s.name), 'consecutive chapters should not reuse the exact same theme order');
   // Later chapters scale enemy hp up (see scaleStage); spot-check on stage 0.
   assert.ok(ch2[0].boss.hp >= ch1[0].boss.hp * 0.9, 'later chapters should not be dramatically weaker than earlier ones');
 });
 
-test('chapterStages: n<=0 returns an independent deep copy of baseStages', () => {
+test('chapterStages: 第1章の道中は手書きのまま、しかも独立したコピー', () => {
   const copy = chapterStages(0, STAGES);
-  assert.deepEqual(copy, STAGES, 'chapter 0 must reproduce the base stages content exactly');
+  assert.deepEqual(copy.slice(0, 6), STAGES.slice(0, 6),
+    'chapter 1 must reproduce the hand-made stages exactly');
   copy[0].name = 'MUTATED';
   assert.notEqual(STAGES[0].name, 'MUTATED', 'mutating the returned copy must not affect the original STAGES data');
 });

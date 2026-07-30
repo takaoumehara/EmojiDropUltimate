@@ -19,6 +19,7 @@ import { Coop } from './coop.js';
 import { Diag } from './diag.js';
 import { SUPERS, superKeyOf, SUPER_MAX, SUPER_GAIN, FUSION_WINDOW, fusionMul } from './super.js';
 import { TETHER, updateTether, newTetherState, bossDamageMul } from './tether.js';
+import { chapterOf, missionFor, finalMissionFor } from './story.js';
 
 // ストレージ無効環境でも落ちないように
 // 配列を複製してシャッフル(元データは壊さない)
@@ -1429,6 +1430,9 @@ function bossDefeated() {
   else if (game.stageIndex >= game.stages.length - 1) { kind = 'victory'; recordRunEnd({}); }
   else kind = 'stage';
   const big = kind === 'victory' || kind === 'coop';
+  // 章を制覇したら「次のショー」を予告する。ここが無いと、6面(+決着の1面)を
+  //   終えても静かに次章へ入れ替わるだけで、区切りが起きたことに気づけない。
+  if (story && chapterDone) { game.showChapter = Save.chapter(); game.showT = 5200; }
   Diag.stageFinished(game.stageIndex);
   game.finale = { t: 0, dur: big ? 3400 : 2300, kind, bx, by, emoji, bonus, snd: false };
   game.state = 'finale';
@@ -1863,9 +1867,55 @@ function freshGame() {
   Director.reset(); Save.startRun();
 }
 
+/**
+ * オープニングを見せる。
+ *
+ * @param ch      どの章
+ * @param andPlay 見終わったら遊びはじめるか。false ならタイトルへ戻る
+ *
+ * 章のはじまりに一度だけ自動で出す。二度目からは出さない —— 出続けると
+ * 「早く遊ばせろ」になる。かわりにタイトルからいつでも見返せるようにする。
+ */
+export function openStory(ch, andPlay) {
+  Snd.init();
+  game.openChapter = ch | 0;
+  game.openBeat = 0; game.openT = 0;
+  game.openReturn = andPlay ? 'play' : 'title';
+  game.state = 'opening';
+}
+
+/** 1コマの表示時間。読み終わる前に流れないだけの長さ。 */
+export const BEAT_MS = 3200;
+
+/** 次のコマへ。最後のコマを終えたら本編へ(または戻る)。 */
+export function advanceOpening() {
+  const beats = chapterOf(game.openChapter).beats;
+  game.openBeat++; game.openT = 0;
+  if (game.openBeat < beats.length) return;
+  game.openBeat = beats.length - 1;
+  Save.markSawStory(game.openChapter);
+  if (game.openReturn === 'play') {
+    // ここから始める。startRun がまたオープニングを出さないように印を立てる。
+    game.openStarting = true;
+    startRun(0, false);
+    game.openStarting = false;
+  } else game.state = 'title';
+}
+
+/** 最後まで見ずに飛ばす。 */
+export function skipOpening() {
+  game.openBeat = chapterOf(game.openChapter).beats.length - 1;
+  advanceOpening();
+}
+
 export function startRun(from = 0, resume = false) {
+  // その章のオープニングを一度も見ていなければ、先に見せてから始める。
+  if (!game.openStarting && from === 0 && !resume && !Save.sawStory(Save.chapter())) {
+    openStory(Save.chapter(), true);
+    return;
+  }
   Snd.init(); freshGame();
-  game.stages = chapterStages(Save.chapter(), STAGES);   // 章ごとに6ステージ
+  game.stages = chapterStages(Save.chapter(), STAGES);   // 章ごとに6ステージ + 決着の1面
   game.chapter = Save.chapter();
   const idx = clamp(from, 0, game.stages.length - 1);
   Diag.runStarted();
@@ -2085,6 +2135,12 @@ export function update(dt, keys) {
     case 'chars':
       game.titleAnim += dt;
       break;
+    case 'opening':
+      // コマは自動でめくれる。待てば進むし、タップでも進む(input 側)。
+      game.titleAnim += dt;
+      game.openT += dt * 1000;
+      if (game.openT >= BEAT_MS) advanceOpening();
+      break;
     case 'intro':
       game.introT -= dt * 1000;
       updateBg(dt);
@@ -2147,6 +2203,8 @@ export function update(dt, keys) {
     case 'victory':
       if (Math.random() < 0.35) particles(rand(0, W), rand(0, H * 0.5), 5, pick(['#ffd700', '#ff66aa', '#66ffcc', '#8fd3ff']));
       updateParticles(dt);
+      // 章を制覇したときだけ「つぎのショー」を重ねる。終わったら勝利画面に戻る。
+      if (game.showT > 0) game.showT -= dt * 1000;
       break;
     case 'pause':
       break;

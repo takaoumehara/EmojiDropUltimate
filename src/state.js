@@ -60,6 +60,13 @@ export function newGame() {
     //   相方とのあいだに張る線。触れた敵を切る。ひとりでは張れない。
     tether: null,       // tether.js の newTetherState()。共闘の初回更新で作る
     charView: 'card', charDrag: 0, charReturn: null,   // キャラ選択: カード/一覧・スワイプ量・戻り先
+    // === オープニング(章のはじまり) ===
+    openBeat: 0,        // いま何コマ目か
+    openT: 0,           // そのコマの経過(ms)
+    openReturn: 'title',// 見終わったあとどこへ戻るか('play'=そのまま始める)
+    openChapter: 0,     // どの章のオープニングを見ているか
+    showT: 0,           // 章を制覇した瞬間の「次のショー」演出(ms)
+    showChapter: 0,     // その演出で見せる次章
   };
 }
 

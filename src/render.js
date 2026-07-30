@@ -14,6 +14,15 @@ import { Coop } from './coop.js';
 import { BELL_LOCK_R } from './engine.js';
 import { SUPERS, superKeyOf, SUPER_MAX } from './super.js';
 import { TETHER } from './tether.js';
+import { chapterOf, missionFor, finalMissionFor } from './story.js';
+import { chapterStages } from './aistage.js';
+
+// 章の面を毎フレーム組み立てるのは無駄なので、章が変わるまで持っておく。
+let mapCache = { ch: -1, stages: null };
+function mapStages(ch) {
+  if (mapCache.ch !== ch || !mapCache.stages) mapCache = { ch, stages: chapterStages(ch, STAGES) };
+  return mapCache.stages;
+}
 import { txt, gtxt, wrapTxt, wrapLines, surface, scrim, roundPath, COL, FONT_UI, FONT_DISPLAY } from './theme.js';
 import { qrMatrix } from './qr.js';
 
@@ -715,30 +724,50 @@ function drawTitle() {
   else top += (avail - need) * 0.62;   // 下に穴が空いていたので、もう少し下へ寄せる
   let by = top;
 
-  // 制覇マップ: 6つの世界のうちどこまで進んだかを一目で(=目標が見える)
+  // 制覇マップ。**いま挑んでいる章の面を見せる。**
+  //   ここは長らく STAGES(第1章の手書き6面)を決め打ちで描いていた。
+  //   第2章以降は中身が生成物なので、進んでも絵が変わらず嘘になっていた。
+  //   最後の1枠は章のボスなので、色を変えて「大詰め」だと分かるようにする。
+  const chStages = mapStages(Save.chapter());
   const done = Save.clearedCount(), res = Save.resumeStage();
-  // 19px では何のステージか読めなかったので、幅いっぱいを使って大きくする。
   const mw = Math.min(bw, 340), mx = (W - mw) / 2, my = by - 46 * UI;
-  const cell = mw / STAGES.length;
+  const cell = mw / chStages.length;
   const icon = Math.min(30 * UI, cell * 0.72);
-  STAGES.forEach((s, i) => {
+  chStages.forEach((s, i) => {
     const cx = mx + (i + 0.5) * cell;
     const got = Save.isCleared(i);
     const here = !got && i === res;
+    const fin = !!s.finale;
     // 済み/現在地/未踏がひと目で分かるよう、下地を敷いて区別する
     surface(cx - cell * 0.42, my - icon * 0.62, cell * 0.84, icon * 1.24, {
-      r: 9, fill: got ? 'rgba(124,252,0,0.13)' : here ? 'rgba(255,215,0,0.14)' : 'rgba(255,255,255,0.05)',
-      border: got ? 'rgba(124,252,0,0.5)' : here ? 'rgba(255,215,0,0.65)' : 'rgba(255,255,255,0.12)', lw: 1.5,
+      r: 9,
+      fill: got ? 'rgba(124,252,0,0.13)' : here ? 'rgba(255,215,0,0.14)' : fin ? 'rgba(255,120,220,0.10)' : 'rgba(255,255,255,0.05)',
+      border: got ? 'rgba(124,252,0,0.5)' : here ? 'rgba(255,215,0,0.65)' : fin ? 'rgba(255,120,220,0.45)' : 'rgba(255,255,255,0.12)', lw: 1.5,
     });
     ctx.save();
-    ctx.globalAlpha = got ? 1 : here ? 0.95 : 0.4;
-    emojiCentered(s.emoji, cx, my, icon);
+    ctx.globalAlpha = got ? 1 : here ? 0.95 : fin ? 0.6 : 0.4;
+    emojiCentered(fin ? s.boss.emoji : s.emoji, cx, my, icon);
     ctx.restore();
     if (got) txt('✓', cx + cell * 0.28, my + icon * 0.5, { size: 10 * UI, weight: 800, color: '#7CFC00' });
   });
-  txt((ja ? `第${Save.chapter() + 1}章 ・ 世界 ${done}/${STAGES.length} 制覇 ・ 自動セーブ`
-          : `CHAPTER ${Save.chapter() + 1} · ${done}/${STAGES.length} conquered · autosaves`),
-    W / 2, my + icon * 0.95, { size: 9.5 * UI, weight: 600, color: done ? COL.mint : COL.mute, track: 1, maxW: bw });
+  // 章の見出しと「ものがたり」を **同じ行で場所を分け合う**。
+  //   中央そろえの文の上に右端のボタンを置くと必ず重なる(実際に重なった)。
+  //   ボタンの幅を先に取り置いて、残りの真ん中に文を置く。
+  const chap = chapterOf(Save.chapter());
+  const pw = 40 * UI, ph = 30 * UI, pgap = 8 * UI;
+  const capR = mx + mw - pw - pgap;
+  const capY = my + icon * 0.95;
+  txt((ja ? `第${Save.chapter() + 1}章 ・ ${done}/${chStages.length}`
+          : `CH.${Save.chapter() + 1} · ${done}/${chStages.length}`),
+    (mx + capR) / 2, capY, { size: 10.5 * UI, weight: 700, color: done ? COL.mint : COL.gold, maxW: capR - mx - 8 * UI });
+  // オープニングをもう一度。頼まれた「あとから見る場所」。
+  //   絵ひとつにしてあるのは、文字を入れると必ず見出しとぶつかるから。
+  {
+    const px2 = mx + mw - pw, py2 = capY - ph / 2;
+    surface(px2, py2, pw, ph, { r: 9, fill: 'rgba(255,215,0,0.10)', border: 'rgba(255,215,0,0.45)', lw: 1.5 });
+    emojiCentered('📖', px2 + pw / 2, py2 + ph / 2, 15 * UI);
+    game.menuBtns.push({ id: 'story', x: px2 - 5 * UI, y: py2 - 6 * UI, w: pw + 10 * UI, h: ph + 12 * UI });
+  }
 
   // 主役: 単色ゴールドの実体ボタン(迷いようがない)
   const pulse = 1 + Math.sin(time * 3) * 0.01;
@@ -751,10 +780,17 @@ function drawTitle() {
   ctx.shadowBlur = 0;
   if (res) {   // 続きがある時は「つづきから」を主役に
     txt(ja ? 'つづきから' : 'CONTINUE', W / 2, by + h1 * 0.38, { size: 19 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
-    txt(ja ? `ステージ ${res + 1}  ${STAGES[res].emoji} ${STAGES[res].name}` : `Stage ${res + 1}  ${STAGES[res].emoji} ${STAGES[res].en}`,
-      W / 2, by + h1 * 0.73, { size: 10.5 * UI, weight: 600, color: 'rgba(32,24,10,0.75)', maxW: bw - 20 * UI });
+    // どこまで来たか(絵)と、何をしに行くのか(ミッション名)を1行に。
+    //   ここは長らく STAGES を決め打ちで読んでいたので、第2章以降は
+    //   実際に遊ぶ面と違う名前が出ていた。いまの章の面から取る。
+    const cur = chStages[Math.min(res, chStages.length - 1)];
+    txt(`${cur.finale ? cur.boss.emoji : cur.emoji}  ${ja ? chap.title : chap.titleEn}`,
+      W / 2, by + h1 * 0.73, { size: 10.5 * UI, weight: 700, color: 'rgba(32,24,10,0.78)', maxW: bw - 20 * UI });
   } else {
-    txt(t('start_short'), W / 2, by + h1 / 2, { size: 21 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
+    // 何をしに行くのかをボタンに書く。「スタート」だけでは目的が伝わらない。
+    txt(t('start_short'), W / 2, by + h1 * 0.38, { size: 19 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
+    txt(ja ? chap.title : chap.titleEn, W / 2, by + h1 * 0.73,
+      { size: 10.5 * UI, weight: 700, color: 'rgba(32,24,10,0.78)', maxW: bw - 20 * UI });
   }
   ctx.restore();
   game.menuBtns.push({ id: res ? 'continue' : 'start', x: bx, y: by, w: bw, h: h1 });
@@ -1706,18 +1742,124 @@ function drawCoopHud() {
 
 function drawIntro() {
   const st = stage(), d = dirDef();
+  const ja = getLang() === 'ja';
   const tt = 1 - game.introT / 2400;
   drawBackground();
   ctx.fillStyle = 'rgba(0,0,10,0.55)'; ctx.fillRect(0, 0, W, H);
   const slide = tt < 0.2 ? (0.2 - tt) * 5 * 60 : 0;
-  label(game.aiMode ? '✨ AI STAGE ✨' : (t('stage') + ' ' + (game.stageIndex + 1)), W / 2, vy(0.30) - slide, '#8fd3ff', 14 * UI);
-  emojiCentered(st.emoji, W / 2, vy(0.42) - slide, 56 * UI);
-  label(st.name, W / 2, vy(0.52) - slide, '#ffffff', 22 * UI);
-  label(st.en, W / 2, vy(0.565) - slide, '#aab', 11 * UI);
+  const fin = !!st.finale;
+  label(fin ? (ja ? '⚡ さいごの舞台 ⚡' : '⚡ FINAL STAGE ⚡')
+      : game.aiMode ? '✨ ENDLESS ✨' : (t('stage') + ' ' + (game.stageIndex + 1)),
+    W / 2, vy(0.26) - slide, fin ? '#ff9de2' : '#8fd3ff', 14 * UI);
+  emojiCentered(st.emoji, W / 2, vy(0.38) - slide, 56 * UI);
+  label(st.name, W / 2, vy(0.48) - slide, '#ffffff', 22 * UI);
+  label(st.en, W / 2, vy(0.525) - slide, '#aab', 11 * UI);
+  // **この面で何をするのか。** 面の名前だけでは目的が出てこない。
+  //   ストーリー以外(エンドレス・デイリー・共闘)にミッションは無いので出さない。
+  if (!game.aiMode && !game.endless && !game.daily) {
+    const line = fin ? finalMissionFor(game.chapter || 0, ja)
+                     : missionFor(game.chapter || 0, game.stageIndex, st, ja);
+    const bw = W * 0.86, bx = (W - bw) / 2, by = vy(0.585) - slide;
+    surface(bx, by, bw, 34 * UI, { r: 10, fill: 'rgba(255,215,0,0.10)', border: 'rgba(255,215,0,0.42)', lw: 1.5 });
+    txt(line, W / 2, by + 17 * UI, { size: 13 * UI, weight: 800, color: '#ffe08a', maxW: bw - 18 * UI });
+  }
   const pulse = 1 + Math.sin(performance.now() * 0.008) * 0.18;
-  ctx.save(); ctx.translate(W / 2, vy(0.69)); ctx.scale(pulse, pulse);
+  ctx.save(); ctx.translate(W / 2, vy(0.72)); ctx.scale(pulse, pulse);
   emojiCentered(d.arrow, 0, 0, 46 * UI); ctx.restore();
-  label(t('dir_' + st.dir), W / 2, vy(0.77), '#ffd700', 14 * UI);
+  label(t('dir_' + st.dir), W / 2, vy(0.80), '#ffd700', 14 * UI);
+}
+
+/**
+ * オープニング。**4コマだけ。**
+ *
+ * 長い前置きは子供に嫌われるので、絵1つと1行を4回だけ。待てば進み、
+ * タップでも進む。飛ばせることを最初から見せておく。
+ */
+function drawOpening() {
+  const ja = getLang() === 'ja';
+  const c = chapterOf(game.openChapter);
+  const beats = c.beats;
+  const i = Math.min(game.openBeat, beats.length - 1);
+  const b = beats[i];
+  const k = clamp(game.openT / 420, 0, 1);          // コマの立ち上がり
+  const now = performance.now();
+
+  nightSky('#0a0618', '#241035');
+  for (const s of game.stars) { ctx.fillStyle = `rgba(255,255,255,${(s.b * 0.4).toFixed(2)})`; ctx.fillRect(s.x, s.y, s.size, s.size); }
+  // 幕。ショーという枠組みを絵で言う
+  const curtain = 26 * UI;
+  ctx.fillStyle = 'rgba(120,20,60,0.55)';
+  ctx.fillRect(0, 0, W, curtain + SAFE.top);
+  ctx.fillRect(0, H - curtain - SAFE.bottom, W, curtain + SAFE.bottom);
+
+  // 章の題
+  txt(ja ? `第${game.openChapter + 1}章` : `CHAPTER ${game.openChapter + 1}`,
+    W / 2, vy(0.16), { size: 11 * UI, weight: 700, color: COL.mute, track: 2.2, maxW: W * 0.8 });
+  txt(ja ? c.title : c.titleEn, W / 2, vy(0.225),
+    { size: 21 * UI, weight: 800, color: COL.gold, family: FONT_DISPLAY, maxW: W * 0.86 });
+
+  // 絵。ふわりと出て、少し漂う
+  const eas = 1 - Math.pow(1 - k, 3);
+  ctx.save();
+  ctx.globalAlpha = eas;
+  emojiCentered(b.emoji, W / 2, vy(0.44) + (1 - eas) * 26 * UI + Math.sin(now * 0.002) * 4 * UI, 84 * UI);
+  ctx.restore();
+
+  // 1行。折り返して読ませる(縮めて読めなくするより行を増やす)
+  ctx.save();
+  ctx.globalAlpha = clamp((k - 0.25) / 0.6, 0, 1);
+  wrapTxt(ja ? b.ja : b.en, W / 2, vy(0.60), W * 0.82,
+    { size: 14 * UI, weight: 700, color: '#ffffff', lineH: 1.5, maxLines: 3 });
+  ctx.restore();
+
+  // 何コマ目か
+  const dw = 14 * UI * beats.length, dx0 = W / 2 - dw / 2 + 7 * UI;
+  beats.forEach((_, j) => {
+    ctx.fillStyle = j === i ? COL.gold : 'rgba(255,255,255,0.26)';
+    ctx.beginPath(); ctx.arc(dx0 + j * 14 * UI, vy(0.80), j === i ? 4 * UI : 2.4 * UI, 0, Math.PI * 2); ctx.fill();
+  });
+  txt(ja ? 'タップでつぎへ ・ 待っていても進みます' : 'tap for next · or just wait',
+    W / 2, vy(0.855), { size: 10 * UI, weight: 600, color: COL.mute, maxW: W * 0.86,
+      alpha: 0.5 + 0.5 * Math.abs(Math.sin(now * 0.003)) });
+}
+
+/**
+ * 章を制覇した瞬間の「次のショー」。
+ *
+ * 6面+決着を終えても、いままでは静かに次章へ入れ替わるだけだった。
+ * ここで **幕が下りて、次の演目が張り出される**。区切りが起きたと分かる。
+ */
+function drawNextShow() {
+  const ja = getLang() === 'ja';
+  const c = chapterOf(game.showChapter);
+  const k = clamp(1 - game.showT / 5200, 0, 1);
+  const now = performance.now();
+  // 幕が下から上がって、画面を覆いきる。透かさない —— 下の勝利画面と
+  //   二重になった瞬間に、どちらも読めなくなる。
+  ctx.fillStyle = '#0a0412';
+  ctx.fillRect(0, 0, W, H);
+  const cover = Math.min(1, k / 0.32);
+  ctx.fillStyle = '#170728';
+  ctx.fillRect(0, H - H * cover, W, H * cover);
+  if (k < 0.28) return;
+  const a = clamp((k - 0.28) / 0.18, 0, 1);
+  ctx.save(); ctx.globalAlpha = a;
+  txt(ja ? '― ショー、閉幕 ―' : '— END OF SHOW —', W / 2, vy(0.24),
+    { size: 13 * UI, weight: 700, color: COL.mute, track: 2, maxW: W * 0.86 });
+  emojiCentered('🎪', W / 2, vy(0.38), 74 * UI + Math.sin(now * 0.003) * 3 * UI);
+  txt(ja ? 'つぎのショーが はじまる' : 'A NEW SHOW BEGINS', W / 2, vy(0.52),
+    { size: 17 * UI, weight: 800, color: '#ffffff', family: FONT_DISPLAY, maxW: W * 0.9 });
+  if (k > 0.52) {
+    const a2 = clamp((k - 0.52) / 0.2, 0, 1);
+    ctx.globalAlpha = a * a2;
+    txt(ja ? `第${game.showChapter + 1}章` : `CHAPTER ${game.showChapter + 1}`, W / 2, vy(0.63),
+      { size: 11 * UI, weight: 700, color: COL.mute, track: 2.2, maxW: W * 0.8 });
+    txt(ja ? c.title : c.titleEn, W / 2, vy(0.695),
+      { size: 22 * UI, weight: 800, color: COL.gold, family: FONT_DISPLAY, maxW: W * 0.88 });
+    wrapTxt(ja ? c.hook : c.hookEn, W / 2, vy(0.745), W * 0.82,
+      { size: 12 * UI, weight: 600, color: 'rgba(210,222,240,0.9)', lineH: 1.45, maxLines: 3 });
+  }
+  ctx.restore();
 }
 
 function drawClear() {
@@ -1852,6 +1994,7 @@ export function draw() {
   tickTint();
   switch (game.state) {
     case 'splash': drawSplash(); break;
+    case 'opening': drawOpening(); break;
     case 'title': drawTitle(); break;
     case 'coop': drawCoopLobby(); break;
     case 'chars': drawCharSelect(); break;
@@ -1873,6 +2016,11 @@ export function draw() {
       ctx.save(); drawBackground(); drawBells(); drawEnemies(); drawBoss(); drawBullets(); drawPlayer(); ctx.restore();
       drawHUD(); drawPause(); break;
     case 'over': drawBackground(); drawParticles(); drawGameOver(); break;
-    case 'victory': drawVictory(); break;
+    case 'victory':
+      // 順番に見せる。**重ねると読めない。**「第1章 制覇!」「RANK A」の上に
+      //   「つぎのショー」を半透明で乗せたら、両方が透けて何も読めなかった。
+      if (game.showT > 0) { game.overBtns = []; drawNextShow(); }
+      else drawVictory();
+      break;
   }
 }

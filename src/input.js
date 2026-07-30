@@ -5,7 +5,7 @@ import { canvas, W, H, SAFE } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
 import { toggleLang, getLang } from './i18n.js';
-import { startRun, requestAIStage, startDaily, togglePause, useBombOrSuper, doContinue, toTitle, handleOverTap, openCoopLobby, startCoop } from './engine.js';
+import { startRun, requestAIStage, startDaily, togglePause, useBombOrSuper, doContinue, toTitle, handleOverTap, openCoopLobby, startCoop, openStory, advanceOpening, skipOpening } from './engine.js';
 import { Coop } from './coop.js';
 import { Save } from './save.js';
 import { CHARS } from './config.js';
@@ -77,6 +77,8 @@ function hitMenu(x, y) {
       else if (b.id === 'coopBack') toTitle();
       else if (b.id === 'coopModeStory') Coop.mode = 'story';
       else if (b.id === 'coopModeAi') Coop.mode = 'ai';
+      // ミッションをもう一度見る。遊びはじめずに見るだけ(見終わればタイトルへ)
+      else if (b.id === 'story') openStory(Save.chapter(), false);
       else if (b.id === 'lang') toggleLang();
       return true;
     }
@@ -89,6 +91,7 @@ window.addEventListener('keydown', e => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault();
   const s = game.state;
   if (s === 'splash') { if (e.key === ' ' || e.key === 'Enter') game.state = 'title'; }
+  else if (s === 'opening') { if (e.key === ' ' || e.key === 'Enter') advanceOpening(); else if (e.key === 'Escape') skipOpening(); }
   else if (s === 'title') { if (e.key === ' ' || e.key === 'Enter') startRun(); if (e.key === 'l' || e.key === 'L') toggleLang(); }
   else if (e.key === ' ' && s === 'play') useBombOrSuper();
   else if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (s === 'play' || s === 'pause' || s === 'warn')) togglePause();
@@ -102,6 +105,8 @@ canvas.addEventListener('pointerdown', e => {
   Snd.init();
   const s = game.state, now = performance.now();
   if (s === 'splash') { game.state = 'title'; return; }
+  // オープニングはタップで次のコマへ。長押しで飛ばす必要はない —— 4コマしかない。
+  if (s === 'opening') { advanceOpening(); return; }
   if (s === 'chars' && game.charView !== 'grid') {
     // カードは横スワイプでめくる。指を離した時点で、動いた量が小さければタップ扱い。
     charSwipe = { x0: e.clientX, y0: e.clientY, moved: 0 };
@@ -111,6 +116,9 @@ canvas.addEventListener('pointerdown', e => {
   if (s === 'clear') { hitMenu(e.clientX, e.clientY); return; }
   if (s === 'title' || s === 'coop' || s === 'chars') { hitMenu(e.clientX, e.clientY); return; }
   if (s === 'pause') { togglePause(); return; }
+  // 「つぎのショー」を出している間のタップは、演出を飛ばすだけ。
+  //   下に隠れている勝利画面のボタンを押してしまわないように先に受ける。
+  if (s === 'victory' && game.showT > 0) { game.showT = 0; return; }
   if (s === 'over' || s === 'victory') { handleOverTap(e.clientX, e.clientY); return; }
   if (s === 'play' || s === 'warn') {
     if (now - lastTapT < 280 && last && Math.hypot(e.clientX - last.sx, e.clientY - last.sy) < 40) useBombOrSuper();

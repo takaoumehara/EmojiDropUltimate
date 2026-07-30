@@ -23,7 +23,11 @@ const DEF = {
   diff: 1,      // むずかしさ 0=やさしい 1=ふつう 2=むずかしい
   shake: 1,     // 画面のゆれ(0にすると揺れ・閃光・粒子を抑える)
   chapter: 0,   // いま挑んでいる章(0=第1章)
+  sawStory: 0,  // オープニングを見た章のビットマスク
 };
+
+// 1章の面数 = 道中6 + 決着1。ここを 6 のまま数えていると章が終わらない。
+export const CHAPTER_LEN = 7;
 
 // localStorage が使えない/例外を投げる場合の代替(タブ生存中のみ保持)
 const memoryStore = Object.create(null);
@@ -101,8 +105,18 @@ export const Save = {
     return SKINS[this.data.skin];
   },
 
-  // === 進行状況: 6ステージ = 1章。章を制覇すると次の章が開く ===
+  // === 進行状況: 道中6面 + 決着1面 = 1章。章を制覇すると次の章が開く ===
   chapter() { return this.data.chapter | 0; },
+
+  // オープニングを見たか。章ごとにビットで持つ。
+  //   一度見たら二度目からは出さない(出続けると「早く遊ばせろ」になる)。
+  //   32章ぶんで足りる —— それ以降は「見た」ものとして扱う。
+  sawStory(ch) { return ch >= 32 ? true : !!((this.data.sawStory | 0) & (1 << ch)); },
+  markSawStory(ch) {
+    if (ch >= 32) return;
+    this.data.sawStory = (this.data.sawStory | 0) | (1 << ch);
+    this.persist();
+  },
 
   // ボス終盤の「直前に引いた札」。**端末に残す**のが肝で、game に置くと
   //   遊び直すたびに空に戻り、毎回同じ札を引きうる。プレイヤーが飽きるのは
@@ -117,7 +131,9 @@ export const Save = {
     return a;
   },
   isCleared(i) { return !!(this.data.cleared & (1 << i)); },
-  clearedCount() { let n = 0; for (let i = 0; i < 6; i++) if (this.isCleared(i)) n++; return n; },
+  // 1章は「道中6面 + 決着の1面」= 7面。ここを 6 で数えていると
+  //   7面目を倒しても章が終わらない(制覇の判定が永久に立たない)。
+  clearedCount() { let n = 0; for (let i = 0; i < CHAPTER_LEN; i++) if (this.isCleared(i)) n++; return n; },
   // ステージ制覇を記録。章を全制覇したら true を返す(勝利演出→次章解放)
   markCleared(i, total) {
     this.data.cleared |= (1 << i);
@@ -127,7 +143,7 @@ export const Save = {
     this.persist();
     return done;
   },
-  resumeStage() { const r = this.data.resume | 0; return r > 0 && r < 6 ? r : 0; },
+  resumeStage() { const r = this.data.resume | 0; return r > 0 && r < CHAPTER_LEN ? r : 0; },
   // むずかしさ。Director の自動調整とは別に、明示のつまみを持たせる。
   //   自動調整だけだと「子供に渡すときに弱くする」ができない。
   diff() { const d = this.data.diff; return d === 0 || d === 2 ? d : 1; },
