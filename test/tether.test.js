@@ -98,6 +98,30 @@ test('切った数が数えられ、ゲージに回せる', () => {
   assert.equal(cut, 1, '呼び出し側に通知されること');
 });
 
+test('群れを薙いだら群れが消える(気づかない飾りにしない)', () => {
+  // 最初は毎秒15にしていた。55秒遊んで線で倒せたのは全体の6%で、
+  // 「あると気づかない」量だった。触れたら倒れる強さであることを固定する。
+  const st = newTetherState();
+  const wave = [];
+  for (let i = 0; i < 8; i++) wave.push(enemy(120 + i * 24, 200, 3));   // 道中の並び程度の硬さ
+  wave.forEach((e, i) => { e.id = i; });
+  // 0.35秒だけ線をかける(掃くときに触れている程度の時間)
+  let t = 0;
+  while (t < 0.35) { updateTether(1 / 60, line(100, 200, 320, 200), st, api({ enemies: wave, hurt: (e, d) => { e.hp -= d; } })); t += 1 / 60; }
+  const dead = wave.filter(e => e.hp <= 0).length;
+  assert.ok(dead >= 6, `触れた敵はほぼ倒れること (${dead}/8)`);
+});
+
+test('遠く離れた線は弱い(離れて放置が得にならない)', () => {
+  const st = newTetherState();
+  const near = enemy(200, 200, 100), far = enemy(200, 200, 100);
+  updateTether(0.5, line(160, 200, 240, 200), st, api({ enemies: [near] }));       // 短い
+  const st2 = newTetherState();
+  updateTether(0.5, line(0, 200, TETHER.LOOSE - 5, 200), st2, api({ enemies: [far] }));  // 伸びきる寸前
+  assert.ok((100 - near.hp) > (100 - far.hp) * 1.5,
+    `短いほうが目に見えて強いこと (短=${(100 - near.hp).toFixed(1)} / 長=${(100 - far.hp).toFixed(1)})`);
+});
+
 // --- 離れすぎ ---
 
 test('離れすぎると軋み、やがて切れる', () => {

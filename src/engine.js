@@ -44,6 +44,11 @@ const coopAtkMul = n => 1 + (Math.max(2, n) - 2) * 0.225;
 //   ずっと厳しかった(2人で3機 = ひとり1.5機)。ひとり2機ぶん + 1 を配る。
 //   2人=5 / 3人=7 / 4人=9。多すぎるように見えるが、共有で全員の事故が同じ財布から出る。
 const coopLives = n => Math.max(2, n) * 2 + 1;
+// 道中の湧きも人数で増やす。「2人でも1人と変わらない」と言われた原因のひとつは、
+//   ボスだけ硬くして**道中がそのまま**だったこと。2人なら毎秒の火力は倍近いのに、
+//   撃つ相手の数は同じ —— それは強くなったのではなく、待ち時間が半分になっただけ。
+//   きずなで群れを薙げるようにしたぶんもここで受ける。2人 ×1.22 / 4人 ×1.66。
+const coopSpawnMul = n => 1 + (Math.max(2, n) - 1) * 0.22;
 
 // むずかしさ。Director の自動調整の「上」に掛ける固定倍率。
 //   自動調整だけだと、子供に渡すときに明示的に弱くできない。
@@ -1568,7 +1573,8 @@ function updateStage(dt) {
     game.nextWave -= dt * 1000;
     if (game.nextWave <= 0) {
       spawnWave();
-      const base = (2900 - game.stageIndex * 260) * Director.spawnMul * diffMods().spawn / Weather.mods.spawnMul;
+      const base = (2900 - game.stageIndex * 260) * Director.spawnMul * diffMods().spawn / Weather.mods.spawnMul
+                 / (game.coop ? coopSpawnMul(Coop.playerCount()) : 1);
       game.nextWave = Math.max(1000, base + rand(-400, 400));
     }
     updateMercyBell(dt);
