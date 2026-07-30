@@ -624,9 +624,14 @@ function drawHUD() {
     ctx.globalAlpha = clamp((5200 - game.stageTime) / 1000, 0, 0.9);
     txt(t('hint_move'), W / 2, H - 196 * UI - bot, { size: 12 * UI, weight: 700, color: '#fff', shadow: 0.95, maxW: W * 0.9 });
     txt(t('hint_bomb'), W / 2, H - 178 * UI - bot, { size: 12 * UI, weight: 700, color: '#fff', shadow: 0.95, maxW: W * 0.9 });
-    // きずなは見れば分かる作りにしてあるが、**切れる**ことは見ただけでは
-    //   分からない。ふたりのときだけ、最初の面で一度言う。
-    if (game.coop) txt(t('tether_hint'), W / 2, H - 160 * UI - bot,
+    ctx.globalAlpha = 1;
+  }
+  // きずなの案内は **1面目だけでは足りなかった。**
+  //   「線が何なのか分からない」と言われたので、実際に何度か切れるまでは
+  //   毎面のはじめに出す。切れるようになったら黙る(うるさくしない)。
+  if (game.coop && game.state === 'play' && game.stageTime < 7000 && Save.tetherCuts() < 6) {
+    ctx.globalAlpha = clamp((7000 - game.stageTime) / 1200, 0, 0.92);
+    txt(t('tether_hint'), W / 2, H - 158 * UI - bot,
       { size: 11.5 * UI, weight: 700, color: '#a8e9ff', shadow: 0.95, maxW: W * 0.9 });
     ctx.globalAlpha = 1;
   }
@@ -1641,7 +1646,19 @@ function drawTether() {
     path(); ctx.stroke();
     ctx.restore();
 
-    // 線の上を光が走る。止まっていても「生きている」ことが分かる
+    // いま切れている場所を光らせる。**ここが無いと、効いているのに気づけない。**
+  //   「線が見えたけど何も起きなかった」と言われた原因の半分はこれ。
+  if (st.hit) {
+    const k2 = Math.max(0, st.hit.t / 0.16);
+    ctx.save();
+    ctx.globalAlpha = k2;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2 + k2 * 3;
+    ctx.beginPath(); ctx.arc(st.hit.x, st.hit.y, (1 - k2) * 26 * UI + 8 * UI, 0, Math.PI * 2); ctx.stroke();
+    emojiCentered('✨', st.hit.x, st.hit.y, (13 + k2 * 9) * UI);
+    ctx.restore();
+  }
+
+  // 線の上を光が走る。止まっていても「生きている」ことが分かる
     const k = (now * 0.0009) % 1;
     const idx = Math.min(N, Math.floor(k * N));
     const [sx, sy] = pts[idx];
@@ -1908,10 +1925,21 @@ function drawClear() {
     txt(ja2 ? `つぎのステージまでにキャラを変えられます` : 'You can switch fighter before the next stage',
       W / 2, vy(0.66), { size: 11 * UI, weight: 600, color: COL.mute, maxW: W * 0.86 });
     const bw2 = Math.min(W * 0.7, 300), bx2 = (W - bw2) / 2, by2 = vy(0.70);
+    const cy2 = by2 + 22 * UI;
     surface(bx2, by2, bw2, 44 * UI, { r: 14, fill: 'rgba(13,19,40,0.85)', border: c.col, lw: 2 });
-    emojiCentered(c.emoji, bx2 + 26 * UI, by2 + 22 * UI, 22 * UI);
-    txt(ja2 ? 'キャラを変える' : 'Change fighter', bx2 + bw2 / 2 + 12 * UI, by2 + 22 * UI,
-      { size: 13 * UI, weight: 700, color: '#e6efff', maxW: bw2 - 60 * UI });
+    // **絵と文字をひとつの塊として中央に置く。**
+    //   絵を左端に固定したまま、文字だけ中央より 12px 右へずらしていたので、
+    //   中身の重心が枠の中心から 30px 近く左にずれていた。毎面出る画面なので
+    //   ここのずれが一番目についていたはず。
+    {
+      const nm = ja2 ? 'キャラを変える' : 'Change fighter';
+      const is = 22 * UI, gap = 9 * UI, fs = 13 * UI;
+      f(fs, 700);
+      const tw = Math.min(ctx.measureText(nm).width, bw2 - is - gap - 24 * UI);
+      const left = bx2 + bw2 / 2 - (is + gap + tw) / 2;
+      emojiCentered(c.emoji, left + is / 2, cy2, is);
+      txt(nm, left + is + gap, cy2, { size: fs, weight: 700, color: '#e6efff', align: 'left', maxW: tw });
+    }
     game.menuBtns = [{ id: 'clearChar', x: bx2, y: by2, w: bw2, h: 44 * UI }];
   }
   label(t('score') + ' ' + game.score, W / 2, vy(0.50), '#fff', 14 * UI);

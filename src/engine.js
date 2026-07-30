@@ -430,16 +430,20 @@ function updateSuper(dt) {
       break;
     }
     case 'ring': {
+      // 🌊 じしん。**近いほど効く輪**で、画面全体を等しく薙ぐ技ではない。
+      //   前は中心付近で 1.6倍に増幅したうえで輪の中の敵弾も全部消していた。
+      //   輪は画面いっぱいまで広がるので、実質「無敵つき全体攻撃」だった。
       const r = (game.superAge / sup.dur) * Math.max(W, H) * 0.85 * (1 + (mul - 1) * 0.3);
       for (const e of game.enemies) {
         if (e.delay > 0) continue;
         const d = Math.hypot(e.x - p.x, e.y - p.y);
-        if (d < r) damageEnemy(e, dmg * (1.6 - Math.min(1, d / r)));
+        if (d < r) damageEnemy(e, dmg * Math.max(0.25, 1.15 - Math.min(1, d / r)));
       }
       game.enemies = game.enemies.filter(e => e.hp > 0 || e.delay > 0);
       if (game.boss && !game.boss.entering &&
-          Math.hypot(game.boss.x - p.x, game.boss.y - p.y) < r) damageBoss(dmg);
-      game.eBullets = game.eBullets.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > r * 0.85);
+          Math.hypot(game.boss.x - p.x, game.boss.y - p.y) < r) damageBoss(dmg * 0.6);
+      // 弾を消すのは足元だけ。輪の全域を消すと、広がりきった時点で無敵になる。
+      game.eBullets = game.eBullets.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > Math.min(r, 150) * 0.9);
       if (sup.shake) game.shake = Math.max(game.shake, 6);
       break;
     }
@@ -476,28 +480,60 @@ function updateSuper(dt) {
     case 'missiles': updateMissiles(dt, dmg, mul); break;
     case 'bones': updateBones(dt, dmg, mul); break;
     case 'eggs': updateEggs(dt, dmg, mul); break;
-    case 'wish':
-      if (Math.random() < dt * 3) {
-        const roll = randInt(0, 3);
-        if (roll === 0) hurtAll(sup.tick * mul * 0.5);
-        else if (roll === 1) game.eBullets = [];
-        else if (roll === 2) { for (const e of game.enemies) e.slowT = 600; }
-        else if (game.boss && !game.boss.entering) damageBoss(sup.tick * mul * 0.4);
+    case 'wish': {
+      // 🧞 **願いは1回。** 毎フレーム抽選していたので、2.2秒のあいだに
+      //   4種類とも起きてしまい、「毎回ちがう」ではなく「毎回ぜんぶ」だった。
+      //   なかに敵弾の全消しが入っていたため、必ず無敵時間が付いていた。
+      if (game.superWish == null) game.superWish = randInt(0, 3);
+      const p2 = game.player;
+      switch (game.superWish) {
+        case 0: hurtAll(dmg * 1.9); break;                      // 大きく削る
+        case 1:                                                  // 身のまわりを払う
+          game.eBullets = game.eBullets.filter(b => Math.hypot(b.x - p2.x, b.y - p2.y) > 210);
+          hurtAll(dmg * 0.4);
+          break;
+        case 2:                                                  // 時間を止める
+          for (const e of game.enemies) { if (e.delay <= 0) e.slowT = Math.max(e.slowT || 0, 500); }
+          hurtAll(dmg * 0.4);
+          break;
+        default:                                                 // ボスだけを狙う
+          if (game.boss && !game.boss.entering) damageBoss(sup.tick * mul * dt * 2.2);
+          hurtAll(dmg * 0.4);
       }
-      hurtAll(dmg * 0.4);
       break;
+    }
   }
 
   if (game.superT <= 0) {
     game.superKind = null; game.superFusion = 0;
     game.superPets = []; game.superFood = [];
     game.superShots = []; game.superChain = []; game.superOrbit = []; game.superSweep = null;
+    game.superWish = null;
   }
 }
 
 /** 画面上の敵とボスをまとめて削る。 */
+/**
+ * 自機のまわりに効く技(ブリザード・におい・もりのかべ・ねがいごと)の削り。
+ *
+ * **距離で落とす。** 前は画面上の敵ぜんぶに同じ量を入れていた。1秒あたりは
+ * 小さくても数秒続くので、結果として毎回「画面上の全部が死ぬ」になり、
+ * 40体ばらまいて測ったら 40体倒れていた —— 弱い技のつもりが最強だった。
+ * 近くは満額、遠くは4分の1。効く範囲があることで、位置取りに意味が出る。
+ */
+const FIELD_FULL = 150;          // ここまでは満額
+const FIELD_MIN = 0.15;          // 遠くでもこれだけは効く
 function hurtAll(dmg) {
-  for (const e of game.enemies) { if (e.delay <= 0) damageEnemy(e, dmg); }
+  const p = game.player;
+  // 3秒続く技は、1秒あたりが小さくても合計は大きい。**下限を低く、傾きを急に**
+  //   しないと、遠くの敵も結局は死ぬ(0.25 では 3秒で HP6 が落ちていた)。
+  const far = Math.max(W, H) * 0.7;
+  for (const e of game.enemies) {
+    if (e.delay > 0) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    const k = d <= FIELD_FULL ? 1 : Math.max(FIELD_MIN, 1 - (d - FIELD_FULL) / far);
+    damageEnemy(e, dmg * k);
+  }
   game.enemies = game.enemies.filter(e => e.hp > 0 || e.delay > 0);
   if (game.boss && !game.boss.entering) damageBoss(dmg * 0.6);
 }
@@ -613,15 +649,28 @@ function updateSweep(dt, dmg, sup, mul) {
   const prog = game.superAge / sup.dur;
   const thick = 120 * (1 + (mul - 1) * 0.4);
   const side = sup.from === 'side';
-  const pos = side ? prog * (W + thick) - thick / 2 : prog * (H + thick) - thick / 2;
+  const span = side ? W : H;
+  const pos = prog * (span + thick) - thick / 2;
   game.superSweep = { side, pos, thick };
+  // **横に渡る帯と縦に渡る帯で強さが8倍違っていた。**
+  //   渡る距離だけが違って時間は同じなので、横断のほうが遅く、同じ敵の上に
+  //   長く留まる。留まる時間で量が決まるので、そこを揃える。
+  const speed = (span + thick) / (sup.dur / 1000);
+  const dwell = thick / Math.max(1, speed);
+  const REF_DWELL = 0.35;
+  const band = 0.9 * (REF_DWELL / dwell);
   for (const e of game.enemies) {
     if (e.delay > 0) continue;
     const v = side ? e.x : e.y;
-    if (Math.abs(v - pos) < thick / 2) damageEnemy(e, dmg * 3);
+    // 帯が通れば弱い敵は落ちるが、硬い敵は生き残る量にする(前は 3倍で全滅)
+    if (Math.abs(v - pos) < thick / 2) damageEnemy(e, dmg * band);
   }
   game.enemies = game.enemies.filter(e => e.hp > 0 || e.delay > 0);
-  game.eBullets = game.eBullets.filter(b => Math.abs((side ? b.x : b.y) - pos) > thick / 2);
+  // 通り道の敵弾は **消さずに鈍らせる**。消していたので、帯が画面を渡りきる
+  //   あいだに画面上の弾が全部消え、実質その2秒間は無敵だった。
+  for (const b of game.eBullets) {
+    if (Math.abs((side ? b.x : b.y) - pos) < thick / 2) { b.vx *= 0.86; b.vy *= 0.86; }
+  }
   if (game.boss && !game.boss.entering) {
     const v = side ? game.boss.x : game.boss.y;
     if (Math.abs(v - pos) < thick) damageBoss(dmg);
@@ -715,16 +764,33 @@ function updateEggs(dt, dmg, mul) {
   game.enemies = game.enemies.filter(e => e.hp > 0 || e.delay > 0);
 }
 
+/**
+ * ボム。**自分を助ける道具で、画面を掃除する道具ではない。**
+ *
+ * 前は「全部の敵に4ダメージ + 敵弾を全消し + ボスに10」で、押せば盤面が
+ * まるごと片付いた。押すだけで勝てるものは手応えを消すので、
+ *   ・守りは残す(自分の周りの弾は消える → 死なずに抜けられる)
+ *   ・攻めは削る(遠くの敵にも効く全体攻撃ではなくす)
+ * という形に分けた。
+ */
+const BOMB_CLEAR_R = 240;        // この距離までの敵弾が消える(自分の逃げ道)
 export function useBomb() {
   if (game.bombs <= 0 || game.player.dead || game.state !== 'play') return;
   game.bombs--;
   Snd.bomb();
   game.flash = 0.8; game.shake = CFG.MAX_SHAKE;
-  for (const e of game.enemies) { if (e.delay > 0) continue; e.hp -= 4; if (e.hp <= 0) killEnemy(e, true); }
+  const p = game.player;
+  // 攻撃は近くだけ。画面の端の敵まで消えるのは「掃除」で、切り抜けではない。
+  for (const e of game.enemies) {
+    if (e.delay > 0) continue;
+    if (Math.hypot(e.x - p.x, e.y - p.y) > BOMB_CLEAR_R * 1.4) continue;
+    e.hp -= 3; if (e.hp <= 0) killEnemy(e, true);
+  }
   game.enemies = game.enemies.filter(e => e.hp > 0 || e.delay > 0);
-  game.eBullets = [];
-  if (game.boss && !game.boss.entering) damageBoss(10);
-  particles(game.player.x, game.player.y, 40, '#7CFC00', 3);
+  // 弾は自分の周りだけ消す。ここが残っていないとボムの意味(助かる)が無い。
+  game.eBullets = game.eBullets.filter(b => Math.hypot(b.x - p.x, b.y - p.y) > BOMB_CLEAR_R);
+  if (game.boss && !game.boss.entering && Math.hypot(game.boss.x - p.x, game.boss.y - p.y) < BOMB_CLEAR_R * 1.6) damageBoss(6);
+  particles(p.x, p.y, 40, '#7CFC00', 3);
 }
 
 // === 敵 ===
@@ -982,7 +1048,6 @@ function updateBoss(dt) {
   const b = game.boss;
   if (!b) return;
   BossAI.observe(dt);
-  if (game.bossRevealT > 0) game.bossRevealT -= dt * 1000;
   // 蘇ったボスの奇襲。ふつうの左右移動の途中で、いきなり高速で突っ込んでくる。
   //   攻撃パターンを覚えても「読み切った」状態にさせないための一手。
   if (b.revived && !b.entering && b.dying <= 0) {
@@ -1415,6 +1480,7 @@ function bossDefeated() {
   const bx = b.x, by = b.y, emoji = stage().boss.emoji;
   explosion(bx, by, 18, '#ffd700');
   game.boss = null; game.bossActive = false;
+  game.bossRevealT = 0;            // 相手が居ないのに見出しだけ残さない
   game.eBullets = []; game.enemies = [];
   const bonus = Math.round((game.coop ? 8000 : game.endless ? 3000 * game.world : 5000 * (game.stageIndex + 1)) * Weather.mods.scoreMul);
   game.score += bonus; saveHi();
@@ -1473,7 +1539,13 @@ function updateTetherStep(dt) {
     },
     // 線で切った敵はゲージに乗せる。合体技へつながって、
     //   「離れずに寄り添って戦う」が必殺技の回転につながる。
-    onCut: () => gainSuper(SUPER_GAIN.kill * 0.6),
+    //   **手応えも出す。** 音も光も無いと、切れていることに気づけない。
+    onCut: e => {
+      gainSuper(SUPER_GAIN.kill * 0.6);
+      particles(e.x, e.y, 10, '#8fe9ff', 1.4);
+      popup(e.x, e.y - 14, '✂️', '#8fe9ff');
+      Save.bumpTetherCuts();
+    },
   });
 }
 
@@ -1645,7 +1717,14 @@ function applyTraj(b, dt) {
       break;
     }
     case 'curve': {                                 // 🍌 弧を描く。まっすぐは飛ばない。
-      const a = Math.atan2(b.vy, b.vx) + 1.9 * dt * b.side;
+      // **ぐるっと1周したら終わり。**
+      //   曲げ続けるだけで終わりの条件が無かった。円を描く弾は画面外へ出ないので
+      //   消えるきっかけが一切なく、撃つたびに永久に増えて画面がバナナだらけに
+      //   なっていた(「強すぎる」の正体はこれ)。1周ぶんだけ生きる。
+      const turn = 1.9 * dt;
+      b.turned = (b.turned || 0) + turn;
+      if (b.turned >= Math.PI * 2) return false;
+      const a = Math.atan2(b.vy, b.vx) + turn * b.side;
       b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
       break;
     }
@@ -2160,6 +2239,10 @@ export function update(dt, keys) {
         updateBoss(dt);
         updateBullets(dt);
       }
+      // **ボスが居なくても減らす。** ここを updateBoss の中でだけ減らしていたので、
+      //   「逃げる」の札でボスが消えた瞬間にカウントが止まり、
+      //   「逃・スパイダークイーン」の見出しが画面に永久に残っていた。
+      if (game.bossRevealT > 0) game.bossRevealT -= dt * 1000;
       updateBg(dt);
       updateTetherStep(dt);
       updateSuper(dt);

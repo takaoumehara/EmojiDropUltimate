@@ -30,7 +30,10 @@ export const TETHER = {
   DPS: 34,
   TIGHT_MUL: 2.1,  // 短いときの倍率
   BRAND: 0.45,     // ボスに線がかかっているあいだ、弾が通りやすくなる割合
-  HITW: 13,        // 線の太さ(当たり判定)
+  // 線の太さ(当たり判定)。13 では ±24px しか切れず、665px の画面では
+  //   「線があるのに何も起きない」ようにしか見えなかった(実際にそう言われた)。
+  //   見えている光の帯とだいたい同じ太さにする。
+  HITW: 22,
 };
 
 /**
@@ -57,6 +60,7 @@ export function newTetherState() {
     branded: false, // いまボスに線がかかっているか
     cuts: 0,        // 線で倒した数(演出とゲージに使う)
     flash: 0,       // 切れた瞬間の演出
+    hit: null,      // 直前に切った場所。{x,y,t} 手応えを出すために描画側が使う
   };
 }
 
@@ -86,6 +90,7 @@ export function updateTether(dt, pts, st, api) {
   st.links.length = 0;
   st.branded = false;
   if (st.flash > 0) st.flash = Math.max(0, st.flash - dt * 3);
+  if (st.hit) { st.hit.t -= dt; if (st.hit.t <= 0) st.hit = null; }
 
   // 休んでいるあいだは線が無い。切れた代償が見えないと、離れる怖さが出ない。
   if (st.coolT > 0) {
@@ -133,6 +138,8 @@ export function updateTether(dt, pts, st, api) {
       if (segDist(L.ax, L.ay, L.bx, L.by, e.x, e.y) < (e.size || 16) * 0.7 + TETHER.HITW) {
         const before = e.hp;
         api.hurt(e, TETHER.DPS * L.mul * dt);
+        // 触れているあいだの手応え。切った瞬間だけでなく「いま効いている」を出す。
+        st.hit = { x: e.x, y: e.y, t: 0.16 };
         if (before > 0 && e.hp <= 0) { st.cuts++; if (api.onCut) api.onCut(e); }
         break;   // 1体につき1本ぶん。線が重なった場所で二重取りしない
       }

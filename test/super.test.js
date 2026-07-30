@@ -249,3 +249,123 @@ test('技が終わると後片付けされる(演出が残らない)', async () 
   assert.equal(q.superPets.length, 0, '仲間が残らないこと');
   assert.equal(q.superFood.length, 0, 'ごちそうが残らないこと');
 });
+
+// ============================================================
+// チートにならない
+//
+// 「地震とボム両方すごい強くてチートレベル」と言われた。測ってみたら
+// 地震は5番目で、**6種類が40体ぜんぶを消し、4種類は敵弾も全消し**していた。
+// 「押せば盤面が片付く」ものが混ざっていると、他の全部の設計が無意味になる。
+// ここで上限を決めておく。
+// ============================================================
+
+/** 画面いっぱいに散らす。全体攻撃と局所攻撃の差が出る置き方。 */
+function seedSpread(h, g, n = 40, hp = 6) {
+  g.enemies.length = 0;
+  for (let i = 0; i < n; i++) {
+    const x = h.env.W * (0.1 + 0.8 * ((i * 7) % 10) / 9);
+    const y = h.env.H * (0.08 + 0.62 * (Math.floor(i / 10) / 3));
+    const pl = h.geo.invPL(x, y);
+    g.enemies.push({ id: 9000 + i, ti: 0, move: null, mvT: 0, mvS: 0, mph: 0, blink: 0,
+      type: 'straight', emoji: '👾', hp, maxHp: hp, speed: 0, pts: 100, size: 16, amp: 0, freq: 1,
+      shootRate: 0, prog: pl.prog, lat0: pl.lat, lat: pl.lat, phase: 0, shootT: 9e9, delay: 0,
+      flash: 0, locked: false, lockLat: 0, x, y, sq: null, progOff: 0, diving: false });
+  }
+  g.eBullets.length = 0;
+  for (let i = 0; i < 30; i++)
+    g.eBullets.push({ x: h.env.W * ((i % 6) / 5 * 0.8 + 0.1), y: h.env.H * (Math.floor(i / 6) / 4 * 0.7 + 0.1), vx: 0, vy: 0, size: 5 });
+}
+
+test('どの技も、散らした敵を全部は消せない', async () => {
+  const h = await boot({ seed: 82 });
+  const { SUPER_MAX, SUPERS, superKeyOf } = await import('../src/super.js');
+  const { Save } = await import('../src/save.js');
+  const tooStrong = [];
+  for (let i = 0; i < h.config.CHARS.length; i++) {
+    Save.setChar(i);
+    h.engine.startRun(0);
+    sim(h, { steps: 300, bot: Bot.idle });
+    const g = now(h);
+    g.state = 'play'; g.introT = 0;
+    seedSpread(h, g);
+    const seeded = new Set(g.enemies.map(e => e.id));
+    g.superCharge = SUPER_MAX;
+    h.engine.useBombOrSuper();
+    const kind = now(h).superKind;
+    const dur = SUPERS[superKeyOf(h.config.CHARS[i].id)].dur;
+    sim(h, { steps: Math.ceil(dur / 1000 * 60) + 8, bot: Bot.idle });
+    const left = now(h).enemies.filter(e => seeded.has(e.id)).length;
+    const killed = seeded.size - left;
+    if (killed > seeded.size * 0.85) tooStrong.push(`${kind} ${killed}/${seeded.size}`);
+  }
+  shutdown(h);
+  assert.equal(tooStrong.length, 0,
+    `1回で盤面を片付けてしまう技があること: ${tooStrong.join(', ')}`);
+});
+
+test('どの技も、敵弾を全部は消さない(無敵時間を作らない)', async () => {
+  // 弾が全部消えると、効いているあいだ何をしても死なない。それは難易度ではなく
+  // スイッチで、他の設計を全部殺す。
+  const h = await boot({ seed: 83 });
+  const { SUPER_MAX, SUPERS, superKeyOf } = await import('../src/super.js');
+  const { Save } = await import('../src/save.js');
+  const wipers = [];
+  for (let i = 0; i < h.config.CHARS.length; i++) {
+    Save.setChar(i);
+    h.engine.startRun(0);
+    sim(h, { steps: 300, bot: Bot.idle });
+    const g = now(h);
+    g.state = 'play'; g.introT = 0;
+    seedSpread(h, g);
+    const before = g.eBullets.length;
+    g.superCharge = SUPER_MAX;
+    h.engine.useBombOrSuper();
+    const kind = now(h).superKind;
+    const dur = SUPERS[superKeyOf(h.config.CHARS[i].id)].dur;
+    sim(h, { steps: Math.ceil(dur / 1000 * 60) + 8, bot: Bot.idle });
+    // 仕込んだ弾のうち、どれだけ残っているか(新しく湧いた弾は数に入る=甘め)
+    const gone = 1 - Math.min(1, now(h).eBullets.length / before);
+    if (gone > 0.7) wipers.push(`${kind} ${Math.round(gone * 100)}%`);
+  }
+  shutdown(h);
+  assert.equal(wipers.length, 0, `敵弾をほぼ全消しする技があること: ${wipers.join(', ')}`);
+});
+
+test('ボムは自分を助ける道具で、画面の掃除機ではない', async () => {
+  const h = await boot({ seed: 84 });
+  const g = await inPlay(h, 0);
+  seedSpread(h, g);
+  const before = g.eBullets.length;
+  const far = g.enemies.filter(e => Math.hypot(e.x - g.player.x, e.y - g.player.y) > 400).length;
+  g.bombs = 1;
+  h.engine.useBomb();
+  sim(h, { steps: 4, bot: Bot.idle });
+  const q = now(h);
+  const farLeft = q.enemies.filter(e => e.id >= 9000 && Math.hypot(e.x - q.player.x, e.y - q.player.y) > 400).length;
+  shutdown(h);
+  assert.ok(far === 0 || farLeft >= far * 0.8,
+    `遠くの敵は消えないこと (${far} → ${farLeft})`);
+  assert.ok(q.eBullets.length < before,
+    `自分のまわりの弾は消えること (${before} → ${q.eBullets.length})`);
+  assert.ok(q.eBullets.length > 0,
+    `画面の弾を全部消さないこと (${q.eBullets.length} 残ること)`);
+});
+
+test('バナナは1周したら消える(永久に回り続けない)', async () => {
+  // 曲がり続けるだけで終わりの条件が無く、画面外へも出ないので消えず、
+  // 撃つたびに増えて「バナナだらけ」になっていた。
+  const h = await boot({ seed: 85 });
+  const { Save } = await import('../src/save.js');
+  Save.setChar(h.config.CHARS.findIndex(c => c.id === 'gorilla'));
+  h.engine.startRun(0);
+  const g = now(h);
+  g.state = 'play'; g.introT = 0;
+  let peak = 0;
+  for (let i = 0; i < 60 * 20; i++) {
+    sim(h, { steps: 1, bot: Bot.idle });
+    peak = Math.max(peak, now(h).pBullets.filter(b => !b.opt).length);
+  }
+  shutdown(h);
+  // 1周 = 2π / 1.9 ≒ 3.3秒。発射間隔から、同時に生きているのは十数発が上限
+  assert.ok(peak <= 16, `画面のバナナが増え続けないこと (最大 ${peak} 発)`);
+});

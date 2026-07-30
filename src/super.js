@@ -92,8 +92,10 @@ export const SUPERS = {
     ja: 'ほねのあらし', en: 'BONE STORM',
   },
   // --- 🦍 ゴリラ ---
+  // じしんは「画面全体に等しく効く」ようにしていたので、他の技より段違いに
+  //   強かった。近いほど効く輪に直したうえで、毎秒の量も落とす。
   quake: {
-    kind: 'ring', emoji: '🌊', col: '#ffb347', dur: 1600, tick: 20,
+    kind: 'ring', emoji: '🌊', col: '#ffb347', dur: 1600, tick: 11,
     ja: 'じしん', en: 'QUAKE', shake: true,
   },
   // --- 🐄 ウシ ---

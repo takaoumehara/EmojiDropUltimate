@@ -345,3 +345,42 @@ test('方向転換は相方にも同じ向きで伝わる', async () => {
   assert.ok(ls, '方向転換が相方へ送られること');
   assert.equal(ls.d, dir, '送った向きが自分の向きと一致すること');
 });
+
+// ============================================================
+// 見出しが相手より長生きしない
+//
+// 「逃げるスパイダークイーン」が画面から永久に消えなかった。原因は
+// 残り時間を updateBoss の中でだけ減らしていたこと —— ボスが逃げて
+// game.boss が null になった瞬間にカウントが止まり、文字だけが残った。
+// ============================================================
+
+test('ボスが逃げても見出しは消える', async () => {
+  const h = await boot({ seed: 900 });
+  toBoss(h);
+  const g = now(h);
+  g.boss.hp = 1;
+  sim(h, { steps: 60 * 3, bot: Bot.idle, until: q => q.boss && q.boss.dying > 0 });
+  // 報告された状態そのものを作る: 見出しが出ていて、ボスは盤上に居ない
+  now(h).bossRevealT = 2400;
+  now(h).standKind = 'flee';
+  now(h).boss = null;
+  now(h).bossActive = false;
+  now(h).state = 'play';
+  sim(h, { steps: 60 * 4, bot: Bot.idle });
+  const left = now(h).bossRevealT;
+  shutdown(h);
+  assert.ok(left <= 0, `ボスが居なくても見出しの時間が減ること (残り ${Math.round(left)}ms)`);
+});
+
+test('撃破した時点で見出しは下がる', async () => {
+  const h = await boot({ seed: 901 });
+  toBoss(h);
+  now(h).bossRevealT = 2400;
+  // 本当に倒す
+  const g = now(h);
+  g.boss.hp = 1;
+  sim(h, { steps: 60 * 30, bot: Bot.idle, until: q => !q.boss });
+  const left = now(h).bossRevealT;
+  shutdown(h);
+  assert.ok(left <= 0, `盤上から消えたら見出しも消えること (残り ${left}ms)`);
+});

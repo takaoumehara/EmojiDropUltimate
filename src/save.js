@@ -24,6 +24,7 @@ const DEF = {
   shake: 1,     // 画面のゆれ(0にすると揺れ・閃光・粒子を抑える)
   chapter: 0,   // いま挑んでいる章(0=第1章)
   sawStory: 0,  // オープニングを見た章のビットマスク
+  tcuts: 0,     // きずなで切った数(案内をやめる判断に使う)
 };
 
 // 1章の面数 = 道中6 + 決着1。ここを 6 のまま数えていると章が終わらない。
@@ -111,6 +112,14 @@ export const Save = {
   // オープニングを見たか。章ごとにビットで持つ。
   //   一度見たら二度目からは出さない(出続けると「早く遊ばせろ」になる)。
   //   32章ぶんで足りる —— それ以降は「見た」ものとして扱う。
+  // きずなで何体切ったか。**説明をいつやめるか**の判断に使う。
+  //   数回できたなら、もう案内は要らない。
+  tetherCuts() { return this.data.tcuts | 0; },
+  bumpTetherCuts() {
+    this.data.tcuts = Math.min(999, this.tetherCuts() + 1);
+    if (this.data.tcuts % 4 === 0) this.persist();     // 毎回書かない
+  },
+
   sawStory(ch) { return ch >= 32 ? true : !!((this.data.sawStory | 0) & (1 << ch)); },
   markSawStory(ch) {
     if (ch >= 32) return;
