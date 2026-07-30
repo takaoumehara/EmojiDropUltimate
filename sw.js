@@ -10,7 +10,10 @@
 //     フォールバックする(フェイルセーフ)。
 // ============================================================
 
-const VERSION = 'edu-v1';
+// バージョンを上げると古い shell キャッシュが捨てられ、precache がやり直される。
+//   **モジュールを追加したら必ず上げる。** 上げないと、すでに遊んだ端末は
+//   新しいファイルが入っていない古い shell を持ち続ける。
+const VERSION = 'edu-v2';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const CURRENT_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
@@ -31,6 +34,7 @@ const APP_SHELL = [
   '/src/bossai.js',
   '/src/config.js',
   '/src/coop.js',
+  '/src/diag.js',
   '/src/director.js',
   '/src/engine.js',
   '/src/env.js',
@@ -44,9 +48,13 @@ const APP_SHELL = [
   '/src/save.js',
   '/src/sharecard.js',
   '/src/state.js',
+  '/src/story.js',
+  '/src/super.js',
+  '/src/tether.js',
   '/src/theme.js',
   '/src/ui.js',
   '/src/weather.js',
+  '/src/wstransport.js',
 ];
 
 self.addEventListener('install', event => {
