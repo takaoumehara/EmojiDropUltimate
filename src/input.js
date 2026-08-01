@@ -1,7 +1,7 @@
 // ============================================================
 // input.js — キーボード + タッチ/マウス入力
 // ============================================================
-import { canvas, W, H, SAFE } from './env.js';
+import { canvas, W, H, SAFE, toStageX, toStageY } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
 import { toggleLang, getLang } from './i18n.js';
@@ -46,6 +46,12 @@ if (jf()) {
 export const keys = {};
 
 let dragging = false, last = null, lastTapT = 0, charSwipe = null;
+
+// 指の位置は「窓」の座標で来る。ボタンは「板」の座標で積んである。
+//   横に広い画面では板が中央に寄っているので、直さないと押した所とずれる。
+//   動かす量(差分)は寄せても変わらないので、絶対位置を読むところだけ通す。
+const sx_ = e => toStageX(e.clientX);
+const sy_ = e => toStageY(e.clientY);
 
 function hitMenu(x, y) {
   for (const b of game.menuBtns) {
@@ -113,13 +119,13 @@ canvas.addEventListener('pointerdown', e => {
     game.charDrag = 0;
     return;
   }
-  if (s === 'clear') { hitMenu(e.clientX, e.clientY); return; }
-  if (s === 'title' || s === 'coop' || s === 'chars') { hitMenu(e.clientX, e.clientY); return; }
+  if (s === 'clear') { hitMenu(sx_(e), sy_(e)); return; }
+  if (s === 'title' || s === 'coop' || s === 'chars') { hitMenu(sx_(e), sy_(e)); return; }
   if (s === 'pause') { togglePause(); return; }
   // 「つぎのショー」を出している間のタップは、演出を飛ばすだけ。
   //   下に隠れている勝利画面のボタンを押してしまわないように先に受ける。
   if (s === 'victory' && game.showT > 0) { game.showT = 0; return; }
-  if (s === 'over' || s === 'victory') { handleOverTap(e.clientX, e.clientY); return; }
+  if (s === 'over' || s === 'victory') { handleOverTap(sx_(e), sy_(e)); return; }
   if (s === 'play' || s === 'warn') {
     if (now - lastTapT < 280 && last && Math.hypot(e.clientX - last.sx, e.clientY - last.sy) < 40) useBombOrSuper();
     lastTapT = now;
@@ -148,7 +154,7 @@ window.addEventListener('pointerup', e => {
       const n = CHARS.length;
       Save.setChar(((Save.charIndex() + (dx < 0 ? 1 : -1)) % n + n) % n);
     } else if (charSwipe.moved < 12) {             // 動いていなければタップ
-      hitMenu(e.clientX, e.clientY);
+      hitMenu(sx_(e), sy_(e));
     }
     game.charDrag = 0; charSwipe = null;
     dragging = false;

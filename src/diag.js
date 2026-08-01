@@ -10,6 +10,8 @@
 //   → 何も自動送信しないので、プライバシー申告の対象が増えない。
 // ============================================================
 
+import { VIEW } from './env.js';
+
 const KEY = 'edu_diag';
 const MAX_ERRORS = 8;
 
@@ -95,7 +97,9 @@ export const Diag = {
       : /Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'other';
     const lines = [
       'EMOJI DROP ULTIMATE / 動作レポート',
-      `端末: ${kind}  画面: ${innerWidth}x${innerHeight}`,
+      // 盤面は窓と同じとは限らない(横に広い画面では中央の板になる)。
+      //   レイアウトの相談を受けたとき、どちらの数字かで話が変わる。
+      `端末: ${kind}  画面: ${innerWidth}x${innerHeight}  盤面: ${VIEW.w}x${VIEW.h}`,
       `遊んだ日数: ${d.days}  起動: ${d.sessions}  プレイ: ${d.runs}  制覇: ${d.finishes}  全滅: ${d.deaths}`,
       `最高到達: ステージ${d.bestStage}  もう一度遊んだ: ${this.cameBack() ? 'はい' : 'いいえ'}`,
     ];

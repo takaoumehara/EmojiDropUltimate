@@ -13,7 +13,7 @@
 // バージョンを上げると古い shell キャッシュが捨てられ、precache がやり直される。
 //   **モジュールを追加したら必ず上げる。** 上げないと、すでに遊んだ端末は
 //   新しいファイルが入っていない古い shell を持ち続ける。
-const VERSION = 'edu-v2';
+const VERSION = 'edu-v3';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const CURRENT_CACHES = [SHELL_CACHE, RUNTIME_CACHE];

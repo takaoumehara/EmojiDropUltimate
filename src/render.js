@@ -2,7 +2,7 @@
 // render.js — 描画(読みやすさ優先: 大きめ・視認性の高いサンセリフ)
 // ============================================================
 import { BELLS, clamp, stageTint, CHARS, STAGES, TRAJ_PREVIEW, trajTrait } from './config.js';
-import { W, H, ctx, UI, SAFE, DPR } from './env.js';
+import { W, H, ctx, UI, SAFE, DPR, VIEW, inWindow } from './env.js';
 import { game } from './state.js';
 import { stage, dirDef, fwAngle, fwSpan, isVert, posFromPL } from './geo.js';
 import { t, getLang } from './i18n.js';
@@ -864,10 +864,16 @@ function drawTitle() {
 //    見た目が中央からずれる。日本語ラベルで特に目立った。)
 function drawBtnSub(id, x, y, w, h, main, sub, color, icon) {
   surface(x, y, w, h, { r: 14, fill: 'rgba(13,19,40,0.82)', border: color, lw: 2 });
+  // **2行は、箱の高さが足りなければ字も縮める。**
+  //   呼ぶ側は入りきらないとき箱だけを縮めていて、字は UI のままだった。
+  //   横持ち(852x393)では箱が 30px まで縮み、主文と副文が 11px 差で
+  //   完全に重なって、どのボタンも読めなくなっていた。
+  //   2行が触れずに入る最小の高さが 40*UI —— それを下回ったぶんだけ字を詰める。
+  const k = Math.min(1, h / (40 * UI));
   const pad = 14 * UI, cx = x + w / 2, ty = y + h * 0.37;
   if (icon) {
-    let fs = 14.5 * UI;
-    const is = 15 * UI, gap = 9 * UI;
+    let fs = 14.5 * UI * k;
+    const is = 15 * UI * k, gap = 9 * UI * k;
     // 絵文字の幅を固定値で見積もると、実際に描かれる絵が文字に食い込む
     //   (端末によって送り幅より広く描かれる)。毎回実測する。
     ctx.save();
@@ -877,7 +883,7 @@ function drawBtnSub(id, x, y, w, h, main, sub, color, icon) {
     ctx.restore();
     // 絵文字つきの行だけ上限が無かった。長い言葉を1つ足すと枠から出る。
     //   総幅で先に縮めてから中央に置く(置いたあとで縮めると中央がずれる)。
-    const room = w - 20 * UI - iw - gap;
+    const room = w - 20 * UI * k - iw - gap;
     f(fs, 700);
     let tw = ctx.measureText(main).width;
     if (tw > room && tw > 0) { fs *= room / tw; f(fs, 700); tw = ctx.measureText(main).width; }
@@ -885,10 +891,10 @@ function drawBtnSub(id, x, y, w, h, main, sub, color, icon) {
     emojiCentered(icon, left + iw / 2, ty, is);
     txt(main, left + iw + gap, ty, { size: fs, weight: 700, color, align: 'left' });
   } else {
-    txt(main, cx, ty, { size: 14.5 * UI, weight: 700, color, maxW: w - pad });
+    txt(main, cx, ty, { size: 14.5 * UI * k, weight: 700, color, maxW: w - pad });
   }
   // 枠のすぐ内側に文字が来ると窮屈に見える。左右に見える余白を残す。
-  txt(sub, cx, y + h * 0.71, { size: 10 * UI, weight: 500, color: COL.sub, maxW: w - 26 * UI });
+  txt(sub, cx, y + h * 0.71, { size: 10 * UI * k, weight: 500, color: COL.sub, maxW: w - 26 * UI });
   game.menuBtns.push({ id, x, y, w, h });
 }
 function drawBtn(id, x, y, w, h, text, color, glow, spinner = false, fs = 15 * UI) {
@@ -901,7 +907,8 @@ function drawBtn(id, x, y, w, h, text, color, glow, spinner = false, fs = 15 * U
     ctx.restore();
     txt(text, x + w / 2 + 12, y + h / 2, { size: 13 * UI, weight: 600, color, maxW: w - 56 * UI });
   } else {
-    txt(text, x + w / 2, y + h / 2, { size: fs, weight: 700, color, maxW: w - 16 * UI });
+    // 1行でも、箱より大きい字は箱からはみ出す。高さでも頭を押さえる。
+    txt(text, x + w / 2, y + h / 2, { size: Math.min(fs, h * 0.52), weight: 700, color, maxW: w - 16 * UI });
   }
   if (id !== 'none') game.menuBtns.push({ id, x, y, w, h });
 }
@@ -2014,6 +2021,13 @@ function drawGameOver() {
   const avail = bottom - (hy + 14 * UI);
   const bh = clamp((avail - gap * (items.length - 1)) / items.length, 34 * UI, 48 * UI);
   let by = bottom - (bh * items.length + gap * (items.length - 1));
+  // 横に広い画面では板が縦に長くなり、見出しが上・ボタンが下端で、
+  //   真ん中に何も無い帯が残っていた。その余りだけを上下で分ける。
+  //   **電話(板=窓)では通らない** ので、指の届く位置は1pxも変わらない。
+  if (VIEW.boxed) {
+    const slack = by - (hy + 14 * UI);
+    if (slack > 40 * UI) by -= (slack - 40 * UI) * 0.45;
+  }
   for (const [id, text, col] of items) { overBtn(id, bx, by, bw, bh, text, col); by += bh + gap; }
 }
 function overBtn(id, x, y, w, h, text, color) {
@@ -2052,7 +2066,40 @@ function drawVictory() {
 }
 
 // === メイン描画 ===
+// 板の外側。窓のほうが広いときだけ描く飾りで、電話では一度も通らない。
+//   ただの黒帯にすると「読み込みに失敗した画面」に見えるので、板の後ろに
+//   淡い光を置いて、板が点いているように見せる。
+function drawSurround() {
+  if (!VIEW.boxed) return;
+  inWindow(() => {
+    const { winW, winH, x, y, w, h } = VIEW;
+    ctx.clearRect(0, 0, winW, winH);
+    const g = ctx.createLinearGradient(0, 0, 0, winH);
+    g.addColorStop(0, '#05070f'); g.addColorStop(1, '#0b0e1e');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, winW, winH);
+    const r = Math.max(w, h) * 0.95;
+    const b = ctx.createRadialGradient(x + w / 2, y + h / 2, r * 0.28, x + w / 2, y + h / 2, r);
+    b.addColorStop(0, 'rgba(84,112,224,0.17)'); b.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = b; ctx.fillRect(0, 0, winW, winH);
+  });
+}
+
+// 板のふち。境目が無いと、帯が「描き残し」に見える。
+function drawStageEdge() {
+  if (!VIEW.boxed) return;
+  inWindow(() => {
+    const { x, y, w, h } = VIEW;
+    ctx.strokeStyle = 'rgba(150,180,255,0.20)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  });
+}
+
 export function draw() {
+  drawSurround();
+  // 板の外へはみ出さない。弾も演出も、外に出れば飾りの帯を汚す。
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
   ctx.clearRect(0, 0, W, H);
   tickTint();
   // **前の画面のボタンを持ち越さない。**
@@ -2093,4 +2140,6 @@ export function draw() {
       else drawVictory();
       break;
   }
+  ctx.restore();
+  drawStageEdge();
 }
