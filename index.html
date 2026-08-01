@@ -43,8 +43,11 @@ canvas{display:block;position:fixed;inset:0}
 :root{
   --sat:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-right,0px);
   --sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);
+  /* 盤面と窓のすきま。env.js が毎回書き込む。横に広い画面では盤面が中央に
+     寄るので、HTML のボタンも一緒に寄せないと盤面から離れて浮いてしまう。 */
+  --vt:0px;--vr:0px;--vb:0px;--vl:0px;
 }
-.gbtn{position:fixed;top:calc(9px + var(--sat));z-index:10;
+.gbtn{position:fixed;top:calc(9px + var(--sat) + var(--vt));z-index:10;
   width:38px;height:38px;border-radius:11px;cursor:pointer;
   display:none;align-items:center;justify-content:center;line-height:1;
   background:rgba(9,13,28,.55);border:1px solid rgba(255,255,255,.20);color:#fff;
@@ -53,9 +56,9 @@ canvas{display:block;position:fixed;inset:0}
   opacity:.5;transition:opacity .18s ease,transform .12s ease;-webkit-tap-highlight-color:transparent}
 .gbtn:active{opacity:1;transform:scale(.92);background:rgba(255,255,255,.16)}
 @media (hover:hover){.gbtn:hover{opacity:1}}
-#pauseBtn{right:calc(10px + var(--sar))}
-#homeBtn{right:calc(56px + var(--sar))}
-#setBtn{right:calc(10px + var(--sar));opacity:.62}
+#pauseBtn{right:calc(10px + var(--sar) + var(--vr))}
+#homeBtn{right:calc(56px + var(--sar) + var(--vr))}
+#setBtn{right:calc(10px + var(--sar) + var(--vr));opacity:.62}
 
 /* 設定パネル(音・言語をここに集約 → タイトルの絵文字と被らない) */
 #setPanel{position:fixed;z-index:12;display:none;
@@ -95,7 +98,7 @@ canvas{display:block;position:fixed;inset:0}
 #joinForm .jfBtn:active,#joinForm .jfCancel:active{transform:scale(.96)}
 
 /* PWAインストールの誘い(タイトル画面のみ・控えめ・いつでも閉じられる) */
-#pwaNudge{position:fixed;left:50%;bottom:calc(14px + var(--sab));z-index:15;
+#pwaNudge{position:fixed;left:50%;bottom:calc(14px + var(--sab) + var(--vb));z-index:15;
   width:min(90vw,372px);transform:translate(-50%,150%);opacity:0;pointer-events:none;
   display:flex;align-items:center;gap:10px;padding:11px 11px 11px 13px;border-radius:14px;
   background:rgba(10,15,32,.92);border:1px solid rgba(255,255,255,.16);

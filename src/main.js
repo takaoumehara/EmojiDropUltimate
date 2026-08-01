@@ -1,7 +1,7 @@
 // ============================================================
 // main.js — 起動・メインループ・上部ボタン配線
 // ============================================================
-import { ctx, DPR, resize } from './env.js';
+import { ctx, resize, applyTransform, VIEW } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
 import { Weather, CITIES, pickCity, setCity } from './weather.js';
@@ -128,7 +128,7 @@ let lastT = performance.now();
 function loop(now) {
   const dt = Math.min((now - lastT) / 1000, 0.034);
   lastT = now;
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  applyTransform();
   update(dt, keys);
   draw();
   syncButtons();
