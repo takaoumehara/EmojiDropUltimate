@@ -24,9 +24,23 @@ const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
 function listed() {
   return (sw.match(/'\/src\/[^']+\.js'/g) || []).map(s => s.replace(/'/g, ''));
 }
-/** 実際に存在する src/*.js */
+/**
+ * 実際に存在する src/**\/*.js
+ *
+ * 下の階層まで見るのは、顔ゲーム(src/face/)を足した時にここが直下しか
+ * 見ていなくて、正しく列挙したファイルを「実在しない」と誤検出したため。
+ * ディレクトリを1つ足すたびに検査が嘘をつくのでは、見張りの意味がない。
+ */
 function actual() {
-  return readdirSync(join(ROOT, 'src')).filter(f => f.endsWith('.js')).map(f => '/src/' + f);
+  const out = [];
+  const walk = (dir, prefix) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.isDirectory()) walk(join(dir, e.name), `${prefix}${e.name}/`);
+      else if (e.name.endsWith('.js')) out.push(`${prefix}${e.name}`);
+    }
+  };
+  walk(join(ROOT, 'src'), '/src/');
+  return out;
 }
 
 test('sw.js の一覧と src の中身が一致している', () => {

@@ -4,6 +4,11 @@
 
 **▶ 遊ぶ:** `index.html` を(ローカルHTTP または Vercel/GitHub Pages で)開くだけ。ビルド不要・依存CDNなし。
 
+> **別のもの:** `face.html` は**顔で遊ぶ実験装置**です。同じリポジトリに置いているだけで、
+> ゲームとしては別物・コードも共有していません。上の「依存CDNなし」はこのページには
+> 当てはまりません(MediaPipe を使うため)。ただし**ゆびの経路は依存ゼロでオフラインでも動きます**。
+> → [docs/face-game.md](docs/face-game.md)
+
 ---
 
 ## 🎮 特徴
@@ -167,6 +172,8 @@ server/       中継サーバー(任意・依存ゼロ)。立てなくても遊�
 test/         node --test 用のテスト
   headless.js 画面なしでゲームを走らせるハーネス(自動プレイのボット付き)
 sw.js / manifest.webmanifest / icons/   PWA
+face.html     顔で遊ぶ実験装置(別ページ・別ゲーム) → docs/face-game.md
+src/face/     その中身。index.html 側とはコードを共有しない
 docs/brief.md 設計判断の記録
 vercel.json
 ```

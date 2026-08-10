@@ -13,7 +13,7 @@
 // バージョンを上げると古い shell キャッシュが捨てられ、precache がやり直される。
 //   **モジュールを追加したら必ず上げる。** 上げないと、すでに遊んだ端末は
 //   新しいファイルが入っていない古い shell を持ち続ける。
-const VERSION = 'edu-v3';
+const VERSION = 'edu-v4';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const CURRENT_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
@@ -23,6 +23,11 @@ const CURRENT_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 const APP_SHELL = [
   '/',
   '/index.html',
+  // 顔で遊ぶ実験装置(別ページ)。precache に入れておかないと、オフライン時に
+  // ナビゲーションが caches.match('/index.html') へ落ちて、別のゲームが出てしまう。
+  // なお /src/face/*.js は isSrcModule() が拾うので network-first になる。
+  // **/src/ の外に置くと cache-first になり、新しいコードが永久に届かない。**
+  '/face.html',
   '/manifest.webmanifest',
   '/og.png',
   '/icons/icon-192.png',
@@ -55,6 +60,19 @@ const APP_SHELL = [
   '/src/ui.js',
   '/src/weather.js',
   '/src/wstransport.js',
+  // 顔ゲームのモジュール。**ゆびの経路は外部依存ゼロでオフラインでも遊べる**と
+  // 謳っている以上、ここに入っていないとその約束が嘘になる。
+  // MediaPipe は CDN から、カメラの許可が下りた後にだけ読むので precache しない。
+  '/src/face/main.js',
+  '/src/face/game.js',
+  '/src/face/signal.js',
+  '/src/face/metrics.js',
+  '/src/face/audio.js',
+  '/src/face/tapsource.js',
+  '/src/face/expressions.js',
+  // facesource.js 自体は入口の画面から読む(HTTPS かどうかの判定に要る)ので precache する。
+  // 中の MediaPipe は import() で CDN から、許可が下りた後にだけ落ちてくる。
+  '/src/face/facesource.js',
 ];
 
 self.addEventListener('install', event => {
