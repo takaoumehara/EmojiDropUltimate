@@ -308,7 +308,12 @@ export const Coop = {
         break;
       case 'dmg': this.applyPartnerDamage(o.d | 0, p); break;
       case 'w': this.snap = o; this.snapAt = performance.now(); break;   // ゲスト: ワールド状態を受信
-      case 'hit': if (this.onPartnerHit) this.onPartnerHit(o.id, o.d | 0, o.sl); break; // ホスト: 相方の命中を反映
+      // ホスト: 相方の命中を反映。**誰が撃ったか(from)も渡す** ——
+      //   盾持ちは「撃った人が塞がれているか」で通る通らないが決まるので、
+      //   送り主が分からないと判定できない。名乗りではなく線が決めるので偽れない。
+      case 'hit': if (this.onPartnerHit) this.onPartnerHit(o.id, o.d | 0, o.sl, from); break;
+      // ホスト: 相方がベルを鳴らした。位(何人が鳴らしたか)はホストが正。
+      case 'bell': if (this.onPartnerBell) this.onPartnerBell(o.id | 0, from); break;
       case 'died': if (this.onPartnerDied) this.onPartnerDied(); break;           // ホスト: 共有残機を減らす
       case 'over': if (this.onGameOver) this.onGameOver(); break;                 // ゲスト: 二人まとめて終了
       // ゲスト: ボス撃破。スナップショットは state が finale に移った時点で止まるので、
@@ -324,7 +329,7 @@ export const Coop = {
       case 'ls': if (this.onLastStand) this.onLastStand(String(o.k || ''), o.d ? String(o.d) : null); break;
     }
   },
-  onPartnerHit: null, onPartnerDied: null, onGameOver: null, onBossDown: null, onLastStand: null, onPeerSuper: null,   // engine が設定
+  onPartnerHit: null, onPartnerBell: null, onPartnerDied: null, onGameOver: null, onBossDown: null, onLastStand: null, onPeerSuper: null,   // engine が設定
 
   // ホスト → ゲスト: ワールド状態(敵・弾・ベル・ボス)を一定間隔で送る
   _lastSnap: 0,

@@ -112,11 +112,13 @@ export const Save = {
   // オープニングを見たか。章ごとにビットで持つ。
   //   一度見たら二度目からは出さない(出続けると「早く遊ばせろ」になる)。
   //   32章ぶんで足りる —— それ以降は「見た」ものとして扱う。
-  // きずなで何体切ったか。**説明をいつやめるか**の判断に使う。
+  // 盾持ちの背中を何回撃てたか。**説明をいつやめるか**の判断に使う。
   //   数回できたなら、もう案内は要らない。
-  tetherCuts() { return this.data.tcuts | 0; },
-  bumpTetherCuts() {
-    this.data.tcuts = Math.min(999, this.tetherCuts() + 1);
+  //   保存キーは tcuts のまま使い回す(古い保存データの数がそのまま引き継がれる。
+  //   意味は「共闘の仕組みを何回こなしたか」で変わっていないので、消さない)。
+  backstabs() { return this.data.tcuts | 0; },
+  bumpBackstabs() {
+    this.data.tcuts = Math.min(999, this.backstabs() + 1);
     if (this.data.tcuts % 4 === 0) this.persist();     // 毎回書かない
   },
 

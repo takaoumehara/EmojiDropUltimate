@@ -11,7 +11,7 @@
 // ============================================================
 
 /** 表示用の版番号。docs/versions.md と git tag と必ず揃える。 */
-export const VERSION = '2.0.0';
+export const VERSION = '2.1.0';
 
 /** 版の呼び名。1.0 は DUO(ふたり)、2.0 は PARTY(最大4人)。 */
 export const CODENAME = 'PARTY';

@@ -18,7 +18,8 @@ import { openShare } from './ui.js';
 import { Coop } from './coop.js';
 import { Diag } from './diag.js';
 import { SUPERS, superKeyOf, SUPER_MAX, SUPER_GAIN, FUSION_WINDOW, fusionMul } from './super.js';
-import { TETHER, updateTether, newTetherState, bossDamageMul } from './tether.js';
+import { GUARD, shieldCount, updateGuards, canHit } from './guard.js';
+import { ring as ringBell, bellBoost, rankInfo, MAX_RANK } from './bellrelay.js';
 import { chapterOf, missionFor, finalMissionFor } from './story.js';
 
 // ストレージ無効環境でも落ちないように
@@ -31,25 +32,45 @@ function shuffled(arr) {
 
 function trySetHi(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
-// 共闘ボスの硬さ。**人数に比例させる。**
-//   4人いれば毎秒の火力もほぼ4倍になる。前は「ひとり増えて1.11倍」にしていたが、
-//   これだと4人で挑むとボスが2倍以上の速さで溶けて、手応えがまるで無くなっていた。
-//   ひとりあたりの戦闘時間が人数によらず一定になるよう、素直に人数を掛ける。
-//   2人 ×2.2 / 3人 ×3.3 / 4人 ×4.4。
-const COOP_HP_MUL = 2.2;
-const coopHpMul = n => COOP_HP_MUL * Math.max(2, n) / 2;
-// 攻撃の激しさも人数で上げる。硬いだけのボスは「長い」だけで「強い」ではない。
-//   4人だと弾の量が 1.45 倍になり、避ける仕事も人数ぶん増える。
-const coopAtkMul = n => 1 + (Math.max(2, n) - 2) * 0.225;
-// 残機はチームで共有する。ソロは1人で3機なので、人数で割ると共闘のほうが
-//   ずっと厳しかった(2人で3機 = ひとり1.5機)。ひとり2機ぶん + 1 を配る。
-//   2人=5 / 3人=7 / 4人=9。多すぎるように見えるが、共有で全員の事故が同じ財布から出る。
-const coopLives = n => Math.max(2, n) * 2 + 1;
-// 道中の湧きも人数で増やす。「2人でも1人と変わらない」と言われた原因のひとつは、
-//   ボスだけ硬くして**道中がそのまま**だったこと。2人なら毎秒の火力は倍近いのに、
-//   撃つ相手の数は同じ —— それは強くなったのではなく、待ち時間が半分になっただけ。
-//   きずなで群れを薙げるようにしたぶんもここで受ける。2人 ×1.22 / 4人 ×1.66。
-const coopSpawnMul = n => 1 + (Math.max(2, n) - 1) * 0.22;
+// === 共闘の締め具合 ===
+//
+// 「2人でやったら全然簡単になっちゃってる」と言われた。数えたらその通りで、
+//   人数ぶんの火力(2人=約2倍)に対して、脅威は 湧き1.22倍・ボス2.2倍・弾はそのまま
+//   しか増えていなかった。**足し算が合っていない。**
+//
+// 直し方はひとつ。**脅威を人数に正比例させる。** 4人なら道中の敵も4倍来る。
+//   そのうえで COOP_TUNE で全体を一段締める —— 共闘は「人数で楽をする場所」では
+//   なく「人数でしか越えられない場所」にしたいので、正比例では足りない。
+//
+// **調整するならここだけ触ればいい。** 上げると全人数ぶん厳しくなる。
+//   1.0 = ちょうど人数ぶん / 1.15 = 人数ぶん + 15% / 0.9 = 少し甘く
+const COOP_TUNE = 1.15;
+const nOf = n => Math.max(2, Math.min(4, n | 0));
+// ボスの硬さ。ひとりあたりの戦闘時間が人数によらず一定になる形(人数に比例)。
+//   2人 ×2.53 / 3人 ×3.80 / 4人 ×5.06
+const coopHpMul = n => 1.1 * nOf(n) * COOP_TUNE;
+// 弾の量。硬いだけのボスは「長い」だけで「強い」ではないので、避ける仕事も増やす。
+//   2人 ×1.50 / 3人 ×1.84 / 4人 ×2.19
+const coopAtkMul = n => (0.7 + 0.3 * nOf(n)) * COOP_TUNE;
+// 残機はチームで共有する。**前は 2人=5 と配りすぎていた**(ソロが3機なのに)。
+//   共有の財布なので、ひとりぶん増えるごとに1機。2人=4 / 3人=5 / 4人=6。
+const coopLives = n => nOf(n) + 2;
+// 道中の湧き。ここが一番効く。「2人でも1人と変わらない」の正体は、
+//   毎秒の火力が倍なのに**撃つ相手の数が同じ**だったこと。人数ぶん素直に増やす。
+//   2人 ×2.30 / 3人 ×3.45 / 4人 ×4.60
+const coopSpawnMul = n => nOf(n) * COOP_TUNE;
+// 1つの波に混ぜる盾持ちの数。2〜3人は1体、4人は2体。
+//   4人で1体だと、3人が手持ち無沙汰になって「4人だからこそ」にならない。
+const guardsPerWave = n => (nOf(n) >= 4 ? 2 : 1);
+
+/**
+ * 人数ごとの締め具合を、まとめて読めるようにしたもの。
+ * 検査から数値を見るためだけに在る(遊びの側はそれぞれの関数を直接使う)。
+ */
+export const coopScaling = n => ({
+  hp: coopHpMul(n), atk: coopAtkMul(n), spawn: coopSpawnMul(n),
+  lives: coopLives(n), guards: guardsPerWave(n),
+});
 
 // むずかしさ。Director の自動調整の「上」に掛ける固定倍率。
 //   自動調整だけだと、子供に渡すときに明示的に弱くできない。
@@ -77,9 +98,12 @@ function buildSnap() {
     //   ボスの顔をした特別な敵で、その番号に載っていないので、印を1つ足す。
     //   これが無いとゲストの画面では分身が普通の雑魚に見え、一番の見せ場で
     //   全員が別のものを見ることになる。
-    e: game.enemies.filter(e => e.delay <= 0).map(e => [e.id, Math.round(e.x), Math.round(e.y), e.ti, e.hp, e.maxHp, e.shard ? 1 : 0]),
+    //   盾持ちの印(g)も載せる。**盾の向き自体は送らない** —— 位置の順位だけで
+    //   決まるので、各端末が自分で出せる。送ると却って食い違う(届くのが遅れるため)。
+    e: game.enemies.filter(e => e.delay <= 0).map(e => [e.id, Math.round(e.x), Math.round(e.y), e.ti, e.hp, e.maxHp, e.shard ? 1 : 0, e.guard ? 1 : 0]),
     b: game.eBullets.map(x => [Math.round(x.x), Math.round(x.y), Math.round(x.vx), Math.round(x.vy), x.size, x.boss ? 1 : 0]),
-    l: game.bells.map(x => [Math.round(x.x), Math.round(x.y), x.idx, x.size]),
+    //   ベルは id と位も送る。位はホストが正(誰が鳴らしたかを1箇所で数える)。
+    l: game.bells.map(x => [Math.round(x.x), Math.round(x.y), x.idx, x.size, x.id, x.rank || 1]),
     s: b ? [Math.round(b.x), Math.round(b.y), Math.round(b.hp), b.entering ? 1 : 0, b.phase,
             Math.round(b.maxHp), Math.round((b.scale || 1) * 100), b.dying > 0 ? 1 : 0, b.revived ? 1 : 0] : null,
     w: Math.round(game.warnT),
@@ -98,21 +122,24 @@ let lastSnapAt = -1;
 function rebuildFromSnap(s) {
   const st = stage();
   const prev = new Map(game.enemies.map(e => [e.id, e]));
-  game.enemies = s.e.map(([id, x, y, ti, hp, maxHp, shard]) => {
+  game.enemies = s.e.map(([id, x, y, ti, hp, maxHp, shard, guard]) => {
     const o = prev.get(id);
-    if (o) { o.tx = x; o.ty = y; o.hp = hp; return o; }   // 目標位置だけ更新(実座標は補間)
+    if (o) { o.tx = x; o.ty = y; o.hp = hp; o.guard = !!guard; return o; }   // 目標位置だけ更新(実座標は補間)
     const type = st.enemies[ti] || st.enemies[0];
     // 分裂の分身はボスの顔・大きさで描く。敵リストの番号では表せない。
     if (shard) {
       return { id, x, y, tx: x, ty: y, ti, hp, maxHp, size: 30, emoji: st.boss.emoji, shard: true, delay: 0, flash: 0 };
     }
-    return { id, x, y, tx: x, ty: y, ti, hp, maxHp, size: type.size, emoji: type.emoji, delay: 0, flash: 0 };
+    return { id, x, y, tx: x, ty: y, ti, hp, maxHp, size: type.size * (guard ? 1.25 : 1), emoji: type.emoji,
+      guard: !!guard, blocked: null, blockFlash: 0, delay: 0, flash: 0 };
   });
   game.eBullets = s.b.map(([x, y, vx, vy, size, boss]) => ({
     x, y, vx, vy, size, boss: !!boss,
     col: boss && game.boss ? game.boss.col : null, shape: boss && game.boss ? game.boss.shape : null,
   }));
-  game.bells = s.l.map(([x, y, idx, size]) => ({ x, y, idx, size, phase: 0, prog: 0, lat: 0, hits: 0 }));
+  // ベルは位(rank)ごと受け取る。**who は持ち越さない** —— 誰が鳴らしたかを
+  //   数えるのはホストの仕事で、ゲストが自前で数えると二重に数える。
+  game.bells = s.l.map(([x, y, idx, size, id, rank]) => ({ x, y, idx, size, id, rank: rank || 1, who: [], phase: 0, prog: 0, lat: 0, hits: 0 }));
   game.warnT = s.w;
   if (typeof s.lv === 'number') game.lives = s.lv;        // 残機はチーム共有(ホストが管理)
   if (typeof s.st === 'number') game.stageTime = s.st;    // 引き継ぎに備えて進行度も合わせる
@@ -794,26 +821,55 @@ export function useBomb() {
 }
 
 // === 敵 ===
+/**
+ * 人数ぶんの「口」に散らす。
+ *
+ * 「面も変わっていい」と言われた一番安くて一番効く形。同じ波でも、
+ * 2人なら左右2つ・3人なら3つ・4人なら4つの入口から同時に降りてくる。
+ * **ひとりで全部の口は塞げない**ので、持ち場を決めることが要る。
+ * 隊列(インベーダー)だけは形が意味なので、散らさずそのまま出す。
+ */
+function coopLane(lat, i, n, span) {
+  if (n < 2) return lat;
+  const band = span / n;
+  const within = ((lat % band) + band) % band;    // 元の並びの「ゆらぎ」は残す
+  return clamp((i % n) * band + within, 42, span - 42);
+}
+
 function spawnWave() {
   const st = stage();
   const list = PATTERNS[game.waveIdx % PATTERNS.length](st.enemies, latSpan());
   // 隊列は「1体ずつ」ではなく「かたまり」として動くので、共有の台帳を1つ作る。
   //   端に着いたか・何体残っているか・次に誰が突っ込むかは全員で1つの答えを持つ。
   const squad = list.some(it => it.march) ? newSquad(list.length) : null;
+  const np = game.coop ? nOf(Coop.playerCount()) : 1;
+  // 盾持ちは硬い相手にだけ憑ける。柔らかい雑魚に盾を付けると、
+  //   回り込む前に流れ弾で溶けて「そういう敵が居た」ことにすら気づけない。
+  //   最初の波には出さない —— まず普通に撃つ手触りを取り戻してから会わせる。
+  let guardsLeft = (game.coop && np >= 2 && !squad && game.waveIdx >= 1) ? guardsPerWave(np) : 0;
+  let idx = -1;
   for (const it of list) {
+    idx++;
     const tt = it.t;
-    const lat = clamp(it.lat, 42, latSpan() - 42);
+    const lat = clamp(squad ? it.lat : coopLane(it.lat, idx, np, latSpan()), 42, latSpan() - 42);
     const m = it.march;
+    const guard = guardsLeft > 0 && !m && (tt.hp || 1) >= 2 && (guardsLeft--, true);
     game.enemies.push({
       id: nextEid++, ti: Math.max(0, st.enemies.indexOf(tt)),
       move: m ? null : (MOVE_BY_EMOJI[tt.emoji] || null),   // 隊列は癖より隊列が優先
       mvT: rand(400, 1400), mvS: 0,
       mph: rand(0, Math.PI * 2), blink: 0,
-      type: m ? 'march' : tt.type, emoji: tt.emoji,
-      hp: tt.hp, maxHp: tt.hp, speed: tt.speed, pts: tt.pts, size: tt.size,
+      // 盾持ちは「撃ってくる型」に固定する。**囮に代償を持たせるため** ——
+      //   前に出て盾を引きつけた人が撃たれもしないなら、危険を引き受けたことに
+      //   ならず、ただの手順になる。
+      type: m ? 'march' : (guard ? 'shooter' : tt.type), emoji: tt.emoji,
+      hp: tt.hp * (guard ? GUARD.HP_MUL : 1), maxHp: tt.hp * (guard ? GUARD.HP_MUL : 1),
+      speed: tt.speed * (guard ? GUARD.SPEED_MUL : 1), pts: Math.round(tt.pts * (guard ? 3 : 1)),
+      size: tt.size * (guard ? 1.25 : 1),
+      guard, blocked: null, blockFlash: 0,
       amp: tt.amp || 60, freq: tt.freq || 2,
       // 隊列は元の型が撃たない相手でも撃つ。並んで迫るだけでは圧が足りない。
-      shootRate: m ? Math.max(0.16, tt.shootRate || 0) : (tt.shootRate || 0),
+      shootRate: m ? Math.max(0.16, tt.shootRate || 0) : (guard ? GUARD.SHOOT_RATE : (tt.shootRate || 0)),
       prog: 0, lat0: lat, lat, phase: rand(0, Math.PI * 2),
       shootT: rand(600, 1800), delay: it.delay, flash: 0,
       locked: false, lockLat: 0, x: -999, y: -999,
@@ -933,7 +989,10 @@ function updateEnemies(dt) {
         e.shootT -= dt * 1000;
         if (e.shootT <= 0 && e.prog > 60 && e.prog < span * 0.75) {
           e.shootT = 1000 / (e.shootRate * Director.shootMul);
-          const a = Math.atan2(game.player.y - e.y, game.player.x - e.x);
+          // 盾持ちは**盾を向けている相手**、つまり一番近い人を撃つ。
+          //   前に出た人にだけ弾が来る。これで「囮を引き受ける」が身体で分かる。
+          const tg = e.guard ? nearestPlayerTo(e) : game.player;
+          const a = Math.atan2(tg.y - e.y, tg.x - e.x);
           const bs = CFG.EBULLET_SPEED * Director.ebSpeedMul;
           if (e.type === 'tank') for (let k = -1; k <= 1; k++) game.eBullets.push({ x: e.x, y: e.y, vx: Math.cos(a + k * 0.25) * bs, vy: Math.sin(a + k * 0.25) * bs, size: 5 });
           else game.eBullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * bs, vy: Math.sin(a) * bs, size: 5 });
@@ -980,6 +1039,7 @@ function updateEnemies(dt) {
     const pos = posFromPL(e.prog, e.lat);
     e.x = pos.x; e.y = pos.y;
     if (e.flash > 0) e.flash -= dt * 8;
+    if (e.blockFlash > 0) e.blockFlash -= dt * 4;
     if (e.prog > span + 110 || e.lat < -90 || e.lat > latSpan() + 90) game.enemies.splice(i, 1);
   }
 }
@@ -1192,10 +1252,6 @@ function bossAttack(b, atk) {
 }
 
 function damageBoss(dmg) {
-  // きずながボスにかかっているあいだは弾がよく通る。線そのものはボスを削らない
-  //   —— 削れるようにすると、離れて放っておくだけで勝ててしまう。
-  //   「ふたりで挟んで、そのあいだに撃ちこむ」形にだけ褒美を出す。
-  dmg *= bossDamageMul(game.tether);
   gainSuper(SUPER_GAIN.bossHit * dmg);
   const b = game.boss;
   if (!b || b.entering) return;
@@ -1513,40 +1569,37 @@ const MAX_BELLS = 3;                    // 画面に溜めない。溜まると�
 //   1ステージ2回までだけ救いを入れる。取れる位置に出し、色も最初から役に立つものにする。
 const MERCY_MAX = 2, MERCY_GAP = 12000;
 /**
- * きずなを進める。
+ * 自分の id。盾の判定は「誰が撃ったか」で決まるので、
+ * 端末をまたいで一致する名前が要る。
  *
- * 位置は「自分 → 参加順の相方」で数珠つなぎにする。倒れている人は飛ばす
- * —— 復活待ちの機体に線が伸びていると、休んでいるだけで貢献してしまう。
- * ダメージを入れるのはホストだけ(ゲストは描くための状態だけ作る)。
+ * selfId は網目(3〜4人)でしか立たないので、1対1の直結ではホスト/ゲストの
+ * 役名で代用する。**どちらの端末から見ても同じ文字列になること**だけが条件。
  */
-function updateTetherStep(dt) {
-  if (!game.tether) game.tether = newTetherState();
-  const st = game.tether;
-  if (!game.coop) { st.links.length = 0; st.branded = false; return; }
-  const p = game.player;
-  const pts = [];
-  if (!p.dead) pts.push({ x: p.x, y: p.y });
-  for (const q of Coop.livePeers()) if (q.alive) pts.push({ x: q.x * W, y: q.y * H });
-  updateTether(dt, pts, st, {
-    host: !isGuest(),
-    enemies: game.enemies,
-    boss: game.boss,
-    hurt: (e, dmg) => damageEnemy(e, dmg),
-    onBreak: () => {
-      game.shake = Math.min(game.shake + 6, CFG.MAX_SHAKE);
-      popup(W / 2, H * 0.42, t('tether_snap'), '#ff6a6a');
-      Snd.hit();
-    },
-    // 線で切った敵はゲージに乗せる。合体技へつながって、
-    //   「離れずに寄り添って戦う」が必殺技の回転につながる。
-    //   **手応えも出す。** 音も光も無いと、切れていることに気づけない。
-    onCut: e => {
-      gainSuper(SUPER_GAIN.kill * 0.6);
-      particles(e.x, e.y, 10, '#8fe9ff', 1.4);
-      popup(e.x, e.y - 14, '✂️', '#8fe9ff');
-      Save.bumpTetherCuts();
-    },
-  });
+export function selfKey() { return Coop.selfId || (Coop.role === 'guest' ? 'G' : 'H'); }
+
+/**
+ * いま生きている全員の位置。盾の向き先を決めるのに使う。
+ * 倒れている人は数えない —— 復活待ちの機体に盾を向けられると、
+ * 誰も居ない方向を守っているだけの置物になる。
+ */
+function livePlayers() {
+  const p = game.player, out = [];
+  if (!p.dead) out.push({ id: selfKey(), x: p.x, y: p.y });
+  for (const q of Coop.livePeers()) if (q.alive) out.push({ id: q.id, x: q.x * W, y: q.y * H });
+  return out;
+}
+
+/**
+ * 盾の向きを1フレーム更新する。
+ *
+ * ホストでもゲストでも回す。**判定はホストが正**だが、ゲストも同じ答えを
+ * 持っていないと「弾かれるのが見えないのに弾かれる」ことになる。
+ * 位置さえ揃っていれば同じ答えになる(距離の順位だけで決まるので)。
+ */
+function updateGuardStep() {
+  if (!game.coop) return;
+  game.players = livePlayers();
+  updateGuards(game.enemies, game.players);
 }
 
 function inTrouble() {
@@ -1563,21 +1616,26 @@ function updateMercyBell(dt) {
   const want = game.lives <= 1 ? 'life' : 'shield';
   const idx = Math.max(0, BELLS.findIndex(b => b.effect === want));
   const lat = clamp(latOf(game.player), 60, latSpan() - 60);
-  game.bells.push({ prog: 60, lat, idx, hits: 0, phase: rand(0, Math.PI * 2),
-    size: 16, x: -999, y: -999, lockFlash: 0, mercy: 1 });
+  game.bells.push(newBell({ prog: 60, lat, idx, mercy: 1 }));
   popup(game.player.x, game.player.y - 54, getLang() === 'ja' ? '🔔 たすけ!' : '🔔 HELP!', '#ffd700');
+}
+// ベルにも id を振る。**位(誰が鳴らしたか)を端末間で合わせるのに要る** ——
+//   配列の並び順で指すと、ホストで1個消えた瞬間に別のベルの位が入れ替わる。
+let nextBid = 1;
+function newBell(o) {
+  return { id: nextBid++, prog: 60, lat: 0, idx: 0, hits: 0, phase: rand(0, Math.PI * 2),
+    size: 16, x: -999, y: -999, lockFlash: 0, who: [], rank: 1, ...o };
 }
 function spawnBell() {
   if (game.bells.length >= MAX_BELLS) return;
-  game.bells.push({ prog: 60, lat: rand(50, latSpan() - 50), idx: 0, hits: 0, phase: rand(0, Math.PI * 2), size: 16, x: -999, y: -999, lockFlash: 0 });
+  game.bells.push(newBell({ lat: rand(50, latSpan() - 50) }));
 }
 // 倒した敵の位置からベルを出す。ベルを「湧いてくるもの」から
 //   「強い敵を倒した見返り」に変えると、取りに行く判断が生まれる。
 function spawnBellAt(x, y) {
   if (game.bells.length >= MAX_BELLS) return;
   const inv = invPL(x, y);
-  game.bells.push({ prog: Math.max(20, inv.prog), lat: clamp(inv.lat, 40, latSpan() - 40),
-    idx: 0, hits: 0, phase: rand(0, Math.PI * 2), size: 16, x, y, lockFlash: 0 });
+  game.bells.push(newBell({ prog: Math.max(20, inv.prog), lat: clamp(inv.lat, 40, latSpan() - 40), x, y }));
 }
 export const BELL_DROP_HP = 3;          // これ以上硬い敵=撃ち返してくる連中だけが落とす
 const BELL_DROP_CHANCE = 0.5;
@@ -1593,12 +1651,30 @@ function bellLocked(bell) {
   const p = game.player;
   return !p.dead && dist(bell, p) < BELL_LOCK_R;
 }
-function hitBell(bell) {
+/**
+ * ベルを鳴らす。
+ *
+ * 色が回るのは今まで通り。**位(何人が鳴らしたか)がここで増える** ——
+ * 同じ人が何度鳴らしても増えない。ソロは位1のままで、そこが上限になる。
+ */
+function hitBell(bell, byId) {
   bell.prog -= 26;                     // 撃てば押し戻せるのはそのまま
+  const before = bell.rank || 1;
+  // 位はロック中でも上がる。色を固定したあとに「あと1人」を頼めないと、
+  //   拾う直前に人を呼ぶという一番おいしい瞬間が消えてしまう。
+  const rank = game.coop ? ringBell(bell, byId) : 1;
+  if (rank > before) {
+    const ri = rankInfo(rank);
+    Snd.bell(Math.min(BELLS.length - 1, 3 + rank * 2));   // 位が上がるほど高い音
+    particles(bell.x, bell.y, 14, ri.color, 1.5);
+    popup(bell.x, bell.y - 26, `${ri.ja || ''}×${ri.mul}`, ri.color);
+  }
   if (bellLocked(bell)) {              // ロック中は色を変えない
     bell.lockFlash = 1;
-    Snd.bellLocked();                  // 当たってはいるが色は動かない、を音でも
-    particles(bell.x, bell.y, 2, '#ffffff');
+    if (rank === before) {
+      Snd.bellLocked();                // 当たってはいるが色は動かない、を音でも
+      particles(bell.x, bell.y, 2, '#ffffff');
+    }
     return;
   }
   bell.hits++; bell.idx = (bell.idx + 1) % BELLS.length;
@@ -1608,20 +1684,27 @@ function hitBell(bell) {
 function collectBell(bell) {
   gainSuper(SUPER_GAIN.bellPick);   // ベルは必殺技への一番大きな供給源
   const bt = BELLS[bell.idx], p = game.player;
-  Snd.power(); particles(bell.x, bell.y, 14, bt.color);
-  popup(bell.x, bell.y - 16, bt.name + '!', bt.color);
+  const rank = Math.max(1, bell.rank || 1);
+  const ri = rankInfo(rank), bo = bellBoost(bt.effect, rank);
+  const dur = d => Math.round((d || 0) * bo.mul);
+  // 粒の数は **位が付いた時だけ** 増やす。位1で増やすと、粒ひとつごとに
+  //   乱数を引く都合でソロの出目まで動いてしまう(実際に回帰テストが落ちた)。
+  Snd.power(); particles(bell.x, bell.y, 14 + (rank - 1) * 6, rank > 1 ? ri.color : bt.color);
+  // 位が付いていたら名前に添える。**何が起きたのか一目で分かるように** ——
+  //   数字だけ強くしても、受け渡しが効いたことに気づけない。
+  popup(bell.x, bell.y - 16, rank > 1 ? `${ri.ja}${bt.name}!` : bt.name + '!', rank > 1 ? ri.color : bt.color);
   switch (bt.effect) {
-    case 'points': game.score += Math.round(bt.value * game.comboMul * Weather.mods.scoreMul); break;
-    case 'speed': p.boost = true; p.boostT = bt.duration; break;
-    case 'power': p.power = Math.min(p.power + 1, CFG.MAX_POWER); break;
-    case 'option': p.options = Math.min(p.options + 1, CFG.MAX_OPTIONS); break;
+    case 'points': game.score += Math.round(bt.value * bo.mul * game.comboMul * Weather.mods.scoreMul); break;
+    case 'speed': p.boost = true; p.boostT = dur(bt.duration); break;
+    case 'power': p.power = Math.min(p.power + 1 + bo.add, CFG.MAX_POWER); break;
+    case 'option': p.options = Math.min(p.options + 1 + bo.add, CFG.MAX_OPTIONS); break;
     case 'shield': p.shield = true; break;
-    case 'bomb': game.bombs = Math.min(game.bombs + 1, CFG.MAX_BOMBS); break;
-    case 'boomerang': p.boomT = bt.duration; break;
-    case 'swift': p.swiftT = bt.duration; break;                              // 弾が速くなる
-    case 'life': game.lives = Math.min(game.lives + 1, MAX_LIFE_BELL); break;  // ボス戦の救済
-    case 'rear': p.rearT = bt.duration; break;
-    case 'side': p.sideT = bt.duration; break;
+    case 'bomb': game.bombs = Math.min(game.bombs + 1 + bo.add, CFG.MAX_BOMBS); break;
+    case 'boomerang': p.boomT = dur(bt.duration); break;
+    case 'swift': p.swiftT = dur(bt.duration); break;                          // 弾が速くなる
+    case 'life': game.lives = Math.min(game.lives + 1 + bo.add, MAX_LIFE_BELL); break;  // ボス戦の救済
+    case 'rear': p.rearT = dur(bt.duration); break;
+    case 'side': p.sideT = dur(bt.duration); break;
   }
 }
 
@@ -1668,6 +1751,21 @@ function updateStage(dt) {
     }
   }
   if (game.warnT > 0) { game.warnT -= dt * 1000; if (game.warnT <= 0) spawnBoss(); }
+}
+
+/**
+ * この敵に一番近い人。盾の向き先であり、弾の狙い先でもある。
+ * game.players は updateGuardStep が毎フレーム作り直す。
+ */
+function nearestPlayerTo(e) {
+  const list = game.players;
+  if (!list || !list.length) return game.player;
+  let best = list[0], bd = Infinity;
+  for (const q of list) {
+    const d = (q.x - e.x) * (q.x - e.x) + (q.y - e.y) * (q.y - e.y);
+    if (d < bd) { bd = d; best = q; }
+  }
+  return best;
 }
 
 // 一番近い敵(半径内)。ネコの追尾に使う。
@@ -1887,14 +1985,27 @@ function checkCollisions() {
       const e = game.enemies[ei];
       if (e.delay > 0) continue;
       if (dist(b, e) < e.size + b.size) {
+        // 盾に塞がれている人の弾は通らない。**弾は消す** ——
+        //   すり抜けさせると「当たっていないのに効かない」に見えてしまう。
+        //   跳ね返る火花を出して、当たった上で弾かれたことを見せる。
+        if (!canHit(e, selfKey())) {
+          e.blockFlash = 1;
+          particles(b.x, b.y, 4, '#9fb4d8', 1.6);
+          Snd.bellLocked();       // 「当たったが通らない」の音。ベルのロックと同じ意味
+          game.pBullets.splice(bi, 1); used = true;
+          break;
+        }
         if (b.slow) e.slowT = 1400;                      // キャラ特性: ベタッと減速
+        // 背中に回り込んだ見返り。前に出た誰かが盾を引きつけてくれている
+        //   あいだにしか出せない一撃なので、はっきり大きくする。
+        const dmg = (b.dmg || 1) * (e.guard ? GUARD.BACK_MUL : 1);
         if (isGuest()) {          // ゲストの命中はホストへ通知(正はホスト側の計算)
-          const dmg = b.dmg || 1;
           Coop.send({ t: 'hit', id: e.id, d: dmg, sl: b.slow ? 1 : 0 });
           e.flash = 1; e.hp -= dmg; particles(e.x, e.y, 3, '#ffffff');
           game.stats.hits++;
           if (e.hp <= 0) { game.enemies.splice(ei, 1); Snd.kill(); particles(e.x, e.y, 12, '#ffd700'); }
-        } else damageEnemy(e, b.dmg || 1);
+        } else damageEnemy(e, dmg);
+        if (e.guard) { popup(e.x, e.y - 20, '🗡', '#ffd166'); Save.bumpBackstabs(); }
         if (!b.pierce) { game.pBullets.splice(bi, 1); used = true; }   // 貫通弾は消えない
         if (!isGuest() && e.hp <= 0) game.enemies.splice(ei, 1);
         if (!b.pierce) break;
@@ -1904,7 +2015,13 @@ function checkCollisions() {
     if (game.boss && !game.boss.entering && dist(b, game.boss) < 42 * game.boss.scale + b.size) { damageBoss(b.dmg || 1); if (!b.pierce) { game.pBullets.splice(bi, 1); } continue; }
     for (let li = game.bells.length - 1; li >= 0; li--) {
       const bl = game.bells[li];
-      if (dist(b, bl) < bl.size + b.size + 4) { hitBell(bl); game.pBullets.splice(bi, 1); break; }
+      if (dist(b, bl) < bl.size + b.size + 4) {
+        // ゲストもホストへ知らせる。**位はホストが正**だが、ローカルでも
+        //   先に鳴らして音と光を返す(往復を待たせない)。
+        if (isGuest()) Coop.send({ t: 'bell', id: bl.id });
+        hitBell(bl, selfKey());
+        game.pBullets.splice(bi, 1); break;
+      }
     }
   }
   if (!p.dead) {
@@ -2095,9 +2212,21 @@ Coop.onBecomeHost = () => {
 // ホストがボスを倒した → ゲストも同じ撃破演出へ
 Coop.onBossDown = () => { if (game.boss && !game.finale) bossDefeated(); };
 // ホスト: 相方が当てた敵に実ダメージを与える(判定の正はホスト)
-Coop.onPartnerHit = (id, d, sl) => {
+Coop.onPartnerHit = (id, d, sl, from) => {
   const e = game.enemies.find(x => x.id === id);
-  if (e) { if (sl) e.slowT = 1400; damageEnemy(e, d); if (e.hp <= 0) game.enemies = game.enemies.filter(x => x !== e); }
+  if (!e) return;
+  // 盾の判定はホストが正。相方の端末では通ったつもりでも、こちらで塞がれて
+  //   いれば入れない。**位置のズレで一瞬だけ食い違うことはある**が、
+  //   ズレたぶんは次のスナップショットで揃うので、見え方は追いつく。
+  if (!canHit(e, from)) { e.blockFlash = 1; return; }
+  if (sl) e.slowT = 1400;
+  damageEnemy(e, d);
+  if (e.hp <= 0) game.enemies = game.enemies.filter(x => x !== e);
+};
+// ホスト: 相方がベルを鳴らした。**別の人が鳴らして初めて位が上がる**。
+Coop.onPartnerBell = (id, from) => {
+  const bl = game.bells.find(x => x.id === id);
+  if (bl) hitBell(bl, from);
 };
 // ホスト: 相方が被弾 → チーム共有の残機を減らす。尽きたら二人まとめて終了。
 Coop.onPartnerDied = () => {
@@ -2244,7 +2373,9 @@ export function update(dt, keys) {
       //   「逃・スパイダークイーン」の見出しが画面に永久に残っていた。
       if (game.bossRevealT > 0) game.bossRevealT -= dt * 1000;
       updateBg(dt);
-      updateTetherStep(dt);
+      // 敵も自機も動き終わってから盾を向け直す。**当たり判定より前**に置く ——
+      //   古い向きで判定すると「回り込んだ瞬間だけ弾かれる」が起きる。
+      updateGuardStep();
       updateSuper(dt);
       updateTimers(dt);
       updateParticles(dt);

@@ -11,9 +11,9 @@ import { Director } from './director.js';
 import { BossAI } from './bossai.js';
 import { Save } from './save.js';
 import { Coop } from './coop.js';
-import { BELL_LOCK_R } from './engine.js';
+import { BELL_LOCK_R, selfKey } from './engine.js';
+import { rankInfo } from './bellrelay.js';
 import { SUPERS, superKeyOf, SUPER_MAX } from './super.js';
-import { TETHER } from './tether.js';
 import { chapterOf, missionFor, finalMissionFor } from './story.js';
 import { chapterStages } from './aistage.js';
 
@@ -524,12 +524,36 @@ function drawBells() {
       ctx.font = `${Math.round(11 * UI)}px serif`; ctx.fillText('🔒', bl.size + 9, -bl.size - 2);
       ctx.globalAlpha = 1;
     }
+    // 位(何人が鳴らしたか)。**点の数で出す** ——
+    //   「あと1人鳴らせば金になる」が、数字を読まずに分かるようにしたい。
+    //   埋まっている点=鳴らした人数、空の点=あと入る余地。
+    const rank = Math.max(1, bl.rank || 1);
+    if (game.coop) {
+      const cap = Math.max(2, Math.min(4, Coop.playerCount()));
+      const ri = rankInfo(rank);
+      for (let i = 0; i < cap; i++) {
+        const a = -Math.PI / 2 + (i - (cap - 1) / 2) * 0.44;
+        const dx = Math.cos(a) * (bl.size + 13), dy = Math.sin(a) * (bl.size + 13);
+        ctx.beginPath(); ctx.arc(dx, dy, 3.1 * UI, 0, Math.PI * 2);
+        if (i < rank) { ctx.fillStyle = ri.color; ctx.fill(); }
+        else { ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1.2 * UI; ctx.stroke(); }
+      }
+      // 位が付いたベルは輪も位の色で二重にする。遠くからでも「熟している」と分かる
+      if (rank > 1) {
+        ctx.strokeStyle = ri.color; ctx.lineWidth = 2 * UI; ctx.globalAlpha = 0.8;
+        ctx.beginPath(); ctx.arc(0, 0, bl.size + 8, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
     // ベルの名前は HUD の隅に入らないところだけに出す。
     //   左上のスコアの上に「SCORE」というベル名が重なって、どちらも
     //   読めなくなっていた。表示より **読めること** を優先する。
     const inHud = (bl.y < 56 * UI + SAFE.top && (bl.x < 132 * UI + SAFE.left || bl.x > W - 118 * UI - SAFE.right))
                 || bl.y > H - 62 * UI - SAFE.bottom;
-    if (!inHud) label(bt.name, 0, bl.size + 16, bt.color, 10 * UI);
+    if (!inHud) {
+      const ri = rankInfo(rank);
+      label((rank > 1 ? ri.ja + ' ' : '') + bt.name, 0, bl.size + 16, rank > 1 ? ri.color : bt.color, 10 * UI);
+    }
     ctx.restore();
   }
 }
@@ -627,13 +651,12 @@ function drawHUD() {
     txt(t('hint_bomb'), W / 2, H - 178 * UI - bot, { size: 12 * UI, weight: 700, color: '#fff', shadow: 0.95, maxW: W * 0.9 });
     ctx.globalAlpha = 1;
   }
-  // きずなの案内は **1面目だけでは足りなかった。**
-  //   「線が何なのか分からない」と言われたので、実際に何度か切れるまでは
-  //   毎面のはじめに出す。切れるようになったら黙る(うるさくしない)。
-  if (game.coop && game.state === 'play' && game.stageTime < 7000 && Save.tetherCuts() < 6) {
+  // 盾持ちの案内。**扇と輪だけで伝わるのが理想**だが、初回だけは言葉で補う。
+  //   何度か背中を撃てるようになったら黙る(できている人に言い続けない)。
+  if (game.coop && game.state === 'play' && game.stageTime < 7000 && Save.backstabs() < 6) {
     ctx.globalAlpha = clamp((7000 - game.stageTime) / 1200, 0, 0.92);
-    txt(t('tether_hint'), W / 2, H - 158 * UI - bot,
-      { size: 11.5 * UI, weight: 700, color: '#a8e9ff', shadow: 0.95, maxW: W * 0.9 });
+    txt(t('guard_hint'), W / 2, H - 158 * UI - bot,
+      { size: 11.5 * UI, weight: 700, color: '#ffd166', shadow: 0.95, maxW: W * 0.9 });
     ctx.globalAlpha = 1;
   }
 }
@@ -1614,124 +1637,82 @@ function drawSuperGauge() {
 //   弾の見た目は相方ごとに別に持つ。ひとつの配列を共有すると、
 //   3人以上のとき全員の弾が同じ場所から出ているように見えてしまう。
 /**
- * きずな。**このゲームで一番目立つ線**にする。
- *   短いとき = 太くて白い芯が通る(鋭い)
- *   伸びたとき = 細くなって色が抜ける(弱い)
- *   軋んでいるとき = 赤く弾けて、切れる寸前だと分かる
- * 「見れば強さが分かる」ことが要る。数字で説明できない場所なので。
+ * 盾持ち。**「なぜ効かないのか」を、撃つ前に見せる。**
+ *
+ * 弾いてから理由を説明するのでは遅い。撃った時に初めて分かる仕組みは
+ * 「たまに効かない」というバグ報告になって返ってくる。
+ * 盾が誰を向いているかを線で描き、自分が向かれているなら自機の側にも出す。
+ *
+ * 描き分けは3つだけ:
+ *   赤い扇 + 自分へ伸びる線 = **あなたは撃てない**(前に出すぎている)
+ *   灰色の扇               = 他の誰かが塞がれている
+ *   金の輪                 = **いま撃てるのはあなた**
  */
-function drawTether() {
-  const st = game.tether;
-  if (!st) return;
+function drawGuards() {
+  if (!game.coop) return;
   const now = performance.now();
+  const me = selfKey();
+  const players = game.players || [];
+  for (const e of game.enemies) {
+    if (!e.guard || e.delay > 0) continue;
+    const blocked = e.blocked;
+    const meBlocked = !!(blocked && blocked.has(me));
+    const r = (e.size || 16) * 1.5;
+    const puls = 0.6 + 0.4 * Math.abs(Math.sin(now * 0.006));
 
-  // 切れた直後の名残。何が起きたのか分かるように一瞬だけ残す
-  if (st.flash > 0 && !st.links.length) {
-    ctx.save();
-    ctx.globalAlpha = st.flash * 0.7;
-    emojiCentered('💔', W / 2, H * 0.5, 46 * UI);
-    ctx.restore();
-  }
-  if (!st.links.length) return;
-
-  for (const L of st.links) {
-    const tight = 1 - clamp((L.len - TETHER.TIGHT) / (TETHER.LOOSE - TETHER.TIGHT), 0, 1);
-    const wob = L.strain ? 5.5 : 1.6;
-    // 線を数点に割って揺らす。まっすぐな直線だと「張力」が出ない
-    const N = 10;
-    const pts = [];
-    for (let i = 0; i <= N; i++) {
-      const k = i / N;
-      const nx = -(L.by - L.ay), ny = (L.bx - L.ax);
-      const nl = Math.hypot(nx, ny) || 1;
-      const s = Math.sin(k * Math.PI) * Math.sin(now * (L.strain ? 0.03 : 0.008) + k * 7) * wob;
-      pts.push([L.ax + (L.bx - L.ax) * k + (nx / nl) * s, L.ay + (L.by - L.ay) * k + (ny / nl) * s]);
+    // 盾。塞いでいる相手ごとに、その方向へ扇を出す。
+    if (blocked && blocked.size) {
+      for (const q of players) {
+        if (!blocked.has(q.id)) continue;
+        const a = Math.atan2(q.y - e.y, q.x - e.x);
+        const mine = q.id === me;
+        ctx.save();
+        ctx.globalAlpha = mine ? 0.85 * puls : 0.3;
+        ctx.strokeStyle = mine ? '#ff6a6a' : '#9fb4d8';
+        ctx.lineWidth = (mine ? 5 : 3) * UI;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(e.x, e.y, r, a - 0.62, a + 0.62); ctx.stroke();
+        // 自分が塞がれている時だけ、自機まで線を引く。**誰が塞がれているのか**を
+        //   一目にする。全員ぶん引くと画面が糸だらけになるので自分だけ。
+        if (mine) {
+          ctx.globalAlpha = 0.22 + 0.18 * puls;
+          ctx.lineWidth = 2 * UI;
+          ctx.setLineDash([6 * UI, 7 * UI]);
+          ctx.beginPath();
+          ctx.moveTo(e.x + Math.cos(a) * r, e.y + Math.sin(a) * r);
+          ctx.lineTo(q.x, q.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.restore();
+        if (mine) emojiCentered('🛡', e.x + Math.cos(a) * r, e.y + Math.sin(a) * r, (15 + puls * 4) * UI);
+        else emojiCentered('🛡', e.x + Math.cos(a) * r, e.y + Math.sin(a) * r, 11 * UI);
+      }
     }
-    const path = () => {
-      ctx.beginPath();
-      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-    };
-    ctx.save();
-    ctx.lineCap = 'round';
-    const col = L.strain ? '#ff5a5a' : '#8fe9ff';
-    // 外側のにじみ
-    ctx.globalAlpha = (L.strain ? 0.5 : 0.34) * (0.7 + tight * 0.3);
-    ctx.strokeStyle = col;
-    ctx.lineWidth = (TETHER.HITW * 2) * (0.55 + tight * 0.45);
-    path(); ctx.stroke();
-    // 芯。短いほど白く太くなる = 強さがそのまま見える
-    ctx.globalAlpha = L.strain ? 0.8 : 1;
-    ctx.strokeStyle = L.strain ? '#ffd0d0' : '#ffffff';
-    ctx.lineWidth = 1.6 + tight * 3.4;
-    path(); ctx.stroke();
-    ctx.restore();
 
-    // いま切れている場所を光らせる。**ここが無いと、効いているのに気づけない。**
-  //   「線が見えたけど何も起きなかった」と言われた原因の半分はこれ。
-  if (st.hit) {
-    const k2 = Math.max(0, st.hit.t / 0.16);
-    ctx.save();
-    ctx.globalAlpha = k2;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2 + k2 * 3;
-    ctx.beginPath(); ctx.arc(st.hit.x, st.hit.y, (1 - k2) * 26 * UI + 8 * UI, 0, Math.PI * 2); ctx.stroke();
-    emojiCentered('✨', st.hit.x, st.hit.y, (13 + k2 * 9) * UI);
-    ctx.restore();
-  }
-
-  // 線の上を光が走る。止まっていても「生きている」ことが分かる
-    const k = (now * 0.0009) % 1;
-    const idx = Math.min(N, Math.floor(k * N));
-    const [sx, sy] = pts[idx];
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    emojiCentered(L.strain ? '⚡' : '✨', sx, sy, (13 + tight * 9) * UI);
-    ctx.restore();
-  }
-
-  // 軋みの警告。**線の真ん中に出す。**
-  //   画面の上に固定すると、ボスの体力バーや相方の名前と重なって、
-  //   一番混んでいる瞬間に一番読めなくなる。見ている場所は線の上。
-  if (st.strainT > 0.15) {
-    const L = st.links.reduce((a, b) => (b.len > (a ? a.len : 0) ? b : a), null);
-    if (L) {
-      const p = st.strainT / TETHER.BREAK;
-      const mx = (L.ax + L.bx) / 2, my = (L.ay + L.by) / 2;
-      // 線の上に文字を重ねない。線と垂直にずらす
-      const nx = -(L.by - L.ay), ny = (L.bx - L.ax), nl = Math.hypot(nx, ny) || 1;
-      const off = 22 * UI;
-      // 文字は中央そろえなので、**自分の幅の半分**を残して寄せる。
-      //   画面の 0.2〜0.8 に中心を置くだけでは、長い訳語が端で切れる。
-      const maxW = W * 0.5, half = maxW / 2 + 6 * UI;
-      const tx = clamp(mx + (nx / nl) * off, half, W - half);
-      const ty = clamp(my + (ny / nl) * off, H * 0.1, H * 0.9);
-      gtxt(t('tether_strain'), tx, ty,
-        { size: 12 * UI, weight: 800, color: '#ff9a9a', alpha: 0.5 + 0.5 * Math.abs(Math.sin(now * 0.02)), maxW });
-      const bw = 76 * UI, bx = tx - bw / 2, by = ty + 11 * UI;
-      ctx.fillStyle = 'rgba(0,0,0,0.45)';
-      roundRect(bx, by, bw, 4.5 * UI, 2.5 * UI); ctx.fill();
-      ctx.fillStyle = '#ff5a5a';
-      roundRect(bx, by, bw * (1 - p), 4.5 * UI, 2.5 * UI); ctx.fill();
+    // 撃てる側。**ここが褒美の合図**なので、はっきり光らせる。
+    if (!meBlocked) {
+      ctx.save();
+      ctx.globalAlpha = 0.5 + 0.5 * puls;
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 3 * UI;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r + 5 * UI + puls * 3 * UI, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 0.18 * puls;
+      ctx.lineWidth = 11 * UI;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r + 5 * UI, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      emojiCentered('🗡', e.x, e.y - r - 10 * UI, (14 + puls * 4) * UI);
     }
-  }
 
-  // 烙印。**文字を足さずにボスそのものを光らせる。**
-  //   弾幕の真ん中に一行増やすと、それは情報ではなく散らかりになる。
-  //   「いま通る」はボスを見れば分かるようにする。
-  const b = game.boss;
-  if (st.branded && b) {
-    const r = 42 * (b.scale || 1);
-    const puls = 0.55 + 0.45 * Math.abs(Math.sin(now * 0.014));
-    ctx.save();
-    ctx.globalAlpha = puls;
-    ctx.strokeStyle = '#ffe27a';
-    ctx.lineWidth = 3.5 * UI;
-    ctx.beginPath(); ctx.arc(b.x, b.y, r + 10 * UI + puls * 5 * UI, 0, Math.PI * 2); ctx.stroke();
-    ctx.globalAlpha = puls * 0.35;
-    ctx.lineWidth = 12 * UI;
-    ctx.beginPath(); ctx.arc(b.x, b.y, r + 10 * UI + puls * 5 * UI, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
-    // 弱点を突いている印。短い記号ひとつなら読み取りの負担にならない
-    emojiCentered('💥', b.x + r * 0.72, b.y - r * 0.72, (17 + puls * 5) * UI);
+    // 弾かれた瞬間。当たった上で通らなかったことを、当たった場所で見せる。
+    if (e.blockFlash > 0) {
+      const k = Math.min(1, e.blockFlash);
+      ctx.save();
+      ctx.globalAlpha = k * 0.9;
+      ctx.strokeStyle = '#dbe7ff'; ctx.lineWidth = (1.5 + k * 3) * UI;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r + (1 - k) * 16 * UI, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
   }
 }
 
@@ -2132,7 +2113,7 @@ export function draw() {
     case 'play': case 'warn': {
       ctx.save(); ctx.translate(game.shakeX, game.shakeY);
       drawBackground(); drawWeatherFx(); drawBells(); drawEnemies(); drawBoss();
-      drawBullets(); drawSuper(); drawTether(); drawPartners(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
+      drawBullets(); drawSuper(); drawGuards(); drawPartners(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
       ctx.restore();
       drawHUD();
       drawBossReveal();
