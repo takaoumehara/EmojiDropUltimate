@@ -278,6 +278,12 @@ export const Coop = {
       case 'hostis':
         this.hostId = from; p.seenAt = performance.now();
         break;
+      // 生存の合図。中身は無い —— 届いたこと自体が中身。
+      //   ロビーは誰も何も送らない時間が続くので、これが無いと
+      //   居るのに音沙汰が無い相方が顔ぶれから消える。
+      case 'hb':
+        p.seenAt = performance.now();
+        break;
       case 'start': // ゲスト: ホストと同じ種・モードで即開始
         if (this.role === 'guest') {
           this.seed = o.seed >>> 0; this.mode = o.mode === 'ai' ? 'ai' : 'story';

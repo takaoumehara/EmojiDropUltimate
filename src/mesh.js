@@ -42,8 +42,42 @@ export const LOBBY_POLL_MS = 3000;
 export const PLAY_POLL_MS = 15000;
 /** ゲストがひとりきりのまま、この時間を過ぎたら「部屋が無い」と言う。 */
 export const ALONE_MS = 45000;
-/** 握手が済んでから開通しなければ、その線は諦める。 */
-export const LINK_WATCHDOG_MS = 30000;
+/**
+ * 線を張り始めてから、これだけ経っても開通しなければ諦めて張り直す。
+ *
+ * かつてこの見張りは**握手が済んでから**動き出していた。だから握手そのものが
+ * 止まった線 —— 相手の合図が棚に載らないまま待ち続ける線 —— は見張られず、
+ * 実ブラウザ4枚で「6組のうち1組だけが永久に繋がらない」状態を作っていた。
+ * 期限は握手を始めた瞬間から数える。
+ */
+export const LINK_WATCHDOG_MS = 20000;
+/**
+ * 生存の合図を送る間隔。
+ *
+ * ロビーでは名乗ったきり誰も何も送らないので、**居るのに音沙汰が無い**状態になる。
+ * `Coop.livePeers()` は2.5秒で相方を数えなくなるため、これが無いと
+ * ロビーの顔ぶれが数秒で自分ひとりに戻る。
+ */
+export const HEARTBEAT_MS = 1200;
+/**
+ * この時間なにも届かなければ、その線は死んだものとして畳む。
+ *
+ * **タブを閉じた相手を、ブラウザは教えてくれない。** 実測(Chromium):
+ *   DataChannel の onclose … 永久に来ない
+ *   iceConnectionState      … 'disconnected' で止まり、'failed' にならない
+ *   connectionState         … 'failed' になるまで **約16秒**
+ * ブラウザの通知を待つと、その間ずっと全員の世界が止まる。
+ * 自前の合図が途絶えたことで判断する方が速く、ブラウザ差にも左右されない。
+ */
+export const LINK_DEAD_MS = 4500;
+/**
+ * ひとりの相手に対して、線を張り直す上限。
+ *
+ * 実ブラウザ4枚で確かめている最中に、**6組のうち1組だけが繋がらないまま
+ * 止まる**ことがあった。張り直す道が無かったので、その2人は永久に相手が
+ * 見えない。握手は一度きりの儀式ではないので、諦める前に何度か試す。
+ */
+export const LINK_RETRIES = 5;
 
 /** 部屋での呼び名を作る。4文字なので 32^4 ≒ 100万通り。4人なら衝突しない。 */
 export function makePid(rnd = Math.random) {
@@ -79,16 +113,25 @@ class Link {
     this.m = mesh; this.id = peerId;
     this.pc = null; this.dc = null;
     this.open = false; this.dead = false;
+    this.lastRecvAt = 0;   // 最後に何かが届いた時刻。生死の判断はここだけを見る
     this._wd = null;
   }
 
   async start() {
     const RTC = this.m.RTC;
     if (!RTC) throw new Error('no_webrtc');
+    this.watchdog();     // 期限は「開通するまで」に掛ける。握手の途中で止まっても気づけるように
     this.pc = new RTC({ iceServers: await this.m.ice(), iceCandidatePoolSize: 2 });
-    // 'disconnected' は一時的に起きて自力回復することがあるので失敗扱いにしない
+    // 'disconnected' は一時的に起きて自力回復することがあるので失敗扱いにしない。
+    //   なお相手がタブを閉じた場合、ここは 'disconnected' で止まって
+    //   'failed' まで進まない(実測)。当てにできるのは connectionState と、
+    //   合図の途絶え(LINK_DEAD_MS)の方。
     this.pc.oniceconnectionstatechange = () => {
       if (this.pc && this.pc.iceConnectionState === 'failed') this.kill();
+    };
+    this.pc.onconnectionstatechange = () => {
+      const s = this.pc && this.pc.connectionState;
+      if (s === 'failed' || s === 'closed') this.kill();
     };
     const key = pairKey(this.m.pid, this.id);
     if (isOfferer(this.m.pid, this.id)) {
@@ -110,7 +153,6 @@ class Link {
       if (this.dead || this.m.disposed) return;
       await this.m.postSdp(key, 'answer', this.pc.localDescription.sdp);
     }
-    this.watchdog();
   }
 
   watchdog() {
@@ -124,10 +166,14 @@ class Link {
       clearTimeout(this._wd);
       if (this.dead) return;
       this.open = true;
+      this.lastRecvAt = this.m.now();
       this.m.onLinkOpen(this);
     };
     // 送り主は**この線**で決まる。相手の名乗りを信じないので、なりすませない。
-    dc.onmessage = e => { try { this.m.c.onMsg(JSON.parse(e.data), this.id); } catch (err) {} };
+    dc.onmessage = e => {
+      this.lastRecvAt = this.m.now();
+      try { this.m.c.onMsg(JSON.parse(e.data), this.id); } catch (err) {}
+    };
     dc.onclose = () => {
       const was = this.open;
       this.open = false;
@@ -178,7 +224,13 @@ export class MeshTransport {
     this.sig = opts.sig || SIG;
     this.lobbyPollMs = opts.lobbyPollMs || LOBBY_POLL_MS;
     this.playPollMs = opts.playPollMs || PLAY_POLL_MS;
+    this.heartbeatMs = opts.heartbeatMs || HEARTBEAT_MS;
+    this.deadMs = opts.deadMs || LINK_DEAD_MS;
     this._timer = null;
+    this._beat = null;
+    this._lastHb = 0;
+    this._used = new Map();    // 棚 → 一度読んだ合図。同じものを二度使わないため
+    this._tries = new Map();   // 相手 → 張り直した回数
     this._aloneSince = null;   // ひとりきりで待ち始めた時刻(繋がったら null)
   }
 
@@ -195,6 +247,29 @@ export class MeshTransport {
     this._aloneSince = this.now();
     await this.pump();            // 最初の1回。ここで合図サーバーの生死が分かる
     this._schedule();
+    this.startBeat();
+  }
+
+  /**
+   * 生存の合図と、途絶えた線の後始末。
+   *
+   * ゲームのループ(`Coop.update`)には載せない —— あれは遊んでいる間しか
+   * 回らないので、ロビーで抜けた人がいつまでも顔ぶれに残ってしまう。
+   */
+  startBeat() {
+    if (this._beat) return;
+    this._beat = setInterval(() => this.beat(), Math.max(200, this.heartbeatMs));
+    if (this._beat && this._beat.unref) this._beat.unref();   // Node で走らせても居座らない
+  }
+
+  beat() {
+    if (this.disposed) return;
+    const now = this.now();
+    // 音沙汰が絶えた線を畳む。ブラウザの通知より速く、ブラウザ差にも左右されない。
+    for (const l of [...this.links.values()]) {
+      if (l.open && now - l.lastRecvAt > this.deadMs) l.kill();
+    }
+    if (now - this._lastHb >= this.heartbeatMs) { this._lastHb = now; this.send({ t: 'hb' }); }
   }
 
   // === 合図サーバー ===
@@ -212,8 +287,16 @@ export class MeshTransport {
 
   async postSdp(pair, kind, sdp) { return this.post({ kind, pair, sdp }); }
 
-  /** 相手の合図が棚に置かれるのを待つ。 */
-  async pollSdp(pair, kind, tries = 40) {
+  /**
+   * 相手の合図が棚に置かれるのを待つ。
+   *
+   * **一度使った合図は二度使わない。** 組の棚は名前が固定なので、張り直しの
+   * ときに前回の合図がまだ載っている。それを読むと、相手はもう捨てた接続に
+   * 向かって握手を続けることになり、その組だけ永久に繋がらない。
+   * 読んだ中身を覚えておいて、違うものが載るまで待つ。
+   */
+  async pollSdp(pair, kind, tries = 20) {
+    const memo = `${pair}:${kind}`;
     for (let i = 0; i < tries; i++) {
       if (this.disposed) throw new Error('disposed');
       let r;
@@ -228,7 +311,7 @@ export class MeshTransport {
       else {
         this.c.sigNote = '';
         const j = await r.json();
-        if (j && j.sdp) return j.sdp;
+        if (j && j.sdp && j.sdp !== this._used.get(memo)) { this._used.set(memo, j.sdp); return j.sdp; }
       }
       await this._sleep(1300);
     }
@@ -252,6 +335,13 @@ export class MeshTransport {
       if (id === this.pid || this.links.has(id)) continue;
       // 定員を超えて線を張らない。番号が化けても機体が無限に増えないこと。
       if (this.links.size >= ROOM_MAX - 1) continue;
+      // **張り直しはするが、無限にはしない。**
+      //   4人のうち1組だけ直通が張れない回線の組み合わせは実在する。
+      //   そこを黙って諦めると「その人だけ入れない」になり、
+      //   際限なく試すと合図サーバーを叩き続けることになる。
+      const n = this._tries.get(id) || 0;
+      if (n >= LINK_RETRIES) continue;
+      this._tries.set(id, n + 1);
       const link = new Link(this, id);
       this.links.set(id, link);
       link.start().catch(() => link.kill());
@@ -289,6 +379,9 @@ export class MeshTransport {
     this.c.p2p = true;
     this.c.status = '';
     this._aloneSince = null;
+    // 繋がったので、この相手ぶんの張り直し回数は帳消し。
+    //   途中で一度切れた相手が、以前の失敗のせいで戻れなくなるのを防ぐ。
+    this._tries.delete(link.id);
     // 自分が何者で、ホストなのかを名乗る。ホストが誰かを全員が知らないと、
     //   ホストが抜けたときに誰も引き継げない。
     link.sendRaw(JSON.stringify({
@@ -324,6 +417,7 @@ export class MeshTransport {
   dispose() {
     this.disposed = true;
     clearTimeout(this._timer);
+    clearInterval(this._beat); this._beat = null;
     for (const l of this.links.values()) { l.dead = true; l.open = false; clearTimeout(l._wd); try { if (l.dc) l.dc.close(); if (l.pc) l.pc.close(); } catch (e) {} }
     this.links.clear();
     // 部屋から名前を消す。残しても25秒で落ちるが、消せるなら消しておく方が

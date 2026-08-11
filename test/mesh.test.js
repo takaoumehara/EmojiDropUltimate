@@ -325,6 +325,155 @@ test('繋がったあとは、ひとりきりの見張りが働かない', async
   mesh.dispose();
 });
 
+// ============================================================
+// タブを閉じた相手を、ブラウザは教えてくれない
+//
+// 実ブラウザ4枚で確かめて出たバグ。ホストのタブを閉じても引き継ぎが
+// 起きず、残り全員の画面で世界が止まったままになった。実測(Chromium):
+//   DataChannel の onclose … 永久に来ない
+//   iceConnectionState      … 'disconnected' で止まり 'failed' にならない
+//   connectionState         … 'failed' になるまで **約16秒**
+// 当時のコードは前の2つしか見ていなかったので、永久に気づけなかった。
+// 自前の合図が途絶えたことで判断する道を、名指しで固定する。
+// ============================================================
+
+test('音沙汰が絶えた線は畳まれる(相手が黙って消えても気づく)', async () => {
+  let t = 10000;
+  const { mesh } = makeMesh('host', 'aaaa', ['aaaa', 'bbbb'], { mesh: { now: () => t, heartbeatMs: 1e9 } });
+  await mesh.init(); await flush();
+  const lb = openLink(mesh, 'bbbb');
+  lb.dc.onmessage({ data: JSON.stringify({ t: 'hello', name: 'A' }) });
+  assert.equal(Coop.playerCount(), 2);
+
+  t += 2000; mesh.beat();
+  assert.equal(mesh.linkCount, 1, 'まだ生きている');
+
+  t += 4000; mesh.beat();                    // 合わせて6秒、何も届いていない
+  assert.equal(mesh.linkCount, 0);
+  assert.equal(Coop.peers.size, 0, '幽霊機を残さない');
+  mesh.dispose();
+});
+
+test('合図が届いているうちは畳まれない', async () => {
+  let t = 10000;
+  const { mesh } = makeMesh('host', 'aaaa', ['aaaa', 'bbbb'], { mesh: { now: () => t, heartbeatMs: 1e9 } });
+  await mesh.init(); await flush();
+  const lb = openLink(mesh, 'bbbb');
+  for (let i = 0; i < 10; i++) {
+    t += 1200;
+    lb.dc.onmessage({ data: JSON.stringify({ t: 'hb' }) });
+    mesh.beat();
+  }
+  assert.equal(mesh.linkCount, 1, '12秒たっても、届いている限り生きている');
+  mesh.dispose();
+});
+
+test('ホストが黙って消えても、引き継ぎまで行き着く', async () => {
+  let t = 10000;
+  const { mesh } = makeMesh('guest', 'bbbb', ['aaaa', 'bbbb', 'cccc'], { mesh: { now: () => t, heartbeatMs: 1e9 } });
+  await mesh.init(); await flush();
+  const la = openLink(mesh, 'aaaa'), lc = openLink(mesh, 'cccc');
+  la.dc.onmessage({ data: JSON.stringify({ t: 'hello', h: 1 }) });
+  lc.dc.onmessage({ data: JSON.stringify({ t: 'hello', h: 0 }) });
+  assert.equal(Coop.hostId, 'aaaa');
+
+  let took = 0; Coop.onBecomeHost = () => { took++; };
+  // ホストだけが黙る。もうひとりは合図を送り続けている。
+  for (let i = 0; i < 6; i++) { t += 1200; lc.dc.onmessage({ data: JSON.stringify({ t: 'hb' }) }); mesh.beat(); }
+  assert.equal(took, 1, 'ブラウザからの通知を待たずに引き継ぐ');
+  assert.equal(Coop.hostId, 'bbbb');
+  assert.equal(mesh.linkCount, 1, '生きている相方の線は残る');
+  Coop.onBecomeHost = null;
+  mesh.dispose();
+});
+
+test('生存の合図は、ロビーで顔ぶれが消えるのを防ぐ', async () => {
+  let t = 10000;
+  const { mesh } = makeMesh('host', 'aaaa', ['aaaa', 'bbbb'], { mesh: { now: () => t } });
+  await mesh.init(); await flush();
+  const lb = openLink(mesh, 'bbbb');
+  lb.dc.onmessage({ data: JSON.stringify({ t: 'hello', name: 'あかり' }) });
+  lb.dc.sent.length = 0;
+  t += 1300; mesh.beat();
+  assert.deepEqual(lb.dc.sent.map(s => JSON.parse(s).t), ['hb'], '黙っている間も合図だけは送る');
+  // 受け取った側は「まだ居る」と数え直せること
+  Coop.peers.get('bbbb').seenAt = performance.now() - 9000;
+  assert.equal(Coop.livePeers().length, 0, '音沙汰が無ければ顔ぶれから外れるのが前提');
+  lb.dc.onmessage({ data: JSON.stringify({ t: 'hb' }) });
+  assert.equal(Coop.livePeers().length, 1, '合図が届けば顔ぶれに戻る');
+  mesh.dispose();
+});
+
+test('connectionState が failed になったら、待たずに畳む', async () => {
+  const { mesh } = makeMesh('host', 'aaaa', ['aaaa', 'bbbb']);
+  await mesh.init(); await flush();
+  const lb = openLink(mesh, 'bbbb');
+  lb.dc.onmessage({ data: JSON.stringify({ t: 'hello', name: 'A' }) });
+  lb.pc.connectionState = 'failed';
+  lb.pc.onconnectionstatechange();
+  assert.equal(mesh.linkCount, 0);
+  assert.equal(Coop.peers.size, 0);
+  mesh.dispose();
+});
+
+// ============================================================
+// 張り直し — 6組のうち1組だけが繋がらないまま止まらないこと
+//
+// 実ブラウザ4枚で確かめている最中に実際に起きた。握手が一度失敗すると
+// 張り直す道が無く、その2人は永久に相手が見えないままだった。
+// ============================================================
+
+test('線が失敗しても、次の顔ぶれの周回で張り直す', async () => {
+  const { mesh } = makeMesh('host', 'aaaa', ['aaaa', 'bbbb']);
+  await mesh.init(); await flush();
+  const first = mesh.links.get('bbbb');
+  first.kill();                                   // 握手が失敗した
+  assert.equal(mesh.links.has('bbbb'), false);
+  await mesh.pump(); await flush();               // 顔ぶれを見に行く次の周回
+  assert.ok(mesh.links.get('bbbb'), '張り直されること');
+  assert.notEqual(mesh.links.get('bbbb'), first, '新しい線であること');
+  mesh.dispose();
+});
+
+test('張り直しは無限には続かない', async () => {
+  const { mesh } = makeMesh('host', 'aaaa', ['aaaa', 'bbbb']);
+  await mesh.init(); await flush();
+  for (let i = 0; i < 12; i++) {
+    const l = mesh.links.get('bbbb');
+    if (l) l.kill();
+    await mesh.pump(); await flush(2);
+  }
+  assert.equal(mesh.links.has('bbbb'), false, '諦める(合図サーバーを叩き続けない)');
+  mesh.dispose();
+});
+
+test('一度繋がった相手は、切れても最初から張り直せる', async () => {
+  const { mesh } = makeMesh('host', 'aaaa', ['aaaa', 'bbbb']);
+  await mesh.init(); await flush();
+  for (let i = 0; i < 4; i++) { mesh.links.get('bbbb').kill(); await mesh.pump(); await flush(2); }
+  openLink(mesh, 'bbbb');                          // 5回目でやっと繋がった
+  assert.equal(mesh._tries.has('bbbb'), false, '失敗の履歴は帳消しになる');
+  mesh.links.get('bbbb').kill();
+  await mesh.pump(); await flush();
+  assert.ok(mesh.links.get('bbbb'), '以前の失敗が原因で戻れなくならない');
+  mesh.dispose();
+});
+
+test('一度読んだ合図は二度使わない(捨てた接続に向かって握手し続けない)', async () => {
+  const { mesh, sig } = makeMesh('guest', 'zzzz', ['aaaa', 'zzzz']);
+  await mesh.init(); await flush();
+  // 受ける側なので、棚から offer を読んでいる
+  const used = mesh._used.get('aaaa-zzzz:offer');
+  assert.ok(used, '一度読んだ中身を覚えていること');
+  // 同じ中身しか載っていないうちは、待ち続けて掴まないこと
+  const race = mesh.pollSdp('aaaa-zzzz', 'offer', 1).then(() => 'took', e => e.message);
+  assert.equal(await race, 'timeout', '前回と同じ合図では張り直さない');
+  // 相手が張り直して新しい合図を置けば、そちらは掴む
+  sig.shelf.set('aaaa-zzzz:offer', 'SDP-OFFER-2');
+  assert.equal(await mesh.pollSdp('aaaa-zzzz', 'offer', 2), 'SDP-OFFER-2');
+  mesh.dispose();
+});
+
 // === 定員の表示 ===
 
 test('ロビーは「網目なら4人」と答える', async () => {
