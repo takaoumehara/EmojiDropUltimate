@@ -28,6 +28,7 @@ function mapStages(ch) {
 }
 import { txt, gtxt, wrapTxt, wrapLines, surface, scrim, roundPath, COL, FONT_UI, FONT_DISPLAY } from './theme.js';
 import { qrMatrix } from './qr.js';
+import { versionLabel } from './version.js';
 
 // 画面の縦位置は「実際に使える範囲」の割合で置く。
 //   iPhone のようにダイナミックアイランドとホームバーがある端末では、
@@ -680,6 +681,11 @@ function drawSplash() {
   });
   ctx.globalAlpha = 1;
   wordmark(W / 2, vy(0.485), 0.94 + ein * 0.06, ein);
+  // どの版を触っているかを、起動のたびに1度だけ見せる。
+  //   2人までの版(v1.0 DUO)と4人の版(v2.0 PARTY)が同時に世に出るので、
+  //   「4人で入れない」という報告がどちらの話なのか、これが無いと分からない。
+  txt(versionLabel(getLang() === 'ja'), W / 2, vy(0.485) + 44 * UI,
+    { size: 9 * UI, weight: 600, color: '#5d6f8f', track: 1.6, alpha: ein * 0.85 });
   if (k > 0.5) {
     txt(getLang() === 'ja' ? 'タップでスキップ' : 'TAP TO SKIP', W / 2, vy(0.88),
       { size: 10.5 * UI, weight: 500, color: '#6f819f', alpha: clamp((k - 0.5) * 3, 0, 0.85), track: 1.6 });
@@ -1231,7 +1237,7 @@ function drawQR(text, cx, cy, box) {
   return true;
 }
 
-// === ふたりでプレイ: ロビー ===
+// === みんなでプレイ: ロビー ===
 function drawCoopLobby() {
   const time = game.titleAnim, ja = getLang() === 'ja';
   nightSky('#04140f', '#0a2038');
@@ -1246,7 +1252,11 @@ function drawCoopLobby() {
   //   半分ずつで 16px 要るのに、割合の差が 15px しか無かった)。字の高さで置く。
   const headY = SAFE.top + 24 * UI;
   txt(t('coop'), W / 2, headY, { size: 21 * UI, weight: 800, color: COL.mint, family: FONT_DISPLAY, maxW: W * 0.72 });
-  txt(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, headY + 23 * UI,
+  // 定員をここに出す。ロビーに入った時点で「何人まで呼べるのか」が分からないと、
+  //   3人目・4人目を誘う判断ができない。経路によって 2 にも 4 にもなる。
+  const cap0 = Coop.roomCapacity();
+  txt(ja ? `リアルタイムで一緒に戦う · 最大${cap0}人` : `Fight together in real time · up to ${cap0}`,
+    W / 2, headY + 23 * UI,
     { size: 10.5 * UI, weight: 500, color: COL.mute, maxW: W * 0.86 });
   const headBottom = headY + 34 * UI;
 
@@ -1265,7 +1275,7 @@ function drawCoopLobby() {
     //   その1行のぶんだけ下のボタンが押し出され、iPhone SE で「戻る」が切れた。
     const statusNeed = 26 * UI + rows * 17 * UI + (Coop.connected ? 0 : 18 * UI);
     const btnNeed = Coop.connected
-      ? (52 + 8 + 40) * UI + (Coop.via() === 'relay' && Coop.playerCount() < 4 ? 16 * UI : 0)
+      ? (52 + 8 + 40) * UI + (Coop.playerCount() < Coop.roomCapacity() ? 16 * UI : 0)
       : (44 + 8 + 44 + 8 + 40) * UI;
     const yStart = Math.max(vy(0.145), headBottom);
     const room = (H - SAFE.bottom) - 14 * UI - btnNeed - statusNeed - yStart;
@@ -1352,7 +1362,9 @@ function drawCoopLobby() {
       p2p_failed: [ja ? '直接つながれませんでした' : "Couldn't link the devices",
         ja ? '同じWi-Fiに繋ぐと成功しやすくなります' : 'Try putting both phones on the same Wi-Fi'],
       closed: [ja ? '接続が切れました' : 'Connection lost', ja ? 'もう一度つないでください' : 'Please reconnect'],
-    }[Coop.status] || [ja ? '接続できませんでした' : 'Connection failed', ja ? 'もう一度お試しください' : 'Please try again'];
+      room_full: [ja ? 'この部屋は満員です(4人)' : 'This room is full (4)',
+        ja ? '別のあいことばで、もうひとつ部屋を作ってください' : 'Open a second room with a fresh code'],
+    }[Coop.status] ||[ja ? '接続できませんでした' : 'Connection failed', ja ? 'もう一度お試しください' : 'Please try again'];
     txt(S[0], W / 2, sy - 8 * UI, { size: 11.5 * UI, weight: 700, color: '#ffb37f', maxW: bw });
     txt(S[1], W / 2, sy + 9 * UI, { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
     statusBottom = sy + 19 * UI;
@@ -1396,14 +1408,15 @@ function drawCoopLobby() {
       : (ja ? `${n}人でスタート` : `START WITH ${n}`);
     drawBtn('coopStart', bx, by, bw, 52 * UI, btnLabel, '#ffffff', true, false, 18 * UI);
     by += 52 * UI + gap;
-    // 中継サーバー経由なら4人まで入れる。直結は2人まで。
+    // 網目・中継なら4人まで入れる。1対1の直結とデモ相方は2人まで。
     //   まだ空きがあることを言わないと、3人目が「入れない」と思って諦める。
-    if (Coop.via() === 'relay' && n < 4) {
-      txt(ja ? `あと${4 - n}人まで、同じあいことばで入れます` : `${4 - n} more can join with the same code`,
+    const cap = Coop.roomCapacity();
+    if (n < cap) {
+      txt(ja ? `あと${cap - n}人まで、同じあいことばで入れます` : `${cap - n} more can join with the same code`,
         W / 2, by + 2 * UI, { size: 9.5 * UI, weight: 500, color: COL.gold, maxW: bw });
       by += 16 * UI;
     }
-    if (!host) txt(ja ? 'どちらが押してもふたり同時に始まります' : 'either player can start', W / 2, by + 2 * UI,
+    if (!host) txt(ja ? '誰が押しても全員同時に始まります' : 'anyone can start for everyone', W / 2, by + 2 * UI,
       { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
     if (!host) by += 16 * UI;
   } else if (host) {

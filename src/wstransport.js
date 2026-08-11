@@ -32,6 +32,7 @@ export class WsTransport {
     this.c = coop; this.role = role; this.code = code; this.url = url;
     this.ws = null; this.open = false; this.disposed = false;
     this.members = 1;
+    this.capacity = 4;   // server/relay.js の LIMITS.MEMBERS と揃える
   }
 
   init() {
@@ -144,6 +145,8 @@ export class DualTransport {
   get open() { return !!(this.picked && this.picked.open); }
   /** ロビー表示用: 直結で繋がったのか、中継なのか。 */
   get via() { return this.picked === this.rtc ? 'p2p' : this.picked === this.ws ? 'relay' : ''; }
+  /** 経路が決まるまでは、中継が使えるつもりで4人と答える。 */
+  get capacity() { return this.picked ? this.picked.capacity : 4; }
   /** 中継に相方が居るか。直結が開いていれば相方が居るのは自明。 */
   get relayReady() { return this.ws.open && this.ws.members >= 2; }
 
