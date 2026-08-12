@@ -11,15 +11,16 @@ import { Director } from './director.js';
 import { BossAI } from './bossai.js';
 import { Save } from './save.js';
 import { Coop } from './coop.js';
-import { BELL_LOCK_R } from './engine.js';
+import { BELL_LOCK_R, selfKey } from './engine.js';
+import { rankInfo } from './bellrelay.js';
+import { HELP_PAGES, helpPage, partyTable } from './help.js';
 import { SUPERS, superKeyOf, SUPER_MAX } from './super.js';
-import { TETHER } from './tether.js';
 import { chapterOf, missionFor, finalMissionFor } from './story.js';
 import { chapterStages } from './aistage.js';
 
 // 章の面を毎フレーム組み立てるのは無駄なので、章が変わるまで持っておく。
 // メニューを持つ画面。ここに無い画面ではボタンのリストを空にする。
-const MENU_STATES = new Set(['title', 'coop', 'chars', 'clear']);
+const MENU_STATES = new Set(['title', 'coop', 'chars', 'clear', 'help']);
 
 let mapCache = { ch: -1, stages: null };
 function mapStages(ch) {
@@ -28,6 +29,7 @@ function mapStages(ch) {
 }
 import { txt, gtxt, wrapTxt, wrapLines, surface, scrim, roundPath, COL, FONT_UI, FONT_DISPLAY } from './theme.js';
 import { qrMatrix } from './qr.js';
+import { versionLabel } from './version.js';
 
 // 画面の縦位置は「実際に使える範囲」の割合で置く。
 //   iPhone のようにダイナミックアイランドとホームバーがある端末では、
@@ -523,12 +525,36 @@ function drawBells() {
       ctx.font = `${Math.round(11 * UI)}px serif`; ctx.fillText('🔒', bl.size + 9, -bl.size - 2);
       ctx.globalAlpha = 1;
     }
+    // 位(何人が鳴らしたか)。**点の数で出す** ——
+    //   「あと1人鳴らせば金になる」が、数字を読まずに分かるようにしたい。
+    //   埋まっている点=鳴らした人数、空の点=あと入る余地。
+    const rank = Math.max(1, bl.rank || 1);
+    if (game.coop) {
+      const cap = Math.max(2, Math.min(4, Coop.playerCount()));
+      const ri = rankInfo(rank);
+      for (let i = 0; i < cap; i++) {
+        const a = -Math.PI / 2 + (i - (cap - 1) / 2) * 0.44;
+        const dx = Math.cos(a) * (bl.size + 13), dy = Math.sin(a) * (bl.size + 13);
+        ctx.beginPath(); ctx.arc(dx, dy, 3.1 * UI, 0, Math.PI * 2);
+        if (i < rank) { ctx.fillStyle = ri.color; ctx.fill(); }
+        else { ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1.2 * UI; ctx.stroke(); }
+      }
+      // 位が付いたベルは輪も位の色で二重にする。遠くからでも「熟している」と分かる
+      if (rank > 1) {
+        ctx.strokeStyle = ri.color; ctx.lineWidth = 2 * UI; ctx.globalAlpha = 0.8;
+        ctx.beginPath(); ctx.arc(0, 0, bl.size + 8, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
     // ベルの名前は HUD の隅に入らないところだけに出す。
     //   左上のスコアの上に「SCORE」というベル名が重なって、どちらも
     //   読めなくなっていた。表示より **読めること** を優先する。
     const inHud = (bl.y < 56 * UI + SAFE.top && (bl.x < 132 * UI + SAFE.left || bl.x > W - 118 * UI - SAFE.right))
                 || bl.y > H - 62 * UI - SAFE.bottom;
-    if (!inHud) label(bt.name, 0, bl.size + 16, bt.color, 10 * UI);
+    if (!inHud) {
+      const ri = rankInfo(rank);
+      label((rank > 1 ? ri.ja + ' ' : '') + bt.name, 0, bl.size + 16, rank > 1 ? ri.color : bt.color, 10 * UI);
+    }
     ctx.restore();
   }
 }
@@ -626,13 +652,12 @@ function drawHUD() {
     txt(t('hint_bomb'), W / 2, H - 178 * UI - bot, { size: 12 * UI, weight: 700, color: '#fff', shadow: 0.95, maxW: W * 0.9 });
     ctx.globalAlpha = 1;
   }
-  // きずなの案内は **1面目だけでは足りなかった。**
-  //   「線が何なのか分からない」と言われたので、実際に何度か切れるまでは
-  //   毎面のはじめに出す。切れるようになったら黙る(うるさくしない)。
-  if (game.coop && game.state === 'play' && game.stageTime < 7000 && Save.tetherCuts() < 6) {
+  // 盾持ちの案内。**扇と輪だけで伝わるのが理想**だが、初回だけは言葉で補う。
+  //   何度か背中を撃てるようになったら黙る(できている人に言い続けない)。
+  if (game.coop && game.state === 'play' && game.stageTime < 7000 && Save.backstabs() < 6) {
     ctx.globalAlpha = clamp((7000 - game.stageTime) / 1200, 0, 0.92);
-    txt(t('tether_hint'), W / 2, H - 158 * UI - bot,
-      { size: 11.5 * UI, weight: 700, color: '#a8e9ff', shadow: 0.95, maxW: W * 0.9 });
+    txt(t('guard_hint'), W / 2, H - 158 * UI - bot,
+      { size: 11.5 * UI, weight: 700, color: '#ffd166', shadow: 0.95, maxW: W * 0.9 });
     ctx.globalAlpha = 1;
   }
 }
@@ -680,6 +705,11 @@ function drawSplash() {
   });
   ctx.globalAlpha = 1;
   wordmark(W / 2, vy(0.485), 0.94 + ein * 0.06, ein);
+  // どの版を触っているかを、起動のたびに1度だけ見せる。
+  //   2人までの版(v1.0 DUO)と4人の版(v2.0 PARTY)が同時に世に出るので、
+  //   「4人で入れない」という報告がどちらの話なのか、これが無いと分からない。
+  txt(versionLabel(getLang() === 'ja'), W / 2, vy(0.485) + 44 * UI,
+    { size: 9 * UI, weight: 600, color: '#5d6f8f', track: 1.6, alpha: ein * 0.85 });
   if (k > 0.5) {
     txt(getLang() === 'ja' ? 'タップでスキップ' : 'TAP TO SKIP', W / 2, vy(0.88),
       { size: 10.5 * UI, weight: 500, color: '#6f819f', alpha: clamp((k - 0.5) * 3, 0, 0.85), track: 1.6 });
@@ -730,6 +760,11 @@ function drawTitle() {
   const bw = Math.min(W * 0.82, 348), bx = (W - bw) / 2;
   const streak = Save.streakAtRisk();
   let h1 = 64 * UI, h2 = 58 * UI, h3 = 52 * UI, gap = 11 * UI;
+  // あそびかたの行。**ここだけ縮めない。**
+  //   他と同じように縮めたら iPhone SE で 31px になっていた —— 指の当たる
+  //   最小(44pt)を下回ると、押したのに反応しない事故が起きる。
+  //   高さは pt で決める(UI 倍率を掛けると小さい端末でまた44を割る)。
+  const h4 = Math.max(44, 40 * UI);
   // 世界マップは top より 46*UI 上に描かれるので、その上端が
   //   天気の下端より下に来るところまで top を押し下げる。
   //   Chrome の URL バーで縦が短い端末では、ここが効かないと必ず重なる。
@@ -738,8 +773,13 @@ function drawTitle() {
   const avail = vy(0.885) - top;
   // マップ(絵)+ 見出しの行 の2段ぶんを取り置く。44*UI だと見出しの行が
   //   絵の下に潜って、iPhone SE では 📖 が最後のマスに重なった。
-  const need = h1 + gap + h2 + gap + h3 + (streak ? 26 * UI : 0) + 74 * UI;
-  if (need > avail) { const k = avail / need; h1 *= k; h2 *= k; h3 *= k; gap *= k; }
+  const need = h1 + gap + h2 + gap + h3 + gap + h4 + (streak ? 26 * UI : 0) + 74 * UI;
+  // 縮める時は h4 を分母から外す。**縮まない行を含めて割ると、他が縮んでも
+  //   全体が収まらず、結局 h4 まで巻き込んで縮めることになる。**
+  if (need > avail) {
+    const k = Math.max(0.5, (avail - h4) / Math.max(1, need - h4));
+    h1 *= k; h2 *= k; h3 *= k; gap *= k;
+  }
   else top += (avail - need) * 0.62;   // 下に穴が空いていたので、もう少し下へ寄せる
   let by = top;
 
@@ -844,7 +884,24 @@ function drawTitle() {
       { size: 12 * UI, weight: 700, color: '#e6efff', align: 'left', maxW: tw });
   }
   game.menuBtns.push({ id: 'chars', x: bx + halfB + 9 * UI, y: by, w: halfB, h: h3 });
-  by += h3;
+  by += h3 + gap;
+
+  // あそびかた。**一番下に、細く置く。**
+  //   目立たせると「読まないと始められない」という圧になる。ここは
+  //   遊びはじめる邪魔をせず、探したときには必ず見つかる大きさでいい。
+  surface(bx, by, bw, h4, { r: 12, fill: 'rgba(13,19,40,0.6)', border: 'rgba(143,211,255,0.32)', lw: 1.5 });
+  {
+    const nm = t('howto');
+    const is = 15 * UI, g2 = 7 * UI, fs = 11.5 * UI;
+    f(fs, 700);
+    const tw = Math.min(ctx.measureText(nm).width, bw - is - g2 - 24 * UI);
+    const left = bx + bw / 2 - (is + g2 + tw) / 2;
+    emojiCentered('📘', left + is / 2, by + h4 / 2, is);
+    txt(nm, left + is + g2, by + h4 / 2,
+      { size: fs, weight: 700, color: '#8fd3ff', align: 'left', maxW: tw });
+  }
+  game.menuBtns.push({ id: 'help', x: bx, y: by, w: bw, h: h4 });
+  by += h4;
 
   if (streak) {
     txt(ja ? `🔥 ${Save.data.streak}日連続 — 今日プレイで継続` : `🔥 ${Save.data.streak}-day streak — play today`,
@@ -1231,7 +1288,7 @@ function drawQR(text, cx, cy, box) {
   return true;
 }
 
-// === ふたりでプレイ: ロビー ===
+// === みんなでプレイ: ロビー ===
 function drawCoopLobby() {
   const time = game.titleAnim, ja = getLang() === 'ja';
   nightSky('#04140f', '#0a2038');
@@ -1246,7 +1303,11 @@ function drawCoopLobby() {
   //   半分ずつで 16px 要るのに、割合の差が 15px しか無かった)。字の高さで置く。
   const headY = SAFE.top + 24 * UI;
   txt(t('coop'), W / 2, headY, { size: 21 * UI, weight: 800, color: COL.mint, family: FONT_DISPLAY, maxW: W * 0.72 });
-  txt(ja ? 'リアルタイムで一緒に戦う' : 'Fight together in real time', W / 2, headY + 23 * UI,
+  // 定員をここに出す。ロビーに入った時点で「何人まで呼べるのか」が分からないと、
+  //   3人目・4人目を誘う判断ができない。経路によって 2 にも 4 にもなる。
+  const cap0 = Coop.roomCapacity();
+  txt(ja ? `リアルタイムで一緒に戦う · 最大${cap0}人` : `Fight together in real time · up to ${cap0}`,
+    W / 2, headY + 23 * UI,
     { size: 10.5 * UI, weight: 500, color: COL.mute, maxW: W * 0.86 });
   const headBottom = headY + 34 * UI;
 
@@ -1265,7 +1326,7 @@ function drawCoopLobby() {
     //   その1行のぶんだけ下のボタンが押し出され、iPhone SE で「戻る」が切れた。
     const statusNeed = 26 * UI + rows * 17 * UI + (Coop.connected ? 0 : 18 * UI);
     const btnNeed = Coop.connected
-      ? (52 + 8 + 40) * UI + (Coop.via() === 'relay' && Coop.playerCount() < 4 ? 16 * UI : 0)
+      ? (52 + 8 + 40) * UI + (Coop.playerCount() < Coop.roomCapacity() ? 16 * UI : 0)
       : (44 + 8 + 44 + 8 + 40) * UI;
     const yStart = Math.max(vy(0.145), headBottom);
     const room = (H - SAFE.bottom) - 14 * UI - btnNeed - statusNeed - yStart;
@@ -1352,7 +1413,9 @@ function drawCoopLobby() {
       p2p_failed: [ja ? '直接つながれませんでした' : "Couldn't link the devices",
         ja ? '同じWi-Fiに繋ぐと成功しやすくなります' : 'Try putting both phones on the same Wi-Fi'],
       closed: [ja ? '接続が切れました' : 'Connection lost', ja ? 'もう一度つないでください' : 'Please reconnect'],
-    }[Coop.status] || [ja ? '接続できませんでした' : 'Connection failed', ja ? 'もう一度お試しください' : 'Please try again'];
+      room_full: [ja ? 'この部屋は満員です(4人)' : 'This room is full (4)',
+        ja ? '別のあいことばで、もうひとつ部屋を作ってください' : 'Open a second room with a fresh code'],
+    }[Coop.status] ||[ja ? '接続できませんでした' : 'Connection failed', ja ? 'もう一度お試しください' : 'Please try again'];
     txt(S[0], W / 2, sy - 8 * UI, { size: 11.5 * UI, weight: 700, color: '#ffb37f', maxW: bw });
     txt(S[1], W / 2, sy + 9 * UI, { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
     statusBottom = sy + 19 * UI;
@@ -1396,14 +1459,15 @@ function drawCoopLobby() {
       : (ja ? `${n}人でスタート` : `START WITH ${n}`);
     drawBtn('coopStart', bx, by, bw, 52 * UI, btnLabel, '#ffffff', true, false, 18 * UI);
     by += 52 * UI + gap;
-    // 中継サーバー経由なら4人まで入れる。直結は2人まで。
+    // 網目・中継なら4人まで入れる。1対1の直結とデモ相方は2人まで。
     //   まだ空きがあることを言わないと、3人目が「入れない」と思って諦める。
-    if (Coop.via() === 'relay' && n < 4) {
-      txt(ja ? `あと${4 - n}人まで、同じあいことばで入れます` : `${4 - n} more can join with the same code`,
+    const cap = Coop.roomCapacity();
+    if (n < cap) {
+      txt(ja ? `あと${cap - n}人まで、同じあいことばで入れます` : `${cap - n} more can join with the same code`,
         W / 2, by + 2 * UI, { size: 9.5 * UI, weight: 500, color: COL.gold, maxW: bw });
       by += 16 * UI;
     }
-    if (!host) txt(ja ? 'どちらが押してもふたり同時に始まります' : 'either player can start', W / 2, by + 2 * UI,
+    if (!host) txt(ja ? '誰が押しても全員同時に始まります' : 'anyone can start for everyone', W / 2, by + 2 * UI,
       { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
     if (!host) by += 16 * UI;
   } else if (host) {
@@ -1415,7 +1479,13 @@ function drawCoopLobby() {
     // ゲストが繋がらない時に手詰まりにならないよう、必ず次の手を出す
     drawBtn('coopRetry', bx, by, bw, bh, ja ? '🔄 もう一度つなぐ' : '🔄 Reconnect', COL.gold); by += bh + gap;
   }
-  drawBtn('coopBack', bx, by, bw, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
+  // ロビーに「つなげ方」への近道を置く。**困っているのはまさにこの画面**なので、
+  //   タイトルに戻ってから探させるのは遠すぎる。押すと つなげ方 のページが開く。
+  {
+    const half = (bw - 9 * UI) / 2;
+    drawBtn('coopBack', bx, by, half, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
+    drawBtn('helpConnect', bx + half + 9 * UI, by, half, 40 * UI, ja ? '📘 つなげ方' : '📘 How to', COL.sky);
+  }
 }
 
 // === 必殺技の演出 ===
@@ -1601,124 +1671,82 @@ function drawSuperGauge() {
 //   弾の見た目は相方ごとに別に持つ。ひとつの配列を共有すると、
 //   3人以上のとき全員の弾が同じ場所から出ているように見えてしまう。
 /**
- * きずな。**このゲームで一番目立つ線**にする。
- *   短いとき = 太くて白い芯が通る(鋭い)
- *   伸びたとき = 細くなって色が抜ける(弱い)
- *   軋んでいるとき = 赤く弾けて、切れる寸前だと分かる
- * 「見れば強さが分かる」ことが要る。数字で説明できない場所なので。
+ * 盾持ち。**「なぜ効かないのか」を、撃つ前に見せる。**
+ *
+ * 弾いてから理由を説明するのでは遅い。撃った時に初めて分かる仕組みは
+ * 「たまに効かない」というバグ報告になって返ってくる。
+ * 盾が誰を向いているかを線で描き、自分が向かれているなら自機の側にも出す。
+ *
+ * 描き分けは3つだけ:
+ *   赤い扇 + 自分へ伸びる線 = **あなたは撃てない**(前に出すぎている)
+ *   灰色の扇               = 他の誰かが塞がれている
+ *   金の輪                 = **いま撃てるのはあなた**
  */
-function drawTether() {
-  const st = game.tether;
-  if (!st) return;
+function drawGuards() {
+  if (!game.coop) return;
   const now = performance.now();
+  const me = selfKey();
+  const players = game.players || [];
+  for (const e of game.enemies) {
+    if (!e.guard || e.delay > 0) continue;
+    const blocked = e.blocked;
+    const meBlocked = !!(blocked && blocked.has(me));
+    const r = (e.size || 16) * 1.5;
+    const puls = 0.6 + 0.4 * Math.abs(Math.sin(now * 0.006));
 
-  // 切れた直後の名残。何が起きたのか分かるように一瞬だけ残す
-  if (st.flash > 0 && !st.links.length) {
-    ctx.save();
-    ctx.globalAlpha = st.flash * 0.7;
-    emojiCentered('💔', W / 2, H * 0.5, 46 * UI);
-    ctx.restore();
-  }
-  if (!st.links.length) return;
-
-  for (const L of st.links) {
-    const tight = 1 - clamp((L.len - TETHER.TIGHT) / (TETHER.LOOSE - TETHER.TIGHT), 0, 1);
-    const wob = L.strain ? 5.5 : 1.6;
-    // 線を数点に割って揺らす。まっすぐな直線だと「張力」が出ない
-    const N = 10;
-    const pts = [];
-    for (let i = 0; i <= N; i++) {
-      const k = i / N;
-      const nx = -(L.by - L.ay), ny = (L.bx - L.ax);
-      const nl = Math.hypot(nx, ny) || 1;
-      const s = Math.sin(k * Math.PI) * Math.sin(now * (L.strain ? 0.03 : 0.008) + k * 7) * wob;
-      pts.push([L.ax + (L.bx - L.ax) * k + (nx / nl) * s, L.ay + (L.by - L.ay) * k + (ny / nl) * s]);
+    // 盾。塞いでいる相手ごとに、その方向へ扇を出す。
+    if (blocked && blocked.size) {
+      for (const q of players) {
+        if (!blocked.has(q.id)) continue;
+        const a = Math.atan2(q.y - e.y, q.x - e.x);
+        const mine = q.id === me;
+        ctx.save();
+        ctx.globalAlpha = mine ? 0.85 * puls : 0.3;
+        ctx.strokeStyle = mine ? '#ff6a6a' : '#9fb4d8';
+        ctx.lineWidth = (mine ? 5 : 3) * UI;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(e.x, e.y, r, a - 0.62, a + 0.62); ctx.stroke();
+        // 自分が塞がれている時だけ、自機まで線を引く。**誰が塞がれているのか**を
+        //   一目にする。全員ぶん引くと画面が糸だらけになるので自分だけ。
+        if (mine) {
+          ctx.globalAlpha = 0.22 + 0.18 * puls;
+          ctx.lineWidth = 2 * UI;
+          ctx.setLineDash([6 * UI, 7 * UI]);
+          ctx.beginPath();
+          ctx.moveTo(e.x + Math.cos(a) * r, e.y + Math.sin(a) * r);
+          ctx.lineTo(q.x, q.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.restore();
+        if (mine) emojiCentered('🛡', e.x + Math.cos(a) * r, e.y + Math.sin(a) * r, (15 + puls * 4) * UI);
+        else emojiCentered('🛡', e.x + Math.cos(a) * r, e.y + Math.sin(a) * r, 11 * UI);
+      }
     }
-    const path = () => {
-      ctx.beginPath();
-      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-    };
-    ctx.save();
-    ctx.lineCap = 'round';
-    const col = L.strain ? '#ff5a5a' : '#8fe9ff';
-    // 外側のにじみ
-    ctx.globalAlpha = (L.strain ? 0.5 : 0.34) * (0.7 + tight * 0.3);
-    ctx.strokeStyle = col;
-    ctx.lineWidth = (TETHER.HITW * 2) * (0.55 + tight * 0.45);
-    path(); ctx.stroke();
-    // 芯。短いほど白く太くなる = 強さがそのまま見える
-    ctx.globalAlpha = L.strain ? 0.8 : 1;
-    ctx.strokeStyle = L.strain ? '#ffd0d0' : '#ffffff';
-    ctx.lineWidth = 1.6 + tight * 3.4;
-    path(); ctx.stroke();
-    ctx.restore();
 
-    // いま切れている場所を光らせる。**ここが無いと、効いているのに気づけない。**
-  //   「線が見えたけど何も起きなかった」と言われた原因の半分はこれ。
-  if (st.hit) {
-    const k2 = Math.max(0, st.hit.t / 0.16);
-    ctx.save();
-    ctx.globalAlpha = k2;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2 + k2 * 3;
-    ctx.beginPath(); ctx.arc(st.hit.x, st.hit.y, (1 - k2) * 26 * UI + 8 * UI, 0, Math.PI * 2); ctx.stroke();
-    emojiCentered('✨', st.hit.x, st.hit.y, (13 + k2 * 9) * UI);
-    ctx.restore();
-  }
-
-  // 線の上を光が走る。止まっていても「生きている」ことが分かる
-    const k = (now * 0.0009) % 1;
-    const idx = Math.min(N, Math.floor(k * N));
-    const [sx, sy] = pts[idx];
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    emojiCentered(L.strain ? '⚡' : '✨', sx, sy, (13 + tight * 9) * UI);
-    ctx.restore();
-  }
-
-  // 軋みの警告。**線の真ん中に出す。**
-  //   画面の上に固定すると、ボスの体力バーや相方の名前と重なって、
-  //   一番混んでいる瞬間に一番読めなくなる。見ている場所は線の上。
-  if (st.strainT > 0.15) {
-    const L = st.links.reduce((a, b) => (b.len > (a ? a.len : 0) ? b : a), null);
-    if (L) {
-      const p = st.strainT / TETHER.BREAK;
-      const mx = (L.ax + L.bx) / 2, my = (L.ay + L.by) / 2;
-      // 線の上に文字を重ねない。線と垂直にずらす
-      const nx = -(L.by - L.ay), ny = (L.bx - L.ax), nl = Math.hypot(nx, ny) || 1;
-      const off = 22 * UI;
-      // 文字は中央そろえなので、**自分の幅の半分**を残して寄せる。
-      //   画面の 0.2〜0.8 に中心を置くだけでは、長い訳語が端で切れる。
-      const maxW = W * 0.5, half = maxW / 2 + 6 * UI;
-      const tx = clamp(mx + (nx / nl) * off, half, W - half);
-      const ty = clamp(my + (ny / nl) * off, H * 0.1, H * 0.9);
-      gtxt(t('tether_strain'), tx, ty,
-        { size: 12 * UI, weight: 800, color: '#ff9a9a', alpha: 0.5 + 0.5 * Math.abs(Math.sin(now * 0.02)), maxW });
-      const bw = 76 * UI, bx = tx - bw / 2, by = ty + 11 * UI;
-      ctx.fillStyle = 'rgba(0,0,0,0.45)';
-      roundRect(bx, by, bw, 4.5 * UI, 2.5 * UI); ctx.fill();
-      ctx.fillStyle = '#ff5a5a';
-      roundRect(bx, by, bw * (1 - p), 4.5 * UI, 2.5 * UI); ctx.fill();
+    // 撃てる側。**ここが褒美の合図**なので、はっきり光らせる。
+    if (!meBlocked) {
+      ctx.save();
+      ctx.globalAlpha = 0.5 + 0.5 * puls;
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 3 * UI;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r + 5 * UI + puls * 3 * UI, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 0.18 * puls;
+      ctx.lineWidth = 11 * UI;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r + 5 * UI, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      emojiCentered('🗡', e.x, e.y - r - 10 * UI, (14 + puls * 4) * UI);
     }
-  }
 
-  // 烙印。**文字を足さずにボスそのものを光らせる。**
-  //   弾幕の真ん中に一行増やすと、それは情報ではなく散らかりになる。
-  //   「いま通る」はボスを見れば分かるようにする。
-  const b = game.boss;
-  if (st.branded && b) {
-    const r = 42 * (b.scale || 1);
-    const puls = 0.55 + 0.45 * Math.abs(Math.sin(now * 0.014));
-    ctx.save();
-    ctx.globalAlpha = puls;
-    ctx.strokeStyle = '#ffe27a';
-    ctx.lineWidth = 3.5 * UI;
-    ctx.beginPath(); ctx.arc(b.x, b.y, r + 10 * UI + puls * 5 * UI, 0, Math.PI * 2); ctx.stroke();
-    ctx.globalAlpha = puls * 0.35;
-    ctx.lineWidth = 12 * UI;
-    ctx.beginPath(); ctx.arc(b.x, b.y, r + 10 * UI + puls * 5 * UI, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
-    // 弱点を突いている印。短い記号ひとつなら読み取りの負担にならない
-    emojiCentered('💥', b.x + r * 0.72, b.y - r * 0.72, (17 + puls * 5) * UI);
+    // 弾かれた瞬間。当たった上で通らなかったことを、当たった場所で見せる。
+    if (e.blockFlash > 0) {
+      const k = Math.min(1, e.blockFlash);
+      ctx.save();
+      ctx.globalAlpha = k * 0.9;
+      ctx.strokeStyle = '#dbe7ff'; ctx.lineWidth = (1.5 + k * 3) * UI;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r + (1 - k) * 16 * UI, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
   }
 }
 
@@ -1954,10 +1982,177 @@ function drawClear() {
   if (next) label(`${t('next')}: ${next.emoji} ${next.name}`, W / 2, vy(0.58), '#8fd3ff', 12 * UI);
 }
 
+// === あそびかた ===
+//
+// **遊ぶ前に読ませない。** 起動して最初にこれを見せた瞬間、これは「飛ばすもの」に
+//   なり、本当に知りたくなった時には二度と開かれない。ここが引き受けるのは
+//   「疑問が湧いたときに開く場所」という役目だけ。
+//   だからタイトル・一時停止・共闘ロビーのどこからでも開き、開いた場所へ戻る。
+//
+// 1ページに新しいことを4つ以上載せない。5つ目を入れたくなったらページを割る
+//   —— 一度に受け取れる新しい概念は4つが上限で、5つ書くと
+//   「全部読んだのに何も残らない」ページになる。
+function drawHelp() {
+  const ja = getLang() === 'ja';
+  const idx = clamp(game.helpPage | 0, 0, HELP_PAGES.length - 1);
+  const p = helpPage(HELP_PAGES[idx], ja);
+  game.menuBtns = [];
+  nightSky();
+  if (!p) return;
+
+  const pad = Math.max(15 * UI, SAFE.left + 12 * UI);
+  const cw = W - pad * 2;
+  const barH = Math.max(46, 44 * UI);   // 指の当たる最小(44pt)を下回らせない
+  const barY = H - SAFE.bottom - barH - 12 * UI;   // 下の操作帯。ここより下へは描かない
+
+  // --- 見出し ---
+  let y = SAFE.top + 20 * UI;
+  emojiCentered(p.icon, W / 2, y + 13 * UI, 26 * UI);
+  y += 42 * UI;         // 26 の絵の下端 + 余白。34 だと見出しに絵が重なっていた
+  txt(p.title, W / 2, y, { size: 19 * UI, weight: 800, color: '#ffffff', maxW: cw });
+  y += 17 * UI;
+
+  // 何ページ目か。**点で出す。** 「3 / 5」という数字より、
+  //   残りがどれくらいかが目で分かるほうが、めくるかどうかを決めやすい。
+  for (let i = 0; i < HELP_PAGES.length; i++) {
+    const dx = W / 2 + (i - (HELP_PAGES.length - 1) / 2) * 13 * UI;
+    ctx.beginPath(); ctx.arc(dx, y, 3.2 * UI, 0, Math.PI * 2);
+    if (i === idx) { ctx.fillStyle = '#8fd3ff'; ctx.fill(); }
+    else { ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.2 * UI; ctx.stroke(); }
+  }
+  y += 16 * UI;
+
+  // --- 導入の1行 ---
+  const leadLines = wrapLines(p.lead, cw, { size: 12.5 * UI, weight: 700, maxLines: 3 });
+  for (const ln of leadLines) {
+    txt(ln, W / 2, y + 7 * UI, { size: 12.5 * UI, weight: 700, color: '#8fd3ff', maxW: cw });
+    y += 17 * UI;
+  }
+  y += 8 * UI;
+
+  // --- 人数の表(このページだけ) ---
+  if (p.table) y = drawPartyTable(ja, pad, y, cw);
+
+  // --- 補足の位置を先に決める ---
+  //   本文の長さで位置が動くと、ページをめくるたびに目線が探し直しになる。
+  //   先に下端を固定して、本文はその上の余白に流し込む。
+  const footFs = 10.5 * UI;
+  const footLines = wrapLines(p.foot, cw - 20 * UI, { size: footFs, weight: 600, maxLines: 2 });
+  const footH = footLines.length * 14 * UI + 14 * UI;
+  const footY = barY - footH - 10 * UI;
+
+  // --- 本文 ---
+  //   **端末の高さで内容を削らない。** 小さい画面の人だけ説明が足りない、
+  //   という状態は作らない。入らないときは字を縮める(最大28%まで)。
+  const avail = footY - y - 10 * UI;
+  const measure = kk => {
+    const bs = 11 * UI * kk;
+    const blocks = p.rows.map(r => wrapLines(r.body, cw - 27 * UI, { size: bs, weight: 600, maxLines: 3 }));
+    const h = blocks.reduce((a, ln) => a + (18 + 9) * UI * kk + ln.length * 14 * UI * kk, 0);
+    return { blocks, h, bs };
+  };
+  let k = 1, m = measure(1);
+  while (m.h > avail && k > 0.72) { k = Math.max(0.72, k - 0.04); m = measure(k); }
+  // 余った高さは行間に配る。**下に大穴が空いたまま**にすると、
+  //   ページの中身が上に貼り付いて、読み終わりがどこか分からなくなる。
+  const slack = Math.max(0, avail - m.h);
+  const gaps = Math.max(1, p.rows.length - 1);
+  const lead = Math.min(slack * 0.35 / gaps, 30 * UI);
+  // 余りは上下に等分する。**上に貼り付けて下に大穴**にすると、
+  //   読み終わりがどこか分からず、まだ続きがあるように見える。
+  y += Math.max(0, (slack - lead * gaps) / 2);
+  p.rows.forEach((r, ri) => {
+    emojiCentered(r.icon, pad + 11 * UI, y + 9 * UI, 18 * UI * k);
+    txt(r.head, pad + 27 * UI, y + 8 * UI,
+      { size: 12.5 * UI * k, weight: 800, color: '#ffe9a8', align: 'left', maxW: cw - 30 * UI });
+    y += 18 * UI * k;
+    for (const ln of m.blocks[ri]) {
+      txt(ln, pad + 27 * UI, y + 6 * UI, { size: m.bs, weight: 600, color: '#c3d2ee', align: 'left' });
+      y += 14 * UI * k;
+    }
+    y += 9 * UI * k + (ri < p.rows.length - 1 ? lead : 0);   // 最後の行のあとには足さない
+  });
+
+  // --- 補足 ---
+  surface(pad, footY, cw, footH, { r: 10, fill: 'rgba(143,211,255,0.09)', border: 'rgba(143,211,255,0.28)', lw: 1 });
+  footLines.forEach((ln, i) => txt(ln, W / 2, footY + 7 * UI + 14 * UI * (i + 0.5),
+    { size: footFs, weight: 600, color: '#9fb4d8', maxW: cw - 20 * UI }));
+
+  // --- 操作帯: ◀ / とじる / ▶ ---
+  //   最初と最後のページでも矢印は消さずに薄くする。消えると位置がずれて、
+  //   次を押そうとした指が「とじる」に着地する。
+  const aw = 52 * UI, gap = 8 * UI;
+  const midW = cw - (aw + gap) * 2;
+  helpBtn('helpPrev', pad, barY, aw, barH, '◀', idx > 0);
+  helpBtn('helpClose', pad + aw + gap, barY, midW, barH, ja ? 'とじる' : 'CLOSE', true);
+  helpBtn('helpNext', pad + aw + gap + midW + gap, barY, aw, barH,
+    idx < HELP_PAGES.length - 1 ? '▶' : '✓', true);
+}
+
+function helpBtn(id, x, y, w, h, lbl, on) {
+  surface(x, y, w, h, { r: 13,
+    fill: on ? 'rgba(20,28,56,0.92)' : 'rgba(20,28,56,0.4)',
+    border: on ? '#4a7ec8' : 'rgba(74,126,200,0.3)', lw: 2 });
+  txt(lbl, x + w / 2, y + h / 2, { size: 14 * UI, weight: 800,
+    color: on ? '#e6efff' : 'rgba(230,239,255,0.35)', maxW: w - 14 * UI });
+  if (on) game.menuBtns.push({ id, x, y, w, h });
+}
+
+/**
+ * 人数ごとの違いの表。この画面で一番価値のある部分 ——
+ * 遊んでいるだけでは絶対に手に入らない情報だけを集めてある。
+ * 数値は help.js がエンジンから引いてくるので、調整しても勝手に追随する。
+ */
+function drawPartyTable(ja, x, y, w) {
+  const T = partyTable(ja);
+  const nameW = w * 0.30, colW = (w - nameW) / T.cols.length;
+  const rowH = 24 * UI;
+  const h = rowH * (T.rows.length + 1) + 8 * UI;
+  surface(x, y, w, h, { r: 12, fill: 'rgba(13,19,40,0.8)', border: 'rgba(143,211,255,0.25)', lw: 1 });
+
+  // 見出し行。ソロの列だけ色を変える。**比べる基準がどこかを先に示す。**
+  T.cols.forEach((c, i) => {
+    txt(c, x + nameW + colW * (i + 0.5), y + 4 * UI + rowH / 2,
+      { size: 10 * UI, weight: 800, color: i === 0 ? '#9fb4d8' : '#8fd3ff', maxW: colW - 3 * UI });
+  });
+  for (let r = 0; r < T.rows.length; r++) {
+    const row = T.rows[r], ry = y + 4 * UI + rowH * (r + 1);
+    if (r % 2 === 0) {                       // 縞。5列を横に目で追うのに要る
+      ctx.fillStyle = 'rgba(255,255,255,0.035)';
+      ctx.fillRect(x + 2 * UI, ry, w - 4 * UI, rowH);
+    }
+    emojiCentered(row.icon, x + 13 * UI, ry + rowH / 2, 13 * UI);
+    txt(row.name, x + 23 * UI, ry + rowH / 2,
+      { size: 10 * UI, weight: 700, color: '#c3d2ee', align: 'left', maxW: nameW - 26 * UI });
+    row.cells.forEach((c, i) => {
+      txt(c, x + nameW + colW * (i + 0.5), ry + rowH / 2,
+        { size: 10 * UI, weight: i === 0 ? 600 : 800,
+          color: i === 0 ? '#8a99b8' : '#ffffff', maxW: colW - 3 * UI });
+    });
+  }
+  return y + h + 10 * UI;
+}
+
 function drawPause() {
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
-  label(t('paused'), W / 2, vy(0.45), '#fff', 26 * UI);
-  label(t('resume'), W / 2, vy(0.53), '#8fd3ff', 12 * UI);
+  label(t('paused'), W / 2, vy(0.42), '#fff', 26 * UI);
+  label(t('resume'), W / 2, vy(0.50), '#8fd3ff', 12 * UI);
+  // ここに置く理由: **疑問が湧くのは遊んでいる最中**で、その時に手が届かないと
+  //   結局この画面は誰にも読まれない。閉じれば一時停止に戻る(勝手に再開しない
+  //   —— 読んでいるあいだに敵が寄っていて、開いたせいで死ぬのは理不尽)。
+  game.menuBtns = [];
+  const bw = Math.min(W * 0.62, 260), bx = (W - bw) / 2, bh = Math.max(46, 42 * UI), by = vy(0.60);
+  surface(bx, by, bw, bh, { r: 13, fill: 'rgba(13,19,40,0.9)', border: '#4a7ec8', lw: 2 });
+  {
+    const nm = t('howto');
+    const is = 16 * UI, g2 = 8 * UI, fs = 12.5 * UI;
+    f(fs, 700);
+    const tw = Math.min(ctx.measureText(nm).width, bw - is - g2 - 22 * UI);
+    const left = bx + bw / 2 - (is + g2 + tw) / 2;
+    emojiCentered('📘', left + is / 2, by + bh / 2, is);
+    txt(nm, left + is + g2, by + bh / 2, { size: fs, weight: 700, color: '#e6efff', align: 'left', maxW: tw });
+  }
+  game.menuBtns.push({ id: 'help', x: bx, y: by, w: bw, h: bh });
 }
 
 function drawFinale() {
@@ -2107,7 +2302,7 @@ export function draw() {
   //   持たない画面に移ってもリストが残っていた。いまは当たり判定を読む側が
   //   画面ごとに分かれているので実害は出ていないが、押せない場所に押せる
   //   四角が残っているのは事故のもと。描く前に必ず空にする。
-  if (!MENU_STATES.has(game.state)) game.menuBtns = [];
+  if (!MENU_STATES.has(game.state) && game.state !== 'pause') game.menuBtns = [];
   if (game.state !== 'over' && game.state !== 'victory') game.overBtns = [];
   switch (game.state) {
     case 'splash': drawSplash(); break;
@@ -2115,11 +2310,12 @@ export function draw() {
     case 'title': drawTitle(); break;
     case 'coop': drawCoopLobby(); break;
     case 'chars': drawCharSelect(); break;
+    case 'help': drawHelp(); break;
     case 'intro': drawIntro(); break;
     case 'play': case 'warn': {
       ctx.save(); ctx.translate(game.shakeX, game.shakeY);
       drawBackground(); drawWeatherFx(); drawBells(); drawEnemies(); drawBoss();
-      drawBullets(); drawSuper(); drawTether(); drawPartners(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
+      drawBullets(); drawSuper(); drawGuards(); drawPartners(); drawPlayer(); drawParticles(); drawFog(); drawPopups();
       ctx.restore();
       drawHUD();
       drawBossReveal();

@@ -68,16 +68,40 @@ export function txt(s, x, y, {
  * 空白があればそこで、なければ1文字ずつ入るところまで詰める。
  * 縮小(maxW)で読めなくするより、行を増やすほうが読める。
  */
+// 行の頭に来てはいけない文字(句読点・閉じ括弧・小書き・音引き)。
+//   組版の禁則。ここを守らないと「代わりに / 、ひとりでは」のように
+//   読点が行頭に落ち、事故に見えてそこで一度読むのが止まる。
+const NO_LINE_HEAD = /^[、。,.・:;!?！？」』）\]｝〉》”’ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮーヽヾ]/;
+
 export function wrapLines(s, w, { size = 12, weight = 600, family = FONT_UI, maxLines = 4 } = {}) {
   font(size, weight, family);
   const hasSpace = /\s/.test(s);
-  const units = hasSpace ? s.split(/\s+/) : [...s];
   const join = hasSpace ? ' ' : '';
+  // 空白で割ったあと、**入りきらない塊はさらに1文字ずつに割る。**
+  //   これが無いと、日本語の文にスペースが1つ混じっただけで文全体が
+  //   1単語になり、はみ出したぶんが黙って消える(実際に「あそびかた」の
+  //   本文から一節が消えていて、実機で描くまで誰も気づかなかった)。
+  //   glue=true は「前に空白を入れない」印。**文字数では判定できない** ——
+  //   長さ1の単語("a" や "I")まで貼り付いて "carriesa cost" になった。
+  //   どこで割ったかを覚えておくのが唯一の正解。
+  const units = [];
+  for (const u of (hasSpace ? s.split(/\s+/) : [...s])) {
+    if (!u) continue;
+    if (hasSpace && ctx.measureText(u).width > w) {
+      // 割れない塊は文字へ。先頭だけは単語の始まりなので空白を残す。
+      [...u].forEach((c, i) => units.push({ s: c, glue: i > 0 }));
+    } else units.push({ s: u, glue: false });
+  }
   const lines = [];
   let cur = '';
   for (const u of units) {
-    const next = cur ? cur + join + u : u;
-    if (ctx.measureText(next).width > w && cur) { lines.push(cur); cur = u; }
+    const sep = cur && join && !u.glue ? join : '';
+    const next = cur ? cur + sep + u.s : u.s;
+    if (ctx.measureText(next).width > w && cur) {
+      // 行頭に置けない文字なら、はみ出させてでも前の行に留める。
+      if (NO_LINE_HEAD.test(u.s)) { cur = next; continue; }
+      lines.push(cur); cur = u.s;
+    }
     else cur = next;
     if (lines.length >= maxLines) break;
   }

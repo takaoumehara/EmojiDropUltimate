@@ -52,6 +52,10 @@ function makeFakeCtx() {
     beginPath: noop, closePath: noop, moveTo: noop, lineTo: noop, arc: noop,
     fill: noop, stroke: noop, fillRect: noop, clearRect: noop, strokeRect: noop,
     fillText: noop, strokeText: noop, drawImage: noop, setTransform: noop,
+    setLineDash: noop, getLineDash: () => [],
+    rect: noop, roundRect: noop, ellipse: noop, arcTo: noop,
+    quadraticCurveTo: noop, bezierCurveTo: noop, clip: noop,
+    createPattern: () => null, putImageData: noop,
     createLinearGradient: () => ({ addColorStop: noop }),
     createRadialGradient: () => ({ addColorStop: noop }),
     measureText: () => ({ width: 0 }),
@@ -62,6 +66,10 @@ function makeFakeCtx() {
     set textAlign(v) {}, get textAlign() { return 'left'; },
     set textBaseline(v) {}, get textBaseline() { return 'alphabetic'; },
     set lineWidth(v) {}, get lineWidth() { return 1; },
+    set lineCap(v) {}, get lineCap() { return 'butt'; },
+    set lineJoin(v) {}, get lineJoin() { return 'miter'; },
+    set shadowBlur(v) {}, get shadowBlur() { return 0; },
+    set shadowColor(v) {}, get shadowColor() { return 'transparent'; },
   };
 }
 

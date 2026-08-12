@@ -1,15 +1,20 @@
 // ============================================================
-// coop.js — ふたりでプレイ(リアルタイム2人協力)
+// coop.js — みんなでプレイ(リアルタイム協力・最大4人)
 //   本物の接続: WebRTC DataChannel の P2P 直結(遅延 20〜80ms)。
 //   サーバー(/api/signal, Vercel KV)は「出会う瞬間」のSDP交換にだけ使い、
 //   ゲーム中の通信は端末同士で直接行う(サーバー費ほぼゼロ)。
 //   世界は共有シードの決定論生成 → 送るのは互いの機体位置・スコア・
 //   ボスへの与ダメだけ。相方の機体・弾はお互いの画面に見える。
 //   サーバー未設定/接続失敗時はオフラインのデモ相方にフォールバック。
+//
+//   v2.0 から、3〜4人も常駐サーバー無しで繋がる(src/mesh.js)。
+//   2人のときの経路と速さは v1.0 と同じまま。
 // ============================================================
 import { Save } from './save.js';
 import { CHARS } from './config.js';
 import { relayUrl, DualTransport } from './wstransport.js';
+import { MeshTransport, electHost } from './mesh.js';
+import { iceConfig, gatherIce } from './ice.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 紛らわしい文字を除外
 function makeCode() {
@@ -18,23 +23,8 @@ function makeCode() {
   return s;
 }
 const SIG = '/api/signal';
-// 既定(サーバーから設定を取れなかった場合の保険)
-const ICE_FALLBACK = [
-  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'],
-    username: 'openrelayproject', credential: 'openrelayproject' },
-];
-let iceCache = null;
-async function iceConfig() {
-  if (iceCache) return iceCache;
-  try {
-    const r = await fetch(`${SIG}?want=ice`);
-    if (r.ok) { const j = await r.json(); if (j.iceServers && j.iceServers.length) iceCache = j.iceServers; }
-  } catch (e) { /* 取得失敗時は既定を使う */ }
-  return (iceCache = iceCache || ICE_FALLBACK);
-}
 
-const P2P_ID = 'p2p';   // 直結は相手がひとりしかいないので、固定の呼び名でよい
+const P2P_ID = 'p2p';   // 1対1の直結は相手がひとりしかいないので、固定の呼び名でよい
 const MAX_PLAYERS = 4;
 
 function newPeer(id) {
@@ -47,13 +37,21 @@ function newPeer(id) {
 //   null を返すと全部に null チェックが要る。中身が空の相方を1つ用意しておく。
 const NO_PEER = newPeer('none');
 
-// 中継サーバーが設定されていれば直結と併走させ、無ければ直結だけを試す。
-//   設定は index.html の <meta name="coop-relay">。書かなければ挙動は今まで通りで、
-//   サーバーは完全に任意のまま。
+/**
+ * どの経路で繋ぐかを決める。
+ *
+ * 中継サーバー(<meta name="coop-relay">)が書いてあれば、直結と併走させて
+ * 速い方を採る —— ここは v1 から変わらない。
+ *
+ * 書いていない場合は **網目(mesh)** を使う。v1 はここで1対1の直結しか
+ * 作らず、それが「公開版は2人まで」の正体だった。網目は同じ直結を人数ぶん
+ * 持つだけなので、サーバーは相変わらず立てなくていい。
+ */
 function makeTransport(coop, role, code) {
   const url = relayUrl();
   const rtc = () => new RtcTransport(coop, role, code);
-  return url ? new DualTransport(coop, role, code, rtc, url) : rtc();
+  if (url) return new DualTransport(coop, role, code, rtc, url);
+  return new MeshTransport(coop, role, code);
 }
 
 export const Coop = {
@@ -66,9 +64,11 @@ export const Coop = {
   p2p: false,             // 本物のP2P接続か(false=デモ)
   joinOpen: false,        // あいことば入力フォームを出しているか
   status: '',             // ロビー表示用ステータス('signal_off'|'connecting'|'failed'|'')
-  // 相方は複数いうる(中継サーバー経由なら最大4人)。id → 相方。
-  //   直結(2人)のときは id が無いので P2P_ID をひとつ使う。
+  // 相方は複数いうる(網目 / 中継サーバー経由なら最大4人)。id → 相方。
+  //   1対1の直結のときは id が無いので P2P_ID をひとつ使う。
   peers: new Map(),
+  selfId: '',             // 網目での自分の呼び名(4文字)
+  hostId: '',             // いま世界を計算している人。抜けたら後継を選ぶ
   bossShared: 0, bossSharedMax: 0,
   localDmg: 0,
   transport: null,
@@ -93,6 +93,16 @@ export const Coop = {
   },
   /** ロビー表示用: いま何で繋がっているか('p2p' | 'relay' | '')。 */
   via() { return this.transport && this.transport.via ? this.transport.via : (this.p2p ? 'p2p' : ''); },
+  /**
+   * この部屋にあと何人入れるか、の分母。
+   * 網目と中継は4人、1対1の直結とデモ相方は2人。
+   * ロビーで「あと◯人入れます」と言うために要る —— 言わないと3人目が
+   * 「自分は入れない」と思って諦める。
+   */
+  roomCapacity() {
+    const cap = this.transport && this.transport.capacity;
+    return cap || 2;
+  },
 
   // === 相方(複数) ===
   peer(id) {
@@ -132,6 +142,14 @@ export const Coop = {
     tr.init().catch(e => {
       if (this.transport !== tr || tr.open) return;
       const m = String(e && e.message || '');
+      // 合図サーバーがまだ部屋を知らない(= api/ が v1 のまま)。
+      //   このときだけは黙って1対1の直結へ戻す。2人なら今まで通り遊べるので、
+      //   「新しい版にしたら繋がらなくなった」を起こさない。
+      if (m === 'signal_room' && !(tr instanceof RtcTransport)) {
+        tr.dispose();
+        this._connect(new RtcTransport(this, this.role, this.code));
+        return;
+      }
       this.status = tr.sigDown ? 'signal_off'
         : m === 'timeout' ? (this.role === 'guest' ? 'no_room' : 'timeout')
           : this.status === 'p2p_failed' ? 'p2p_failed' : 'failed';
@@ -158,6 +176,7 @@ export const Coop = {
     this.code = ''; this.seed = 0; this.status = '';
     this.connectAt = 0; this.sigNote = '';
     this.peers.clear();
+    this.selfId = ''; this.hostId = '';
     this.myReady = false;
     this.bossShared = 0; this.bossSharedMax = 0; this.localDmg = 0;
   },
@@ -171,10 +190,33 @@ export const Coop = {
     this.role = 'host';
     if (this.onBecomeHost) this.onBecomeHost();
   },
-  /** 相方が抜けた(中継サーバーが顔ぶれの変化を教えてくれる)。 */
+  /** 相方が抜けた(中継サーバー、または切れた線が教えてくれる)。 */
   dropPeer(id) {
+    const wasHost = !!id && id === this.hostId;
     this.peers.delete(id);
     if (this.peers.size === 0) this.connected = false;
+    // 抜けたのがホストなら、残った中で後継を決める。
+    //   中継サーバーが居るときはサーバーが指名するので、ここは通らない
+    //   (hostId は網目でしか立たない)。
+    if (wasHost) this.electHost();
+  },
+  /**
+   * ホストが消えたときの後継を、全員が同じ規則で選ぶ。
+   *
+   * 中継サーバーはこれを「部屋を見ている唯一の存在」として指名していた。
+   * サーバーが居ない網目では、誰から見ても同じ答えになる規則が要る。
+   * 番号の若い順にした —— 一意で、全員が同じ顔ぶれを持っていれば必ず一致する。
+   */
+  electHost() {
+    const ids = [this.selfId, ...this.livePeers().map(p => p.id)].filter(Boolean);
+    const next = electHost(ids);
+    if (!next) return null;
+    this.hostId = next;
+    if (next === this.selfId) {
+      this.becomeHost();
+      this.send({ t: 'hostis' });   // 見落とした人が居ても揃うように、宣言もする
+    }
+    return next;
   },
 
   // 招待リンク(QR・テキスト共有用)。開くと自動で参加する。
@@ -201,7 +243,18 @@ export const Coop = {
     ];
   },
   readyCount() { return this.roster().filter(r => r.ready).length; },
-  startGame() { this.send({ t: 'start', seed: this.seed, mode: this.mode }); },
+  startGame() {
+    this.send({ t: 'start', seed: this.seed, mode: this.mode });
+    this.lobbyClosed();
+  },
+  /**
+   * ロビーを閉じた(ゲームが始まった)。
+   * 網目は、ここから顔ぶれを見に行く間隔を落とす —— 遊んでいる間に
+   * 合図サーバーを叩き続ける理由が無い(命令数がそのまま費用と電池になる)。
+   */
+  lobbyClosed() {
+    if (this.transport && this.transport.lobbyClosed) this.transport.lobbyClosed();
+  },
 
   // === プロトコル ===
   send(o) { if (this.transport) this.transport.send(o); },
@@ -216,11 +269,25 @@ export const Coop = {
         this.connected = true; this.status = '';
         if (o.name) p.name = String(o.name).slice(0, 14);
         if (typeof o.ch === 'number') p.char = o.ch;
+        // 誰が世界を計算しているかを覚える。この1文字が無いと、
+        //   その人が抜けたときに「誰が抜けたのか」が分からず引き継げない。
+        if (o.h) this.hostId = from;
+        p.seenAt = performance.now();
+        break;
+      // 網目で後継が決まった。抜けたホストを見落とした人でも、これで揃う。
+      case 'hostis':
+        this.hostId = from; p.seenAt = performance.now();
+        break;
+      // 生存の合図。中身は無い —— 届いたこと自体が中身。
+      //   ロビーは誰も何も送らない時間が続くので、これが無いと
+      //   居るのに音沙汰が無い相方が顔ぶれから消える。
+      case 'hb':
         p.seenAt = performance.now();
         break;
       case 'start': // ゲスト: ホストと同じ種・モードで即開始
         if (this.role === 'guest') {
           this.seed = o.seed >>> 0; this.mode = o.mode === 'ai' ? 'ai' : 'story';
+          this.lobbyClosed();
           if (this.onStartGame) this.onStartGame();
         }
         break;
@@ -241,7 +308,12 @@ export const Coop = {
         break;
       case 'dmg': this.applyPartnerDamage(o.d | 0, p); break;
       case 'w': this.snap = o; this.snapAt = performance.now(); break;   // ゲスト: ワールド状態を受信
-      case 'hit': if (this.onPartnerHit) this.onPartnerHit(o.id, o.d | 0, o.sl); break; // ホスト: 相方の命中を反映
+      // ホスト: 相方の命中を反映。**誰が撃ったか(from)も渡す** ——
+      //   盾持ちは「撃った人が塞がれているか」で通る通らないが決まるので、
+      //   送り主が分からないと判定できない。名乗りではなく線が決めるので偽れない。
+      case 'hit': if (this.onPartnerHit) this.onPartnerHit(o.id, o.d | 0, o.sl, from); break;
+      // ホスト: 相方がベルを鳴らした。位(何人が鳴らしたか)はホストが正。
+      case 'bell': if (this.onPartnerBell) this.onPartnerBell(o.id | 0, from); break;
       case 'died': if (this.onPartnerDied) this.onPartnerDied(); break;           // ホスト: 共有残機を減らす
       case 'over': if (this.onGameOver) this.onGameOver(); break;                 // ゲスト: 二人まとめて終了
       // ゲスト: ボス撃破。スナップショットは state が finale に移った時点で止まるので、
@@ -257,7 +329,7 @@ export const Coop = {
       case 'ls': if (this.onLastStand) this.onLastStand(String(o.k || ''), o.d ? String(o.d) : null); break;
     }
   },
-  onPartnerHit: null, onPartnerDied: null, onGameOver: null, onBossDown: null, onLastStand: null, onPeerSuper: null,   // engine が設定
+  onPartnerHit: null, onPartnerBell: null, onPartnerDied: null, onGameOver: null, onBossDown: null, onLastStand: null, onPeerSuper: null,   // engine が設定
 
   // ホスト → ゲスト: ワールド状態(敵・弾・ベル・ボス)を一定間隔で送る
   _lastSnap: 0,
@@ -316,6 +388,7 @@ class RtcTransport {
     this.c = coop; this.role = role; this.code = code;
     this.pc = null; this.dc = null; this.open = false;
     this.disposed = false; this.sigDown = false;
+    this.capacity = 2;   // RTCPeerConnection 1本 = 相手ひとり
   }
   async init() {
     this.pc = new RTCPeerConnection({ iceServers: await iceConfig(), iceCandidatePoolSize: 2 });
@@ -367,28 +440,8 @@ class RtcTransport {
     dc.onmessage = e => { try { this.c.onMsg(JSON.parse(e.data), P2P_ID); } catch (err) {} };
     dc.onclose = () => { this.open = false; if (!this.disposed) this.c.status = 'closed'; };
   }
-  // ICE候補の収集。ここを早く打ち切ると「自宅LAN内アドレスしか無いSDP」を
-  // 送ってしまい、別回線の相手とは直通が張れない。外向き候補(srflx/relay)が
-  // 取れるまで待ち、最大12秒で打ち切る。
-  gathered() {
-    const pc = this.pc;
-    if (pc.iceGatheringState === 'complete') return Promise.resolve();
-    return new Promise(res => {
-      let got = false;
-      const done = () => { clearTimeout(hard); clearTimeout(soft); pc.onicecandidate = null; res(); };
-      const hard = setTimeout(done, 12000);
-      let soft = null;
-      pc.onicecandidate = e => {
-        if (!e.candidate) return done();                       // 収集完了
-        const c = e.candidate.candidate || '';
-        if (/typ (srflx|relay)/.test(c) && !got) {
-          got = true;                                          // 外から見えるアドレスを確保
-          soft = setTimeout(done, 1500);                       // 少しだけ追加候補を待つ
-        }
-      };
-      pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') done(); };
-    });
-  }
+  // ICE候補の収集。中身は src/ice.js(網目と共有している)。
+  gathered() { return gatherIce(this.pc); }
   async post(kind, sdp) {
     const r = await fetch(SIG, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: this.code, kind, sdp }) });
     if (r.status === 503) { this.sigDown = true; throw new Error('signal_off'); }
@@ -426,7 +479,7 @@ class RtcTransport {
 
 // === デモ: オフラインのモック相方(サーバー不要の体験用) ===
 class MockTransport {
-  constructor(coop) { this.c = coop; this.joined = false; this.t = 0; this.dmgAccum = 0; this.scoreT = 0; }
+  constructor(coop) { this.c = coop; this.joined = false; this.t = 0; this.dmgAccum = 0; this.scoreT = 0; this.capacity = 2; }
   mockJoin() { this.joined = true; this.c.connected = true; this.c.partner.name = 'FRIEND'; }
   send(o) { /* デモ: 送信先なし */ }
   dispose() { this.joined = false; }

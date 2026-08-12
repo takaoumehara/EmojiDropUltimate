@@ -57,10 +57,15 @@ export function newGame() {
     superSweep: null,   // 画面を横切る帯
     superAt: 0,         // 自分が撃った時刻。合体の受付判定に使う
     superWish: null,    // ジーニーの願い。**1回の技で1つだけ**引く
-    // === きずな(共闘のみ) ===
-    //   相方とのあいだに張る線。触れた敵を切る。ひとりでは張れない。
-    tether: null,       // tether.js の newTetherState()。共闘の初回更新で作る
+    // === 盾持ち(共闘のみ) ===
+    //   生きている全員の位置。盾がどちらを向くかは、この距離の順位で決まる。
+    //   毎フレーム作り直す(updateGuardStep)。ソロでは空のまま。
+    players: [],
     charView: 'card', charDrag: 0, charReturn: null,   // キャラ選択: カード/一覧・スワイプ量・戻り先
+    // === あそびかた ===
+    //   いま何ページ目か と、閉じたらどこへ戻るか。
+    //   戻り先を持たないと、遊びの途中で開いた人がタイトルに放り出される。
+    helpPage: 0, helpReturn: null,
     // === オープニング(章のはじまり) ===
     openBeat: 0,        // いま何コマ目か
     openT: 0,           // そのコマの経過(ms)

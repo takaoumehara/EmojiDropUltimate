@@ -14,7 +14,9 @@ import { toggleLang, getLang } from './i18n.js';
 import { Diag } from './diag.js';
 
 // デバッグ用ハンドル(DevTools から状態確認・操作できる。無害)
-window.EDU = { get game() { return game; }, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue, toTitle, openCoopLobby, startCoop, Coop, Weather, Save };
+// VIEW は「窓の中で板がどこに置かれているか」。画面の座標と板の座標を
+//   行き来するのに要る(自動テストがボタンを実際に押すのに使う)。
+window.EDU = { get game() { return game; }, get VIEW() { return VIEW; }, startRun, requestAIStage, startDaily, startFromSeed, shareRun, doContinue, toTitle, openCoopLobby, startCoop, Coop, Weather, Save };
 
 // URL ?seed=xxxx で同じステージを再現(共有リンク用)
 const _q = new URLSearchParams(location.search);

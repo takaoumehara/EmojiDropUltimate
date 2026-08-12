@@ -3,6 +3,7 @@
 // ============================================================
 import { canvas, W, H, SAFE, toStageX, toStageY } from './env.js';
 import { game } from './state.js';
+import { HELP_PAGES } from './help.js';
 import { Snd } from './audio.js';
 import { toggleLang, getLang } from './i18n.js';
 import { startRun, requestAIStage, startDaily, togglePause, useBombOrSuper, doContinue, toTitle, handleOverTap, openCoopLobby, startCoop, openStory, advanceOpening, skipOpening } from './engine.js';
@@ -53,6 +54,16 @@ let dragging = false, last = null, lastTapT = 0, charSwipe = null;
 const sx_ = e => toStageX(e.clientX);
 const sy_ = e => toStageY(e.clientY);
 
+/**
+ * あそびかたを閉じて、開いた場所へ戻す。
+ * 一時停止から開いたなら一時停止へ戻る —— 勝手に再開すると、
+ * 読んでいるあいだに敵が寄っていて、開いたせいで死ぬことになる。
+ */
+function closeHelp() {
+  game.state = game.helpReturn || 'title';
+  game.helpReturn = null;
+}
+
 function hitMenu(x, y) {
   for (const b of game.menuBtns) {
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
@@ -85,6 +96,25 @@ function hitMenu(x, y) {
       else if (b.id === 'coopModeAi') Coop.mode = 'ai';
       // ミッションをもう一度見る。遊びはじめずに見るだけ(見終わればタイトルへ)
       else if (b.id === 'story') openStory(Save.chapter(), false);
+      // === あそびかた ===
+      //   開いた場所を覚えてから移る。戻り先を持たないと、遊びの途中で
+      //   開いた人がタイトルに放り出される(そして再開できない)。
+      else if (b.id === 'help') { game.helpReturn = game.state; game.helpPage = 0; game.state = 'help'; }
+      // ロビーからは「つなげ方」のページを直接開く。困っている当人を
+      //   1ページ目から読ませない —— 探し物は最短で渡す。
+      else if (b.id === 'helpConnect') {
+        game.helpReturn = game.state;
+        game.helpPage = Math.max(0, HELP_PAGES.indexOf('connect'));
+        game.state = 'help';
+      }
+      else if (b.id === 'helpPrev') { game.helpPage = Math.max(0, game.helpPage - 1); }
+      else if (b.id === 'helpNext') {
+        // 最後のページの ✓ は「とじる」と同じ。読み終えた指がそのまま次を
+        //   押しても、行き止まりで反応しないより閉じたほうが素直。
+        if (game.helpPage >= HELP_PAGES.length - 1) closeHelp();
+        else game.helpPage++;
+      }
+      else if (b.id === 'helpClose') closeHelp();
       else if (b.id === 'lang') toggleLang();
       return true;
     }
@@ -102,6 +132,12 @@ window.addEventListener('keydown', e => {
   else if (e.key === ' ' && s === 'play') useBombOrSuper();
   else if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (s === 'play' || s === 'pause' || s === 'warn')) togglePause();
   else if (e.key === 'm' || e.key === 'M') { Snd.init(); updateMuteIcon(Snd.toggleMute()); }
+  // あそびかたは矢印でめくる。Esc / Enter で閉じる。
+  else if (s === 'help') {
+    if (e.key === 'ArrowLeft') game.helpPage = Math.max(0, game.helpPage - 1);
+    else if (e.key === 'ArrowRight') game.helpPage = Math.min(HELP_PAGES.length - 1, game.helpPage + 1);
+    else if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') closeHelp();
+  }
   else if (s === 'over') { if ((e.key === 'c' || e.key === 'C') && game.continues > 0) doContinue(); else if (e.key === ' ' || e.key === 'Enter') toTitle(); }
   else if (s === 'victory' && (e.key === ' ' || e.key === 'Enter')) toTitle();
 });
@@ -120,8 +156,11 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   if (s === 'clear') { hitMenu(sx_(e), sy_(e)); return; }
+  if (s === 'help') { hitMenu(sx_(e), sy_(e)); return; }
   if (s === 'title' || s === 'coop' || s === 'chars') { hitMenu(sx_(e), sy_(e)); return; }
-  if (s === 'pause') { togglePause(); return; }
+  // 一時停止中はボタンを先に見る。**当たらなければ今まで通りどこでも再開。**
+  //   「どこを触っても再開」は覚えている人が多いので、そこは壊さない。
+  if (s === 'pause') { if (!hitMenu(sx_(e), sy_(e))) togglePause(); return; }
   // 「つぎのショー」を出している間のタップは、演出を飛ばすだけ。
   //   下に隠れている勝利画面のボタンを押してしまわないように先に受ける。
   if (s === 'victory' && game.showT > 0) { game.showT = 0; return; }

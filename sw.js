@@ -13,7 +13,7 @@
 // バージョンを上げると古い shell キャッシュが捨てられ、precache がやり直される。
 //   **モジュールを追加したら必ず上げる。** 上げないと、すでに遊んだ端末は
 //   新しいファイルが入っていない古い shell を持ち続ける。
-const VERSION = 'edu-v3';
+const VERSION = 'edu-v6';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const CURRENT_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
@@ -31,6 +31,7 @@ const APP_SHELL = [
   '/icons/apple-touch-icon.png',
   '/src/aistage.js',
   '/src/audio.js',
+  '/src/bellrelay.js',
   '/src/bossai.js',
   '/src/config.js',
   '/src/coop.js',
@@ -39,10 +40,14 @@ const APP_SHELL = [
   '/src/engine.js',
   '/src/env.js',
   '/src/geo.js',
+  '/src/guard.js',
+  '/src/help.js',
   '/src/i18n.js',
+  '/src/ice.js',
   '/src/input.js',
   '/src/leaderboard.js',
   '/src/main.js',
+  '/src/mesh.js',
   '/src/qr.js',
   '/src/render.js',
   '/src/save.js',
@@ -50,8 +55,8 @@ const APP_SHELL = [
   '/src/state.js',
   '/src/story.js',
   '/src/super.js',
-  '/src/tether.js',
   '/src/theme.js',
+  '/src/version.js',
   '/src/ui.js',
   '/src/weather.js',
   '/src/wstransport.js',
