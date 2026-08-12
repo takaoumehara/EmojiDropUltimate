@@ -62,6 +62,10 @@ export function newGame() {
     //   毎フレーム作り直す(updateGuardStep)。ソロでは空のまま。
     players: [],
     charView: 'card', charDrag: 0, charReturn: null,   // キャラ選択: カード/一覧・スワイプ量・戻り先
+    // === あそびかた ===
+    //   いま何ページ目か と、閉じたらどこへ戻るか。
+    //   戻り先を持たないと、遊びの途中で開いた人がタイトルに放り出される。
+    helpPage: 0, helpReturn: null,
     // === オープニング(章のはじまり) ===
     openBeat: 0,        // いま何コマ目か
     openT: 0,           // そのコマの経過(ms)

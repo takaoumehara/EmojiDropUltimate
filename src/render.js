@@ -13,13 +13,14 @@ import { Save } from './save.js';
 import { Coop } from './coop.js';
 import { BELL_LOCK_R, selfKey } from './engine.js';
 import { rankInfo } from './bellrelay.js';
+import { HELP_PAGES, helpPage, partyTable } from './help.js';
 import { SUPERS, superKeyOf, SUPER_MAX } from './super.js';
 import { chapterOf, missionFor, finalMissionFor } from './story.js';
 import { chapterStages } from './aistage.js';
 
 // 章の面を毎フレーム組み立てるのは無駄なので、章が変わるまで持っておく。
 // メニューを持つ画面。ここに無い画面ではボタンのリストを空にする。
-const MENU_STATES = new Set(['title', 'coop', 'chars', 'clear']);
+const MENU_STATES = new Set(['title', 'coop', 'chars', 'clear', 'help']);
 
 let mapCache = { ch: -1, stages: null };
 function mapStages(ch) {
@@ -759,6 +760,11 @@ function drawTitle() {
   const bw = Math.min(W * 0.82, 348), bx = (W - bw) / 2;
   const streak = Save.streakAtRisk();
   let h1 = 64 * UI, h2 = 58 * UI, h3 = 52 * UI, gap = 11 * UI;
+  // あそびかたの行。**ここだけ縮めない。**
+  //   他と同じように縮めたら iPhone SE で 31px になっていた —— 指の当たる
+  //   最小(44pt)を下回ると、押したのに反応しない事故が起きる。
+  //   高さは pt で決める(UI 倍率を掛けると小さい端末でまた44を割る)。
+  const h4 = Math.max(44, 40 * UI);
   // 世界マップは top より 46*UI 上に描かれるので、その上端が
   //   天気の下端より下に来るところまで top を押し下げる。
   //   Chrome の URL バーで縦が短い端末では、ここが効かないと必ず重なる。
@@ -767,8 +773,13 @@ function drawTitle() {
   const avail = vy(0.885) - top;
   // マップ(絵)+ 見出しの行 の2段ぶんを取り置く。44*UI だと見出しの行が
   //   絵の下に潜って、iPhone SE では 📖 が最後のマスに重なった。
-  const need = h1 + gap + h2 + gap + h3 + (streak ? 26 * UI : 0) + 74 * UI;
-  if (need > avail) { const k = avail / need; h1 *= k; h2 *= k; h3 *= k; gap *= k; }
+  const need = h1 + gap + h2 + gap + h3 + gap + h4 + (streak ? 26 * UI : 0) + 74 * UI;
+  // 縮める時は h4 を分母から外す。**縮まない行を含めて割ると、他が縮んでも
+  //   全体が収まらず、結局 h4 まで巻き込んで縮めることになる。**
+  if (need > avail) {
+    const k = Math.max(0.5, (avail - h4) / Math.max(1, need - h4));
+    h1 *= k; h2 *= k; h3 *= k; gap *= k;
+  }
   else top += (avail - need) * 0.62;   // 下に穴が空いていたので、もう少し下へ寄せる
   let by = top;
 
@@ -873,7 +884,24 @@ function drawTitle() {
       { size: 12 * UI, weight: 700, color: '#e6efff', align: 'left', maxW: tw });
   }
   game.menuBtns.push({ id: 'chars', x: bx + halfB + 9 * UI, y: by, w: halfB, h: h3 });
-  by += h3;
+  by += h3 + gap;
+
+  // あそびかた。**一番下に、細く置く。**
+  //   目立たせると「読まないと始められない」という圧になる。ここは
+  //   遊びはじめる邪魔をせず、探したときには必ず見つかる大きさでいい。
+  surface(bx, by, bw, h4, { r: 12, fill: 'rgba(13,19,40,0.6)', border: 'rgba(143,211,255,0.32)', lw: 1.5 });
+  {
+    const nm = t('howto');
+    const is = 15 * UI, g2 = 7 * UI, fs = 11.5 * UI;
+    f(fs, 700);
+    const tw = Math.min(ctx.measureText(nm).width, bw - is - g2 - 24 * UI);
+    const left = bx + bw / 2 - (is + g2 + tw) / 2;
+    emojiCentered('📘', left + is / 2, by + h4 / 2, is);
+    txt(nm, left + is + g2, by + h4 / 2,
+      { size: fs, weight: 700, color: '#8fd3ff', align: 'left', maxW: tw });
+  }
+  game.menuBtns.push({ id: 'help', x: bx, y: by, w: bw, h: h4 });
+  by += h4;
 
   if (streak) {
     txt(ja ? `🔥 ${Save.data.streak}日連続 — 今日プレイで継続` : `🔥 ${Save.data.streak}-day streak — play today`,
@@ -1451,7 +1479,13 @@ function drawCoopLobby() {
     // ゲストが繋がらない時に手詰まりにならないよう、必ず次の手を出す
     drawBtn('coopRetry', bx, by, bw, bh, ja ? '🔄 もう一度つなぐ' : '🔄 Reconnect', COL.gold); by += bh + gap;
   }
-  drawBtn('coopBack', bx, by, bw, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
+  // ロビーに「つなげ方」への近道を置く。**困っているのはまさにこの画面**なので、
+  //   タイトルに戻ってから探させるのは遠すぎる。押すと つなげ方 のページが開く。
+  {
+    const half = (bw - 9 * UI) / 2;
+    drawBtn('coopBack', bx, by, half, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
+    drawBtn('helpConnect', bx + half + 9 * UI, by, half, 40 * UI, ja ? '📘 つなげ方' : '📘 How to', COL.sky);
+  }
 }
 
 // === 必殺技の演出 ===
@@ -1948,10 +1982,177 @@ function drawClear() {
   if (next) label(`${t('next')}: ${next.emoji} ${next.name}`, W / 2, vy(0.58), '#8fd3ff', 12 * UI);
 }
 
+// === あそびかた ===
+//
+// **遊ぶ前に読ませない。** 起動して最初にこれを見せた瞬間、これは「飛ばすもの」に
+//   なり、本当に知りたくなった時には二度と開かれない。ここが引き受けるのは
+//   「疑問が湧いたときに開く場所」という役目だけ。
+//   だからタイトル・一時停止・共闘ロビーのどこからでも開き、開いた場所へ戻る。
+//
+// 1ページに新しいことを4つ以上載せない。5つ目を入れたくなったらページを割る
+//   —— 一度に受け取れる新しい概念は4つが上限で、5つ書くと
+//   「全部読んだのに何も残らない」ページになる。
+function drawHelp() {
+  const ja = getLang() === 'ja';
+  const idx = clamp(game.helpPage | 0, 0, HELP_PAGES.length - 1);
+  const p = helpPage(HELP_PAGES[idx], ja);
+  game.menuBtns = [];
+  nightSky();
+  if (!p) return;
+
+  const pad = Math.max(15 * UI, SAFE.left + 12 * UI);
+  const cw = W - pad * 2;
+  const barH = Math.max(46, 44 * UI);   // 指の当たる最小(44pt)を下回らせない
+  const barY = H - SAFE.bottom - barH - 12 * UI;   // 下の操作帯。ここより下へは描かない
+
+  // --- 見出し ---
+  let y = SAFE.top + 20 * UI;
+  emojiCentered(p.icon, W / 2, y + 13 * UI, 26 * UI);
+  y += 42 * UI;         // 26 の絵の下端 + 余白。34 だと見出しに絵が重なっていた
+  txt(p.title, W / 2, y, { size: 19 * UI, weight: 800, color: '#ffffff', maxW: cw });
+  y += 17 * UI;
+
+  // 何ページ目か。**点で出す。** 「3 / 5」という数字より、
+  //   残りがどれくらいかが目で分かるほうが、めくるかどうかを決めやすい。
+  for (let i = 0; i < HELP_PAGES.length; i++) {
+    const dx = W / 2 + (i - (HELP_PAGES.length - 1) / 2) * 13 * UI;
+    ctx.beginPath(); ctx.arc(dx, y, 3.2 * UI, 0, Math.PI * 2);
+    if (i === idx) { ctx.fillStyle = '#8fd3ff'; ctx.fill(); }
+    else { ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.2 * UI; ctx.stroke(); }
+  }
+  y += 16 * UI;
+
+  // --- 導入の1行 ---
+  const leadLines = wrapLines(p.lead, cw, { size: 12.5 * UI, weight: 700, maxLines: 3 });
+  for (const ln of leadLines) {
+    txt(ln, W / 2, y + 7 * UI, { size: 12.5 * UI, weight: 700, color: '#8fd3ff', maxW: cw });
+    y += 17 * UI;
+  }
+  y += 8 * UI;
+
+  // --- 人数の表(このページだけ) ---
+  if (p.table) y = drawPartyTable(ja, pad, y, cw);
+
+  // --- 補足の位置を先に決める ---
+  //   本文の長さで位置が動くと、ページをめくるたびに目線が探し直しになる。
+  //   先に下端を固定して、本文はその上の余白に流し込む。
+  const footFs = 10.5 * UI;
+  const footLines = wrapLines(p.foot, cw - 20 * UI, { size: footFs, weight: 600, maxLines: 2 });
+  const footH = footLines.length * 14 * UI + 14 * UI;
+  const footY = barY - footH - 10 * UI;
+
+  // --- 本文 ---
+  //   **端末の高さで内容を削らない。** 小さい画面の人だけ説明が足りない、
+  //   という状態は作らない。入らないときは字を縮める(最大28%まで)。
+  const avail = footY - y - 10 * UI;
+  const measure = kk => {
+    const bs = 11 * UI * kk;
+    const blocks = p.rows.map(r => wrapLines(r.body, cw - 27 * UI, { size: bs, weight: 600, maxLines: 3 }));
+    const h = blocks.reduce((a, ln) => a + (18 + 9) * UI * kk + ln.length * 14 * UI * kk, 0);
+    return { blocks, h, bs };
+  };
+  let k = 1, m = measure(1);
+  while (m.h > avail && k > 0.72) { k = Math.max(0.72, k - 0.04); m = measure(k); }
+  // 余った高さは行間に配る。**下に大穴が空いたまま**にすると、
+  //   ページの中身が上に貼り付いて、読み終わりがどこか分からなくなる。
+  const slack = Math.max(0, avail - m.h);
+  const gaps = Math.max(1, p.rows.length - 1);
+  const lead = Math.min(slack * 0.35 / gaps, 30 * UI);
+  // 余りは上下に等分する。**上に貼り付けて下に大穴**にすると、
+  //   読み終わりがどこか分からず、まだ続きがあるように見える。
+  y += Math.max(0, (slack - lead * gaps) / 2);
+  p.rows.forEach((r, ri) => {
+    emojiCentered(r.icon, pad + 11 * UI, y + 9 * UI, 18 * UI * k);
+    txt(r.head, pad + 27 * UI, y + 8 * UI,
+      { size: 12.5 * UI * k, weight: 800, color: '#ffe9a8', align: 'left', maxW: cw - 30 * UI });
+    y += 18 * UI * k;
+    for (const ln of m.blocks[ri]) {
+      txt(ln, pad + 27 * UI, y + 6 * UI, { size: m.bs, weight: 600, color: '#c3d2ee', align: 'left' });
+      y += 14 * UI * k;
+    }
+    y += 9 * UI * k + (ri < p.rows.length - 1 ? lead : 0);   // 最後の行のあとには足さない
+  });
+
+  // --- 補足 ---
+  surface(pad, footY, cw, footH, { r: 10, fill: 'rgba(143,211,255,0.09)', border: 'rgba(143,211,255,0.28)', lw: 1 });
+  footLines.forEach((ln, i) => txt(ln, W / 2, footY + 7 * UI + 14 * UI * (i + 0.5),
+    { size: footFs, weight: 600, color: '#9fb4d8', maxW: cw - 20 * UI }));
+
+  // --- 操作帯: ◀ / とじる / ▶ ---
+  //   最初と最後のページでも矢印は消さずに薄くする。消えると位置がずれて、
+  //   次を押そうとした指が「とじる」に着地する。
+  const aw = 52 * UI, gap = 8 * UI;
+  const midW = cw - (aw + gap) * 2;
+  helpBtn('helpPrev', pad, barY, aw, barH, '◀', idx > 0);
+  helpBtn('helpClose', pad + aw + gap, barY, midW, barH, ja ? 'とじる' : 'CLOSE', true);
+  helpBtn('helpNext', pad + aw + gap + midW + gap, barY, aw, barH,
+    idx < HELP_PAGES.length - 1 ? '▶' : '✓', true);
+}
+
+function helpBtn(id, x, y, w, h, lbl, on) {
+  surface(x, y, w, h, { r: 13,
+    fill: on ? 'rgba(20,28,56,0.92)' : 'rgba(20,28,56,0.4)',
+    border: on ? '#4a7ec8' : 'rgba(74,126,200,0.3)', lw: 2 });
+  txt(lbl, x + w / 2, y + h / 2, { size: 14 * UI, weight: 800,
+    color: on ? '#e6efff' : 'rgba(230,239,255,0.35)', maxW: w - 14 * UI });
+  if (on) game.menuBtns.push({ id, x, y, w, h });
+}
+
+/**
+ * 人数ごとの違いの表。この画面で一番価値のある部分 ——
+ * 遊んでいるだけでは絶対に手に入らない情報だけを集めてある。
+ * 数値は help.js がエンジンから引いてくるので、調整しても勝手に追随する。
+ */
+function drawPartyTable(ja, x, y, w) {
+  const T = partyTable(ja);
+  const nameW = w * 0.30, colW = (w - nameW) / T.cols.length;
+  const rowH = 24 * UI;
+  const h = rowH * (T.rows.length + 1) + 8 * UI;
+  surface(x, y, w, h, { r: 12, fill: 'rgba(13,19,40,0.8)', border: 'rgba(143,211,255,0.25)', lw: 1 });
+
+  // 見出し行。ソロの列だけ色を変える。**比べる基準がどこかを先に示す。**
+  T.cols.forEach((c, i) => {
+    txt(c, x + nameW + colW * (i + 0.5), y + 4 * UI + rowH / 2,
+      { size: 10 * UI, weight: 800, color: i === 0 ? '#9fb4d8' : '#8fd3ff', maxW: colW - 3 * UI });
+  });
+  for (let r = 0; r < T.rows.length; r++) {
+    const row = T.rows[r], ry = y + 4 * UI + rowH * (r + 1);
+    if (r % 2 === 0) {                       // 縞。5列を横に目で追うのに要る
+      ctx.fillStyle = 'rgba(255,255,255,0.035)';
+      ctx.fillRect(x + 2 * UI, ry, w - 4 * UI, rowH);
+    }
+    emojiCentered(row.icon, x + 13 * UI, ry + rowH / 2, 13 * UI);
+    txt(row.name, x + 23 * UI, ry + rowH / 2,
+      { size: 10 * UI, weight: 700, color: '#c3d2ee', align: 'left', maxW: nameW - 26 * UI });
+    row.cells.forEach((c, i) => {
+      txt(c, x + nameW + colW * (i + 0.5), ry + rowH / 2,
+        { size: 10 * UI, weight: i === 0 ? 600 : 800,
+          color: i === 0 ? '#8a99b8' : '#ffffff', maxW: colW - 3 * UI });
+    });
+  }
+  return y + h + 10 * UI;
+}
+
 function drawPause() {
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
-  label(t('paused'), W / 2, vy(0.45), '#fff', 26 * UI);
-  label(t('resume'), W / 2, vy(0.53), '#8fd3ff', 12 * UI);
+  label(t('paused'), W / 2, vy(0.42), '#fff', 26 * UI);
+  label(t('resume'), W / 2, vy(0.50), '#8fd3ff', 12 * UI);
+  // ここに置く理由: **疑問が湧くのは遊んでいる最中**で、その時に手が届かないと
+  //   結局この画面は誰にも読まれない。閉じれば一時停止に戻る(勝手に再開しない
+  //   —— 読んでいるあいだに敵が寄っていて、開いたせいで死ぬのは理不尽)。
+  game.menuBtns = [];
+  const bw = Math.min(W * 0.62, 260), bx = (W - bw) / 2, bh = Math.max(46, 42 * UI), by = vy(0.60);
+  surface(bx, by, bw, bh, { r: 13, fill: 'rgba(13,19,40,0.9)', border: '#4a7ec8', lw: 2 });
+  {
+    const nm = t('howto');
+    const is = 16 * UI, g2 = 8 * UI, fs = 12.5 * UI;
+    f(fs, 700);
+    const tw = Math.min(ctx.measureText(nm).width, bw - is - g2 - 22 * UI);
+    const left = bx + bw / 2 - (is + g2 + tw) / 2;
+    emojiCentered('📘', left + is / 2, by + bh / 2, is);
+    txt(nm, left + is + g2, by + bh / 2, { size: fs, weight: 700, color: '#e6efff', align: 'left', maxW: tw });
+  }
+  game.menuBtns.push({ id: 'help', x: bx, y: by, w: bw, h: bh });
 }
 
 function drawFinale() {
@@ -2101,7 +2302,7 @@ export function draw() {
   //   持たない画面に移ってもリストが残っていた。いまは当たり判定を読む側が
   //   画面ごとに分かれているので実害は出ていないが、押せない場所に押せる
   //   四角が残っているのは事故のもと。描く前に必ず空にする。
-  if (!MENU_STATES.has(game.state)) game.menuBtns = [];
+  if (!MENU_STATES.has(game.state) && game.state !== 'pause') game.menuBtns = [];
   if (game.state !== 'over' && game.state !== 'victory') game.overBtns = [];
   switch (game.state) {
     case 'splash': drawSplash(); break;
@@ -2109,6 +2310,7 @@ export function draw() {
     case 'title': drawTitle(); break;
     case 'coop': drawCoopLobby(); break;
     case 'chars': drawCharSelect(); break;
+    case 'help': drawHelp(); break;
     case 'intro': drawIntro(); break;
     case 'play': case 'warn': {
       ctx.save(); ctx.translate(game.shakeX, game.shakeY);

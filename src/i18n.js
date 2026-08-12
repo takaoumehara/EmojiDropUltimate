@@ -36,6 +36,7 @@ const DICT = {
     ls_legacy_n: '{n} 撃破',
     ls_turn_n: '転・{n}',
     // 盾持ち(ふたり以上のときだけ出る敵)
+    howto: 'あそびかた',
     guard_hint: '🛡 盾は「近い人」を向く。前に出た人は撃てない ── 🗡 が出たら、あなたの番',
     guard_blocked: '🛡 盾に弾かれた!',
     guard_yours: '🗡 いま撃てるのは あなた',
@@ -116,6 +117,7 @@ const DICT = {
     ls_greed_n: 'GREEDY {n}',
     ls_legacy_n: '{n} DOWN',
     ls_turn_n: 'TURNED {n}',
+    howto: 'HOW TO PLAY',
     guard_hint: '🛡 The shield turns to whoever is CLOSEST. Step back — when 🗡 appears, it is your shot',
     guard_blocked: '🛡 BLOCKED BY THE SHIELD!',
     guard_yours: '🗡 YOUR SHOT',
