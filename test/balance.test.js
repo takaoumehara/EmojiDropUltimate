@@ -141,3 +141,100 @@ test('カードの数字と実際の弾が同じ向きを向いている', async
   assert.ok(bolt.v > cow.v,
     `カードで速いと書いてある方が実際に速いこと (bolt=${Math.round(bolt.v)} > cow=${Math.round(cow.v)})`);
 });
+
+// === 貫通 ===
+//   「⚡ を使ったけど、とにかく強すぎる」という指摘から入れた2本。
+//   原因は2つあり、どちらもカードにも数値にも出ていなかった:
+//     1. pierce が **無制限** で、一列に並んだ敵を1発で全部消せた
+//     2. 貫通弾はボスに当たっても消えないので、**体に重なっているあいだ
+//        毎フレーム** damageBoss が走り、1発が5〜6発ぶんになっていた
+//   どちらも「数字を下げる」では直らないので、仕組みのほうを直した。
+//   ここが緩むと同じ壊れ方に戻るので、両方を縛る。
+
+const nowG = h => h.state.game;
+
+/** 進行方向の一直線に、動かない敵を n 体並べて1発だけ撃たせる。 */
+async function lineOfEnemies(h, id, n) {
+  const { Save } = await import('../src/save.js');
+  Save.setChar(CHARS.findIndex(c => c.id === id));
+  h.engine.startRun(0);
+  // 湧いた敵を1体だけ借りて、それを複製して並べる。
+  //   湧くのを待って n 体そろえようとすると、波の組み方に依存して不安定になる。
+  sim(h, { steps: 600, bot: Bot.idle, until: g => g.enemies.length >= 1 });
+  const g = nowG(h);
+  g.state = 'play'; g.introT = 0;
+  const tpl = g.enemies[0];
+  assert.ok(tpl, '敵が1体は湧くこと');
+  g.enemies.length = 0;
+  g.eBullets.length = 0;
+  g.pBullets.length = 0;
+  g.bells.length = 0;
+  const p = g.player;
+  const base = h.geo.invPL(p.x, p.y).prog;
+  const ids = new Set();
+  for (let i = 0; i < n; i++) {
+    const e = { ...tpl, id: 90000 + i };
+    // 自機の真正面(lat が同じ)に 34px 間隔で並べる。速度0なので動かない。
+    e.prog = base - 70 - i * 34;
+    e.lat = h.geo.latOf(p);
+    e.hp = 1; e.maxHp = 1; e.speed = 0; e.delay = 0;
+    e.move = null; e.type = 'straight'; e.sq = null; e.shootRate = 0;
+    g.enemies.push(e);
+    ids.add(e.id);
+  }
+  g.player.fireT = 0;
+  g.player.power = 1;
+  g.player.focus = false; g.player.stillT = 0;
+  // 1発だけ出させて、その1発が並びを抜け切るまで走らせる(次弾が出る前に止める)
+  sim(h, { steps: 2, bot: Bot.idle });
+  const shots = nowG(h).pBullets.filter(b => !b.opt).length;
+  sim(h, { steps: 16, bot: Bot.idle });
+  const left = nowG(h).enemies.filter(e => ids.has(e.id)).length;
+  return { killed: n - left, shots };
+}
+
+test('貫通弾は「何体まで」を必ず守る(⚡ が列を丸ごと消さない)', async () => {
+  const h = await boot({ seed: 310 });
+  const bad = [];
+  for (const c of CHARS) {
+    const limit = Math.max(1, c.pierce | 0);
+    const { killed, shots } = await lineOfEnemies(h, c.id, 6);
+    // 1トリガーで複数発出るキャラ(いまは居ない)を将来足しても壊れないように、
+    // 実際に出た弾数ぶんは許す。
+    const allowed = limit * Math.max(1, shots);
+    if (killed > allowed) bad.push(`${c.en}: pierce=${c.pierce | 0} なのに ${killed} 体倒した(弾 ${shots} 発)`);
+  }
+  shutdown(h);
+  assert.equal(bad.length, 0, bad.join('\n'));
+});
+
+test('ボスに重なっているあいだ、同じ弾が何度も削らない', async () => {
+  // これが「⚡ が強すぎる」の正体のうち大きいほう。貫通弾はボスに当たっても
+  // 消えないので、体に重なっているあいだ毎フレーム当たり判定が通り、
+  // 1発が数十発ぶんになっていた。**わざとボスの中に置いて、ゆっくり通す。**
+  const h = await boot({ seed: 311 });
+  const { Save } = await import('../src/save.js');
+  Save.setChar(CHARS.findIndex(c => c.id === 'bolt'));
+  h.engine.startRun(0);
+  sim(h, { steps: 200, bot: Bot.idle });
+  nowG(h).stageTime = h.geo.stage().dur - 200;
+  sim(h, { steps: 60 * 40, bot: Bot.idle, until: q => !!q.boss && !q.boss.entering });
+  const g = nowG(h);
+  assert.ok(g.boss && !g.boss.entering, 'ボスが出ていること');
+  g.enemies.length = 0; g.eBullets.length = 0; g.pBullets.length = 0; g.bells.length = 0;
+  g.player.fireT = 9e9;                       // 自動連射を止めて、置いた1発だけを見る
+  const ch = CHARS.find(c => c.id === 'bolt');
+  const before = g.boss.hp;
+  g.pBullets.push({
+    x: g.boss.x, y: g.boss.y, vx: 0, vy: -60,   // ボスの中を 0.7 秒かけて通る
+    size: ch.size, dmg: ch.dmg, pierce: ch.pierce, traj: 'straight',
+    tt: 0, hits: 0, bossHit: 0, bx: g.boss.x, by: g.boss.y,
+    spMax: 900, size0: ch.size, side: 1, spin: 0,
+  });
+  sim(h, { steps: 40, bot: Bot.idle });
+  const dealt = before - (nowG(h).boss ? nowG(h).boss.hp : 0);
+  shutdown(h);
+  assert.ok(dealt > 0, '1発ぶんは必ず入ること');
+  assert.ok(dealt <= ch.dmg,
+    `1発でボスに入った量が ${dealt} —— ${ch.dmg} 以下であること(重なっているあいだ毎フレーム入っていないか)`);
+});

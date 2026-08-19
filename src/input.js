@@ -53,6 +53,12 @@ let dragging = false, last = null, lastTapT = 0, charSwipe = null;
 const sx_ = e => toStageX(e.clientX);
 const sy_ = e => toStageY(e.clientY);
 
+/** いま眺めているカード。選んでいるキャラとは別に持つ(鍵つきも眺められる)。 */
+function browseIdx() {
+  const b = game.charBrowse;
+  return (typeof b === 'number' && b >= 0 && b < CHARS.length) ? b : Save.charIndex();
+}
+
 function hitMenu(x, y) {
   for (const b of game.menuBtns) {
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
@@ -62,17 +68,28 @@ function hitMenu(x, y) {
       else if (b.id === 'ai') requestAIStage();
       else if (b.id === 'daily') startDaily();
       else if (b.id === 'coop') openCoopLobby();
-      else if (b.id === 'chars') game.state = 'chars';
+      else if (b.id === 'chars') { game.state = 'chars'; game.charBrowse = Save.charIndex(); }
       else if (b.id.startsWith('char') && /^char\d+$/.test(b.id)) {
-        Save.setChar(parseInt(b.id.slice(4), 10));
-        game.charView = 'card';           // 一覧で選んだら、そのキャラのカードを見せる
+        // 一覧のマスを押した。**鍵つきでもカードは見せる** —— 何が待っているかが
+        //   分からないと、続きを遊ぶ理由にならない。選ばれるのは開いている子だけ。
+        const i = parseInt(b.id.slice(4), 10);
+        game.charBrowse = i;
+        Save.setChar(i);
+        game.charView = 'card';
       }
-      else if (b.id === 'clearChar') { game.charReturn = 'clear'; game.charView = 'card'; game.state = 'chars'; }
+      else if (b.id === 'clearChar') { game.charReturn = 'clear'; game.charView = 'card'; game.charBrowse = Save.charIndex(); game.state = 'chars'; }
       else if (b.id === 'charGrid') game.charView = 'grid';
-      else if (b.id === 'charOk') { game.charView = 'card'; game.state = game.charReturn || 'title'; game.charReturn = null; }
+      else if (b.id === 'charOk') {
+        // カードで見ている子を確定する。まだ開いていなければ何も起きない
+        //   (その場合ボタン自体を「あと◯ステージ」に差し替えてあるので、
+        //    押しても閉じないことが押す前に分かる)。
+        if (game.charView !== 'grid' && !Save.setChar(browseIdx())) return true;
+        game.charBrowse = null;
+        game.charView = 'card'; game.state = game.charReturn || 'title'; game.charReturn = null;
+      }
       else if (b.id === 'charBack') {
         if (game.charView === 'grid') game.charView = 'card';
-        else { game.state = game.charReturn || 'title'; game.charReturn = null; }
+        else { game.charBrowse = null; game.state = game.charReturn || 'title'; game.charReturn = null; }
       }
       else if (b.id === 'coopEnter') openJoinForm();
       else if (b.id === 'coopJoinCancel') closeJoinForm();
@@ -151,8 +168,10 @@ window.addEventListener('pointerup', e => {
   if (charSwipe) {
     const dx = game.charDrag || 0;
     if (Math.abs(dx) > 48) {                       // めくる
+      // **めくるのと選ぶのは別。** 鍵つきの子もめくって見られるようにしないと、
+      //   「あと何面で誰が来るか」が一生見えない。選ぶのは「これでいく」だけ。
       const n = CHARS.length;
-      Save.setChar(((Save.charIndex() + (dx < 0 ? 1 : -1)) % n + n) % n);
+      game.charBrowse = ((browseIdx() + (dx < 0 ? 1 : -1)) % n + n) % n;
     } else if (charSwipe.moved < 12) {             // 動いていなければタップ
       hitMenu(sx_(e), sy_(e));
     }

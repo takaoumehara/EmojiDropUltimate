@@ -271,126 +271,137 @@ export const PATTERNS = [
 //   art:'ship' は幾何学的な戦闘機を描く(進行方向にちゃんと機首が向く)。
 //   face は絵文字が元々向いている角度。指定すると進行方向へ回して描く。
 export const CHARS = [
-  // 16体すべて「投げる物」「飛び方」「効き方」が違う。見た目だけの差にはしない。
+  // 並び順 = 開放される順。**強くなる順ではない。**
+  //   前に置いてあるほど素直で、後ろに行くほどクセが強い。実効火力(powerScore)は
+  //   全員 ±5% に収めてあり、テストで縛っている —— 後から来るキャラが強かったら、
+  //   それは「進めた人だけ簡単になる」ということで、遊びが壊れる。
+  //
+  //   need = ステージを通算で何面クリアすると開くか(0 = 最初から)。
   //   traj = 弾の飛び方。straight 以外は engine の updateBullets が面倒を見る。
+  //   pierce = **何体まで抜けるか**(0 = 抜けない)。無制限は作らない。
   //   強い癖には必ず埋め合わせを付ける(遅い/連射が落ちる/射程が短い など)。
-  { id: 'fighter', emoji: '🛩️', name: 'ファイター', en: 'FIGHTER', col: '#6cc6ff',
+
+  // --- 最初から使える3体。どれも「見た方向へ飛ぶ」ので、初手で迷わない ---
+  { id: 'fighter', emoji: '🛩️', name: 'ファイター', en: 'FIGHTER', col: '#6cc6ff', need: 0,
     shot: '#8fe3ff', shotEmoji: null, speed: 1, fire: 1, size: 4, spread: 0, pierce: 0, slow: 0,
     bspeed: 1, traj: 'straight', dmg: 1, art: 'ship',
     tag: 'まっすぐ・素直', tagEn: 'Straight and honest',
     lore: '素直にまっすぐ飛ぶ。迷ったらこれ。', loreEn: 'Flies straight. Start here.' },
 
-  { id: 'rocket', emoji: '🚀', name: 'ロケット', en: 'ROCKET', col: '#ff9d5c',
-    shot: '#ffb44d', shotEmoji: '🔥', speed: 1.08, fire: 1.15, size: 4.4, spread: 0, pierce: 0, slow: 0,
+  // 最速の連射に値札を付ける。ミルクは **一番遅くて一番小さい**。
+  //   手数は出るが、遠くの敵には届くまで待つことになる。
+  { id: 'cow', emoji: '🐄', name: 'ウシ', en: 'COW', col: '#eaeaea', need: 0,
+    shot: '#ffffff', shotEmoji: '🥛', speed: 0.95, fire: 0.84, size: 3, spread: 0, pierce: 0, slow: 0,
+    bspeed: 0.6, traj: 'straight', dmg: 1,
+    tag: '最速の連射・最遅の弾', tagEn: 'Fastest fire, slowest shot',
+    lore: 'とにかく手数。ただしミルクは一番遅くて一番小さいので、遠くの敵には届くまで待つことになる。',
+    loreEn: 'Sheer volume — but the slowest, smallest shot in the game, so distant enemies take a while.' },
+
+  { id: 'cat', emoji: '🐱', name: 'ネコ', en: 'CAT', col: '#ffb26b', need: 0,
+    shot: '#ffd7a8', shotEmoji: '🐾', speed: 1.3, fire: 0.95, size: 3.6, spread: 0, pierce: 0, slow: 0,
+    bspeed: 0.95, traj: 'seek', dmg: 1,
+    tag: '追いかける・一番身軽', tagEn: 'Chases, nimblest',
+    lore: '獲物を見つけると少し曲がって追う。当たり判定も一番小さいが、弾は細い。',
+    loreEn: 'Bends toward whatever it spots, and slips through the tightest gaps. The shot is thin, though.' },
+
+  // --- ここから先は遊ぶほど開く。クセが強くなるだけで、強くはならない ---
+  { id: 'rocket', emoji: '🚀', name: 'ロケット', en: 'ROCKET', col: '#ff9d5c', need: 1,
+    shot: '#ffb44d', shotEmoji: '🔥', speed: 1.08, fire: 0.99, size: 4.8, spread: 0, pierce: 0, slow: 0,
     bspeed: 0.62, traj: 'accel', dmg: 1, face: -Math.PI / 4,
     tag: '出は遅い、伸びる', tagEn: 'Slow start, then flies',
     lore: '噴かしてから伸びる。近くは当てにくく、遠くまで一気に届く。',
     loreEn: 'Starts slow, then tears away. Poor up close, deadly at range.' },
 
-  { id: 'cat', emoji: '🐱', name: 'ネコ', en: 'CAT', col: '#ffb26b',
-    shot: '#ffd7a8', shotEmoji: '🐾', speed: 1.3, fire: 1, size: 3.6, spread: 0, pierce: 0, slow: 0,
-    bspeed: 0.95, traj: 'seek', dmg: 1,
-    tag: '追いかける', tagEn: 'Chases',
-    lore: '獲物を見つけると少し曲がって追う。そのぶん素の速さは無い。',
-    loreEn: 'Bends toward whatever it spots. Not fast on its own.' },
-
-  { id: 'bolt', emoji: '⚡', name: 'カミナリ', en: 'BOLT', col: '#ffe14d',
-    shot: '#fff2a0', shotEmoji: null, speed: 1.05, fire: 1.4, size: 3, spread: 0, pierce: 1, slow: 0,
-    bspeed: 2.1, traj: 'beam', dmg: 1,
-    tag: '一直線に貫く', tagEn: 'Pierces in a line',
-    lore: '長い光の線が一瞬で貫く。速くて貫通するが、次の一発まで間が空く。',
-    loreEn: 'A long bolt pierces instantly. Fast, but slow to recharge.' },
-
   // 「広い」を弾の数ではなく **1発の大きさ** で出す。
-  //   前は最初から3方向に撒いていて、押しただけで強い —— 手応えがなかった。
   //   1発は1発。ただしその1発が大きいので、雑に撃っても当たる。
-  { id: 'pizza', emoji: '🍕', name: 'ピザ', en: 'PIZZA', col: '#ff8a4d',
-    shot: '#ffc07a', shotEmoji: '🍕', speed: 0.92, fire: 1.3, size: 8.8, spread: 0, pierce: 0, slow: 0,
+  { id: 'pizza', emoji: '🍕', name: 'ピザ', en: 'PIZZA', col: '#ff8a4d', need: 2,
+    shot: '#ffc07a', shotEmoji: '🍕', speed: 0.92, fire: 0.84, size: 9, spread: 0, pierce: 0, slow: 0,
     bspeed: 0.8, traj: 'short', dmg: 1,
-    tag: '大きいが近距離', tagEn: 'Big but short',
+    tag: '一番大きいが近距離', tagEn: 'Biggest but short',
     lore: '一切れが大きいので狙いが甘くても当たる。ただし途中で落ちる。近づいてナンボ。',
     loreEn: 'One huge slice — sloppy aim still connects. But it drops early. Get close.' },
 
-  { id: 'unicorn', emoji: '🦄', name: 'ユニコーン', en: 'UNICORN', col: '#e879f9',
-    shot: '#f5b8ff', shotEmoji: '✨', speed: 1, fire: 1.3, size: 5, spread: 0, pierce: 1, slow: 0,
+  { id: 'unicorn', emoji: '🦄', name: 'ユニコーン', en: 'UNICORN', col: '#e879f9', need: 3,
+    shot: '#f5b8ff', shotEmoji: '✨', speed: 1, fire: 1.75, size: 5, spread: 0, pierce: 2, slow: 0,
     bspeed: 1, traj: 'grow', dmg: 1,
-    tag: '育ちながら貫く', tagEn: 'Grows as it flies',
-    lore: '飛ぶほど輝きが大きくなる。手前は細いが、奥では当てやすい。',
-    loreEn: 'The sparkle swells as it travels. Thin up close, wide far away.' },
+    tag: '育ちながら2体抜く', tagEn: 'Grows, pierces two',
+    lore: '飛ぶほど輝きが大きくなり、2体まで抜ける。手前は細く、連射は遅い。',
+    loreEn: 'The sparkle swells as it flies and passes through two. Thin up close, and slow to fire.' },
 
-  { id: 'poop', emoji: '💩', name: 'ウンチ', en: 'POOP', col: '#a9744f',
-    shot: '#c58a5e', shotEmoji: '💩', speed: 0.95, fire: 1.45, size: 8, spread: 0, pierce: 0, slow: 1,
-    bspeed: 0.78, traj: 'decel', dmg: 2,
-    tag: '重い・近距離', tagEn: 'Heavy, short range',
-    lore: '重いので失速して落ちる。遠くには届かないが、当たった敵はしばらく鈍る。',
-    loreEn: 'So heavy it stalls out. No reach, but whatever it hits slows down.' },
+  { id: 'chicken', emoji: '🐓', name: 'ニワトリ', en: 'CHICKEN', col: '#ff8a80', need: 4,
+    shot: '#ffd7b0', shotEmoji: '🥚', speed: 0.98, fire: 2.03, size: 5.4, spread: 0, pierce: 0, slow: 0,
+    bspeed: 0.88, traj: 'split', dmg: 2,
+    tag: '割れて二手に', tagEn: 'Splits in two',
+    lore: '飛んでいる途中で割れて左右に分かれる。手前は1発、奥は2発ぶん。そのぶん次の卵は遅い。',
+    loreEn: 'Cracks mid-flight and splits. One shot near, two shots far — but the next egg is slow to come.' },
 
-  { id: 'genie', emoji: '🧞‍♂️', name: 'ランプの精', en: 'GENIE', col: '#4fc3f7',
-    shot: '#9be7ff', shotEmoji: '💧', speed: 1.02, fire: 1.35, size: 5, spread: 0, pierce: 1, slow: 0,
-    bspeed: 0.95, traj: 'wave', dmg: 1,
-    tag: '波打って貫く', tagEn: 'Weaving jet',
-    lore: '水流は左右に揺れながら進んで貫く。狙った一点には当てにくい。',
-    loreEn: 'The jet weaves as it pierces. Hard to place precisely.' },
-
-  { id: 'chef', emoji: '🧑‍🍳', name: 'パン職人', en: 'BAKER', col: '#f0c27b',
-    shot: '#ffd9a0', shotEmoji: '🥖', speed: 0.95, fire: 1.55, size: 6, spread: 0, pierce: 0, slow: 0,
-    bspeed: 0.72, traj: 'lure', dmg: 2,
-    tag: '匂いで引き寄せる', tagEn: 'Lures them in',
-    lore: '焼きたての匂いに敵が吸い寄せられる。まとめて釣れるが、こっちにも寄ってくる。',
-    loreEn: 'Enemies drift toward the smell. Gathers them up — and brings them closer.' },
-
-  { id: 'farmer', emoji: '🧑‍🌾', name: 'ファーマー', en: 'FARMER', col: '#ff9f45',
-    shot: '#ffc888', shotEmoji: '🥕', speed: 1.06, fire: 0.8, size: 4, spread: 0, pierce: 0, slow: 0,
-    bspeed: 1.15, traj: 'scatter', dmg: 1,
-    tag: '速いが散らばる', tagEn: 'Rapid but scattered',
-    lore: '手で投げるので狙いが甘く、少しずつ散る。そのぶん手数はある。',
-    loreEn: 'Thrown by hand, so they wander. Makes up for it in volume.' },
-
-  { id: 'snowman', emoji: '⛄', name: 'ゆきだるま', en: 'SNOWMAN', col: '#8fd8ff',
-    shot: '#d6f2ff', shotEmoji: '❄️', speed: 0.98, fire: 1.2, size: 5, spread: 0, pierce: 0, slow: 1,
+  { id: 'snowman', emoji: '⛄', name: 'ゆきだるま', en: 'SNOWMAN', col: '#8fd8ff', need: 5,
+    shot: '#d6f2ff', shotEmoji: '❄️', speed: 0.98, fire: 0.94, size: 5.4, spread: 0, pierce: 0, slow: 1,
     bspeed: 0.85, traj: 'spiral', dmg: 1,
     tag: '渦を巻いて凍らせる', tagEn: 'Spirals and freezes',
     lore: 'ぐるぐる回りながら進む。狙いはつけにくいが、当たれば敵が凍って鈍る。',
     loreEn: 'Corkscrews forward. Hard to aim, but it freezes what it touches.' },
 
-  // ツリーも3方向をやめた。1枚の葉が **止まらずに列を薙ぐ**(貫通)。
-  //   横に流れるので狙って当てられない。当たったときだけ大きい。
-  { id: 'tree', emoji: '🌲', name: 'ツリー', en: 'TREE', col: '#67c96a',
-    shot: '#a8e8a0', shotEmoji: '🍃', speed: 0.88, fire: 1.3, size: 6.5, spread: 0, pierce: 1, slow: 0,
-    bspeed: 0.72, traj: 'drift', dmg: 1,
-    tag: '流れて列を薙ぐ', tagEn: 'Drifts, mows a column',
-    lore: '葉は風に流されて横へ逃げるが、当たった敵を止めずに突き抜けていく。狙うより置く。',
-    loreEn: 'The leaf drifts away from your aim, but passes through everything it touches. Place it, do not aim it.' },
+  { id: 'poop', emoji: '💩', name: 'ウンチ', en: 'POOP', col: '#a9744f', need: 6,
+    shot: '#c58a5e', shotEmoji: '💩', speed: 0.95, fire: 1.82, size: 8, spread: 0, pierce: 0, slow: 1,
+    bspeed: 0.78, traj: 'decel', dmg: 2,
+    tag: '重い・近距離', tagEn: 'Heavy, short range',
+    lore: '重いので失速して落ちる。遠くには届かないが、当たった敵はしばらく鈍る。',
+    loreEn: 'So heavy it stalls out. No reach, but whatever it hits slows down.' },
 
-  { id: 'dog', emoji: '🦮', name: 'イヌ', en: 'DOG', col: '#d9a066',
-    shot: '#f0e2c8', shotEmoji: '🦴', speed: 1.22, fire: 0.9, size: 4.2, spread: 0, pierce: 0, slow: 0,
+  { id: 'genie', emoji: '🧞‍♂️', name: 'ランプの精', en: 'GENIE', col: '#4fc3f7', need: 7,
+    shot: '#9be7ff', shotEmoji: '💧', speed: 1.02, fire: 1.4, size: 5, spread: 0, pierce: 2, slow: 0,
+    bspeed: 0.95, traj: 'wave', dmg: 1,
+    tag: '波打って2体抜く', tagEn: 'Weaving jet, pierces two',
+    lore: '水流は左右に揺れながら進み、2体まで抜ける。狙った一点には当てにくい。',
+    loreEn: 'The jet weaves as it goes, passing through two. Hard to place precisely.' },
+
+  { id: 'farmer', emoji: '🧑‍🌾', name: 'ファーマー', en: 'FARMER', col: '#ff9f45', need: 8,
+    shot: '#ffc888', shotEmoji: '🥕', speed: 1.06, fire: 0.875, size: 4.4, spread: 0, pierce: 0, slow: 0,
+    bspeed: 1.15, traj: 'scatter', dmg: 1,
+    tag: '速いが散らばる', tagEn: 'Rapid but scattered',
+    lore: '手で投げるので狙いが甘く、少しずつ散る。そのぶん手数と弾速はある。',
+    loreEn: 'Thrown by hand, so they wander. Makes up for it in volume and speed.' },
+
+  { id: 'chef', emoji: '🧑‍🍳', name: 'パン職人', en: 'BAKER', col: '#f0c27b', need: 9,
+    shot: '#ffd9a0', shotEmoji: '🥖', speed: 0.95, fire: 2.13, size: 5.2, spread: 0, pierce: 0, slow: 0,
+    bspeed: 0.72, traj: 'lure', dmg: 2,
+    tag: '匂いで引き寄せる', tagEn: 'Lures them in',
+    lore: '焼きたての匂いに敵が吸い寄せられる。まとめて釣れるが、こっちにも寄ってくる。焼き上がりは遅い。',
+    loreEn: 'Enemies drift toward the smell. Gathers them up — and brings them closer. Slow to bake.' },
+
+  { id: 'dog', emoji: '🦮', name: 'イヌ', en: 'DOG', col: '#d9a066', need: 10,
+    shot: '#f0e2c8', shotEmoji: '🦴', speed: 1.22, fire: 0.88, size: 4.5, spread: 0, pierce: 0, slow: 0,
     bspeed: 1, traj: 'bounce', dmg: 1,
     tag: '壁で跳ね返る', tagEn: 'Bounces off walls',
-    lore: '骨は画面の端で跳ね返って戻ってくる。端に寄るほど手数が増える。',
-    loreEn: 'Bones ricochet off the sides. Hug a wall and you get more hits.' },
+    lore: '骨は画面の端で跳ね返って戻ってくる。端に寄るほど手数が増えるが、どこへ返るかは読みにくい。',
+    loreEn: 'Bones ricochet off the sides. Hug a wall for extra hits — but good luck predicting where they land.' },
 
-  { id: 'gorilla', emoji: '🦍', name: 'ゴリラ', en: 'GORILLA', col: '#ffd54f',
-    shot: '#ffe89a', shotEmoji: '🍌', speed: 0.85, fire: 1.85, size: 7, spread: 0, pierce: 0, slow: 0,
-    bspeed: 0.72, traj: 'curve', dmg: 3,
+  // ツリーは1枚の葉が **止まらずに列を薙ぐ**(3体まで)。
+  //   横に流れるので狙って当てられない。当たったときだけ大きい。
+  { id: 'tree', emoji: '🌲', name: 'ツリー', en: 'TREE', col: '#67c96a', need: 11,
+    shot: '#a8e8a0', shotEmoji: '🍃', speed: 0.88, fire: 1.15, size: 6.5, spread: 0, pierce: 3, slow: 0,
+    bspeed: 0.72, traj: 'drift', dmg: 1,
+    tag: '流れて3体を薙ぐ', tagEn: 'Drifts, mows down three',
+    lore: '葉は風に流されて横へ逃げるが、当たった敵を3体まで突き抜けていく。狙うより置く。',
+    loreEn: 'The leaf drifts away from your aim, but passes through up to three. Place it, do not aim it.' },
+
+  // ⚡ は「無制限に貫く光」だった。列に並んだ敵を丸ごと消せて、他の15体と
+  //   同じゲームを遊んでいなかった。**2体まで**に区切り、そのぶん一番速い弾と
+  //   一番長い溜めを持たせている。抜けるのは2体、狙いは自分で通す。
+  { id: 'bolt', emoji: '⚡', name: 'カミナリ', en: 'BOLT', col: '#ffe14d', need: 12,
+    shot: '#fff2a0', shotEmoji: null, speed: 1.05, fire: 2.02, size: 3, spread: 0, pierce: 2, slow: 0,
+    bspeed: 2.1, traj: 'beam', dmg: 1,
+    tag: '一直線に2体を貫く', tagEn: 'Pierces two in a line',
+    lore: '細い光が一瞬で走り、2体まで貫く。ゲーム中で一番速い弾だが、次の一発まで一番長く待つ。',
+    loreEn: 'A thin bolt crosses the screen instantly and pierces two. The fastest shot in the game — and the longest wait for the next one.' },
+
+  { id: 'gorilla', emoji: '🦍', name: 'ゴリラ', en: 'GORILLA', col: '#ffd54f', need: 13,
+    shot: '#ffe89a', shotEmoji: '🍌', speed: 0.85, fire: 2.11, size: 5.2, spread: 0, pierce: 0, slow: 0,
+    bspeed: 0.6, traj: 'curve', dmg: 3,
     tag: '曲がる・最重量', tagEn: 'Curves, hits hardest',
-    lore: 'バナナは弧を描いて飛ぶのでまっすぐ当たらない。当たれば一番重い。',
-    loreEn: 'Bananas arc, so they never go where you point. But nothing hits harder.' },
-
-  // 最速の連射に値札を付ける。前は「速く撃てて弾も速くてまっすぐ」で、
-  //   短所が身のこなしだけだった。ミルクは **遅い**。手数は出るが届くのに時間がかかる。
-  { id: 'cow', emoji: '🐄', name: 'ウシ', en: 'COW', col: '#eaeaea',
-    shot: '#ffffff', shotEmoji: '🥛', speed: 0.95, fire: 0.72, size: 4.4, spread: 0, pierce: 0, slow: 0,
-    bspeed: 0.7, traj: 'straight', dmg: 1,
-    tag: '最速の連射・遅い弾', tagEn: 'Fastest fire, slowest shot',
-    lore: 'とにかく手数。ただしミルクは一番遅いので、遠くの敵には届くまで待つことになる。',
-    loreEn: 'Sheer volume — but the slowest shot in the game, so distant enemies take a while.' },
-
-  { id: 'chicken', emoji: '🐓', name: 'ニワトリ', en: 'CHICKEN', col: '#ff8a80',
-    shot: '#ffd7b0', shotEmoji: '🥚', speed: 0.98, fire: 1.5, size: 5.4, spread: 0, pierce: 0, slow: 0,
-    bspeed: 0.88, traj: 'split', dmg: 2,
-    tag: '割れて二手に', tagEn: 'Splits in two',
-    lore: '飛んでいる途中で割れて左右に分かれる。手前は1発、奥は2発ぶん。',
-    loreEn: 'Cracks mid-flight and splits. One shot near, two shots far.' },
+    lore: 'バナナは弧を描いて飛ぶのでまっすぐ当たらない。当たれば一番重いが、投げ直すのに一番時間がかかる。',
+    loreEn: 'Bananas arc, so they never go where you point. Nothing hits harder — and nothing is slower to throw again.' },
 ];
 
 // 自機スキン(bestWorld で解禁。見た目のみ・性能に影響しない)
@@ -473,15 +484,81 @@ export const TRAJ_TRAITS = {
   grow:     { acc: 0.95, range: 1.0 },
   split:    { acc: 0.85, range: 1.0 },
   wave:     { acc: 0.75, range: 1.0 },
-  bounce:   { acc: 0.60, range: 1.0 },
+  bounce:   { acc: 0.72, range: 1.0 },   // 跳ね返った先は読めないが、往路はまっすぐ
   spiral:   { acc: 0.60, range: 1.0 },
-  scatter:  { acc: 0.55, range: 1.0 },
+  scatter:  { acc: 0.68, range: 1.0 },   // 散るのは少しずつ。絵の振れ幅に合わせた
   drift:    { acc: 0.45, range: 1.0 },
   curve:    { acc: 0.40, range: 1.0 },
   short:    { acc: 0.90, range: 0.45 },
   decel:    { acc: 0.90, range: 0.50 },
 };
 export function trajTrait(k) { return TRAJ_TRAITS[k || 'straight'] || TRAJ_TRAITS.straight; }
+
+// === 実効火力 ===
+//   「後から開くキャラのほうが強い」を **数字で禁止する** ための物差し。
+//   カードの棒(ひとげき・れんしゃ…)は1本ずつしか見えないので、
+//   1本を伸ばして別の1本を削る調整をしていると、全体では強くなっていても
+//   誰も気づけない。掛け算にして1つの数にすると、それが見える。
+//
+//   各項の意味と、上げたときに何が起きるか:
+//     dmg × (1/fire) … 1発の重さ × 毎秒の発射回数。素の手数。
+//     aim   0.45+acc*0.55 … 狙った所へ行くか。曲がる弾は当たらないので割り引く。
+//     girth (size/4)^0.4  … 弾の太さ。太いほど雑な狙いでも当たる。効きは緩やか。
+//     reach 0.38+range*0.62 … 届く距離。近距離キャラは敵に寄る=死ぬ危険を払っている。
+//     multi 貫通            … 列に何体並んでいても抜ける。**狙えない弾の貫通は価値が低い**
+//                             ので acc を掛け、**遅い弾は列が崩れる前に届かない**ので
+//                             弾速も掛ける。⚡ が壊れていたのはこの項が無制限だったから。
+//     util  鈍化・横広がり  … おまけ。効果は小さいが 0 ではない。
+//     swift 弾速            … 速い弾は敵が近づく前に当たる。効きは弱め(読みやすさが主目的)。
+//
+//   ファイターが 1.00 になるように作ってある。全員 ±5% 以内に収め、
+//   test/balance.test.js がそれを縛る。数字を触ったらテストを走らせること。
+export function powerScore(c) {
+  const t = trajTrait(c.traj);
+  const bsp = c.bspeed || 1;
+  return (c.dmg || 1) * (1 / c.fire)
+    * (0.45 + t.acc * 0.55)
+    * Math.pow((c.size || 4) / 4, 0.40)
+    * (0.38 + t.range * 0.62)
+    * (1 + (c.pierce || 0) * t.acc * 0.34 * (0.62 + bsp * 0.38))
+    * (1 + (c.slow ? 0.09 : 0) + (c.spread ? 0.11 : 0))
+    * (0.86 + bsp * 0.14);
+}
+
+// === クセの強さ(0..1) ===
+//   カードに「つよさ」を出すと嘘になる(全員同じにしてあるので)。代わりに
+//   **どれだけ言うことを聞かないか** を出す。狙いが通らない・届かない・
+//   溜めが長い、の3つ。開放順はおおむねこの順(＋見た目の派手さ)で並べてあるが、
+//   **火力は順番と無関係**。そこはテストで縛る。
+export function quirkScore(c) {
+  const t = trajTrait(c.traj);
+  const aim = 1 - t.acc;                       // 狙いが通らない
+  const shortness = 1 - t.range;               // 届かない
+  const slowRate = Math.min(1, Math.max(0, (c.fire - 0.8) / 1.3));   // 溜めが長い
+  return Math.min(1, aim * 0.55 + shortness * 0.55 + slowRate * 0.30);
+}
+
+// === 開放 ===
+//   need = 通算で何ステージ制覇したら開くか。CHARS の並び順 = 開放順。
+export const CHAR_NEED = (c) => (c && c.need) | 0;
+/** 通算クリア数から、使えるキャラの人数を出す。最初の3体は常に使える。 */
+export function unlockedCharCount(cleared) {
+  let n = 0;
+  for (const c of CHARS) if ((cleared | 0) >= CHAR_NEED(c)) n++;
+  return n;
+}
+/** そのキャラが使えるか。 */
+export function charUnlocked(i, cleared) {
+  const c = CHARS[i];
+  return !!c && (cleared | 0) >= CHAR_NEED(c);
+}
+/** 次に開くキャラ(と、あと何面か)。全部開いていたら null。 */
+export function nextCharUnlock(cleared) {
+  for (let i = 0; i < CHARS.length; i++) {
+    if (!charUnlocked(i, cleared)) return { index: i, char: CHARS[i], left: CHAR_NEED(CHARS[i]) - (cleared | 0) };
+  }
+  return null;
+}
 
 export const TRAJ_PREVIEW = {
   straight: { name: 'まっすぐ', en: 'Straight', pts: [[0, 0], [1, 0]] },

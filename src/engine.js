@@ -1,7 +1,7 @@
 // ============================================================
 // engine.js — ゲームロジック(更新・生成・当たり判定・状態遷移)
 // ============================================================
-import { CFG, BELLS, MAX_LIFE_BELL, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, MOVE_BY_EMOJI, DIRS, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
+import { CFG, BELLS, MAX_LIFE_BELL, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, MOVE_BY_EMOJI, DIRS, CHARS, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
 import { W, H, SAFE } from './env.js';
 import { game, newGame, setGame } from './state.js';
 import { stage, dirDef, fwAngle, inAngle, isVert, latSpan, fwSpan, posFromPL, invPL, latOf, playerHome } from './geo.js';
@@ -260,9 +260,10 @@ function fire() {
       x: p.x + dx * 20 + sx * ox, y: p.y + dy * 20 + sy * ox,
       vx: dx * spd * smul + sx * spread, vy: dy * spd * smul + sy * spread,
       size: ch.size * ssize, emoji: boom ? '🪃' : ch.shotEmoji, col: boom ? '#ff9f1c' : ch.shot,
-      pierce: boom ? 1 : ch.pierce, slow: ch.slow, dmg: ch.dmg || 1,
+      pierce: boom ? 2 : ch.pierce, slow: ch.slow, dmg: ch.dmg || 1,
       // 折り返す時刻を少しずらす。揃っていると団子になって1個に見える。
       boom: boom ? 1 : 0, bt: boom ? rand(0, 0.1) : 0, spin: rand(0, 6.28),
+      hits: 0, bossHit: 0,
       // キャラ固有の飛び方。ブーメラン中は飛び方を上書きしない(両立させると読めない)。
       traj: boom ? 'straight' : (ch.traj || 'straight'),
       bx: p.x + dx * 20 + sx * ox, by: p.y + dy * 20 + sy * ox, tt: 0,
@@ -487,7 +488,9 @@ function updateSuper(dt) {
       if (game.superWish == null) game.superWish = randInt(0, 3);
       const p2 = game.player;
       switch (game.superWish) {
-        case 0: hurtAll(dmg * 1.9); break;                      // 大きく削る
+        // 1.9 倍は「大きく削る」ではなく盤面の一掃だった(散らした40体を全部消せた)。
+        //   ねがいごとは当たりの札であって、押しただけで終わるボタンではない。
+        case 0: hurtAll(dmg * 1.25); break;                     // 大きく削る
         case 1:                                                  // 身のまわりを払う
           game.eBullets = game.eBullets.filter(b => Math.hypot(b.x - p2.x, b.y - p2.y) > 210);
           hurtAll(dmg * 0.4);
@@ -1487,7 +1490,13 @@ function bossDefeated() {
   // ストーリー(章モード)は制覇を記録。章を全制覇したら勝利演出 → 次章が開く。
   let chapterDone = false;
   const story = !game.aiMode && !game.coop && !game.daily && !game.endless;
-  if (story) chapterDone = Save.markCleared(game.stageIndex, game.stages.length);
+  if (story) {
+    // 制覇すると新しいキャラが開くことがある。**開いたことを、開いた画面で言う。**
+    //   タイトルに戻ってから気づく作りだと、そもそも増えていることに気づかれない。
+    const before = Save.unlockedChars();
+    chapterDone = Save.markCleared(game.stageIndex, game.stages.length);
+    game.newChars = CHARS.slice(before, Save.unlockedChars());
+  } else game.newChars = [];
   let kind;
   if (game.coop) { kind = 'coop'; recordRunEnd({}); }
   else if (game.endless) { kind = 'world'; game.world++; game.pendingStage = scaleStage(proceduralStage(), game.world); }
@@ -1895,13 +1904,27 @@ function checkCollisions() {
           game.stats.hits++;
           if (e.hp <= 0) { game.enemies.splice(ei, 1); Snd.kill(); particles(e.x, e.y, 12, '#ffd700'); }
         } else damageEnemy(e, b.dmg || 1);
-        if (!b.pierce) { game.pBullets.splice(bi, 1); used = true; }   // 貫通弾は消えない
+        // 貫通は「何体まで当てられるか」の予算。pierce=0 は1体で消える。
+        //   無制限の貫通は作らない —— 列に並んだ敵を丸ごと消せてしまい、
+        //   そのキャラだけ別のゲームになる(⚡ がまさにそれだった)。
+        b.hits = (b.hits | 0) + 1;
+        const spent = b.hits >= Math.max(1, b.pierce | 0);
+        if (spent) { game.pBullets.splice(bi, 1); used = true; }
         if (!isGuest() && e.hp <= 0) game.enemies.splice(ei, 1);
-        if (!b.pierce) break;
+        if (spent) break;
       }
     }
     if (used) continue;
-    if (game.boss && !game.boss.entering && dist(b, game.boss) < 42 * game.boss.scale + b.size) { damageBoss(b.dmg || 1); if (!b.pierce) { game.pBullets.splice(bi, 1); } continue; }
+    // ボスは的が1つ。**同じ弾で何度も削らせない。**
+    //   貫通弾は当たっても消えなかったので、ボスの体に重なっているあいだ
+    //   毎フレーム damageBoss が走り、1発が5〜6発ぶんになっていた。
+    if (game.boss && !game.boss.entering && !b.bossHit && dist(b, game.boss) < 42 * game.boss.scale + b.size) {
+      damageBoss(b.dmg || 1);
+      b.bossHit = 1;
+      b.hits = (b.hits | 0) + 1;
+      if (b.hits >= Math.max(1, b.pierce | 0)) game.pBullets.splice(bi, 1);
+      continue;
+    }
     for (let li = game.bells.length - 1; li >= 0; li--) {
       const bl = game.bells[li];
       if (dist(b, bl) < bl.size + b.size + 4) { hitBell(bl); game.pBullets.splice(bi, 1); break; }
@@ -1988,6 +2011,7 @@ export function skipOpening() {
 }
 
 export function startRun(from = 0, resume = false) {
+  game.newChars = [];    // 「あたらしいキャラ」の知らせを次の制覇まで持ち越さない
   // その章のオープニングを一度も見ていなければ、先に見せてから始める。
   if (!game.openStarting && from === 0 && !resume && !Save.sawStory(Save.chapter())) {
     openStory(Save.chapter(), true);

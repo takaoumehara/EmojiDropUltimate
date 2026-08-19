@@ -1,7 +1,7 @@
 // ============================================================
 // render.js — 描画(読みやすさ優先: 大きめ・視認性の高いサンセリフ)
 // ============================================================
-import { BELLS, clamp, stageTint, CHARS, STAGES, TRAJ_PREVIEW, trajTrait } from './config.js';
+import { BELLS, clamp, stageTint, CHARS, STAGES, TRAJ_PREVIEW, trajTrait, quirkScore } from './config.js';
 import { W, H, ctx, UI, SAFE, DPR, VIEW, inWindow } from './env.js';
 import { game } from './state.js';
 import { stage, dirDef, fwAngle, fwSpan, isVert, posFromPL } from './geo.js';
@@ -843,6 +843,17 @@ function drawTitle() {
     txt(nm, left + is + gap, by + h3 * 0.66,
       { size: 12 * UI, weight: 700, color: '#e6efff', align: 'left', maxW: tw });
   }
+  // まだ全員そろっていないなら、そろい具合を隅に出す。
+  //   **数が見えると埋めたくなる。** 見えないと、増えていることに気づかない。
+  {
+    const n = Save.unlockedChars();
+    if (n < CHARS.length) {
+      const pw = 34 * UI, ph = 15 * UI, px2 = cbx + halfB - pw - 6 * UI, py2 = by + 6 * UI;
+      surface(px2, py2, pw, ph, { r: ph / 2, fill: 'rgba(6,10,24,0.8)', border: 'rgba(255,255,255,0.2)', lw: 1 });
+      txt(`${n}/${CHARS.length}`, px2 + pw / 2, py2 + ph / 2,
+        { size: 9 * UI, weight: 800, color: '#c6d6f0' });
+    }
+  }
   game.menuBtns.push({ id: 'chars', x: bx + halfB + 9 * UI, y: by, w: halfB, h: h3 });
   by += h3;
 
@@ -924,11 +935,16 @@ function roundRect(x, y, w, h, r) {
 
 // 4つの数値を 0..1 に正規化する。絶対値ではなく「16体の中での位置」で見せる。
 /**
- * カードに出す4つの数値。
+ * カードに出す数値。
  *
  * 「いどう」は捨てた —— 指でドラッグする限りその値は効いておらず、
  * 数値だけが並んでいた。代わりに **身のこなし(当たり判定の小ささ)** と、
  * 頼まれていた **たまのはやさ** を出す。全部が実際に効いている値。
+ *
+ * **合計は全員ほぼ同じになるように作ってある**(config.js の powerScore)。
+ * 棒が長いところがあれば、必ず短いところがある。最後の1本だけは種類が違い、
+ * 「どれだけ言うことを聞くか」を出す —— 後から開くキャラほどここが短い。
+ * 強くなるのではなく、扱いが難しくなる。
  */
 function statsOf(c) {
   const all = CHARS;
@@ -948,6 +964,9 @@ function statsOf(c) {
     { ja: 'ねらい', en: 'AIM', v: norm(trajTrait(c.traj).acc, all.map(x => trajTrait(x.traj).acc)) },
     // 身のこなし = 当たり判定の小ささ。engine の hitR と同じ式から出す。
     { ja: 'みのこなし', en: 'AGILITY', v: norm(c.speed, all.map(x => x.speed)) },
+    // あつかいやすさ。上の5本と足し引きする値ではないので、色を変えて分ける。
+    { ja: 'あつかいやすさ', en: 'EASE', soft: 1,
+      v: 1 - norm(quirkScore(c), all.map(quirkScore)) },
   ];
 }
 
@@ -1001,7 +1020,7 @@ function drawTrajPreview(c, x, y, w, h) {
 
 function drawCharCard() {
   const ja = getLang() === 'ja';
-  const cur = Save.charIndex();
+  const cur = browseIndex();
   const drag = game.charDrag || 0;
   const bottom = H - SAFE.bottom;
   let cardBottom = 0;   // カードの下端。案内文が枠線に重ならないように使う
@@ -1012,18 +1031,21 @@ function drawCharCard() {
     if (Math.abs(dx) > W) continue;
     ctx.save(); ctx.translate(dx, 0);
     ctx.globalAlpha = off === 0 ? 1 : 0.45;
-    const cb = drawOneCard(CHARS[i], ja, bottom);
+    const cb = drawOneCard(CHARS[i], ja, bottom, Save.charUnlocked(i));
     if (off === 0) cardBottom = cb;
     ctx.restore();
   }
   ctx.globalAlpha = 1;
   // ページ点。カードが縮んだときは点も一緒に上がる(離れて浮かないように)
+  //   **鍵のかかった枠は空洞で描く。** 何体いるのかが分かると、埋めたくなる。
   const dotY = Math.min(bottom - 128 * UI, cardBottom + 38 * UI);
   const dw = Math.min(W * 0.9, 320), dx0 = (W - dw) / 2;
   CHARS.forEach((c, i) => {
     const x = dx0 + (dw / (CHARS.length - 1)) * i;
-    ctx.fillStyle = i === cur ? c.col : 'rgba(255,255,255,0.28)';
-    ctx.beginPath(); ctx.arc(x, dotY, i === cur ? 3.6 : 2.2, 0, Math.PI * 2); ctx.fill();
+    const open = Save.charUnlocked(i);
+    ctx.beginPath(); ctx.arc(x, dotY, i === cur ? 3.6 : 2.2, 0, Math.PI * 2);
+    if (open) { ctx.fillStyle = i === cur ? c.col : 'rgba(255,255,255,0.28)'; ctx.fill(); }
+    else { ctx.strokeStyle = i === cur ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.22)'; ctx.lineWidth = 1.4; ctx.stroke(); }
   });
   // カードの枠線の上に文字が乗っていた。枠の下端より下に置く。
   txt(ja ? '← スワイプでキャラを見る →' : '← swipe to browse →',
@@ -1034,19 +1056,43 @@ function drawCharCard() {
   game.menuBtns = [];
   const bw = Math.min(W * 0.86, 360), bx = (W - bw) / 2;
   let by = bottom - 112 * UI;
-  const gg = ctx.createLinearGradient(0, by, 0, by + 54 * UI);
-  gg.addColorStop(0, '#ffdf6b'); gg.addColorStop(1, '#f5b429');
-  surface(bx, by, bw, 54 * UI, { r: 16, fill: gg, border: null });
-  txt(ja ? 'これでいく' : 'READY', W / 2, by + 27 * UI,
-    { size: 19 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY });
-  game.menuBtns.push({ id: 'charOk', x: bx, y: by, w: bw, h: 54 * UI });
+  drawReadyOrLock(CHARS[cur], cur, bx, by, bw, 54 * UI, ja);
   by += 54 * UI + 8 * UI;
   const half = (bw - 8 * UI) / 2;
   drawBtn('charGrid', bx, by, half, 40 * UI, ja ? '一覧で見る' : 'See all', '#61748f');
   drawBtn('charBack', bx + half + 8 * UI, by, half, 40 * UI, ja ? '戻る' : 'Back', '#61748f');
 }
 
-function drawOneCard(c, ja, bottom) {
+/** いま眺めているカード。**選んでいるキャラとは別物**(鍵つきも眺められる)。 */
+function browseIndex() {
+  const b = game.charBrowse;
+  if (typeof b === 'number' && b >= 0 && b < CHARS.length) return b;
+  return Save.charIndex();
+}
+
+/**
+ * 決定ボタン。開いていれば「これでいく」、まだなら **あと何面で開くか**。
+ * 押せないボタンを金色のまま置くと、押した人は壊れていると思う。
+ */
+function drawReadyOrLock(c, i, bx, by, bw, bh, ja) {
+  const open = Save.charUnlocked(i);
+  if (open) {
+    const gg = ctx.createLinearGradient(0, by, 0, by + bh);
+    gg.addColorStop(0, '#ffdf6b'); gg.addColorStop(1, '#f5b429');
+    surface(bx, by, bw, bh, { r: 16, fill: gg, border: null });
+    const chosen = i === Save.charIndex();
+    txt(chosen ? (ja ? 'これでいく' : 'READY') : (ja ? 'このこにする' : 'PICK THIS ONE'),
+      W / 2, by + bh / 2, { size: 19 * UI, weight: 800, color: '#20180a', family: FONT_DISPLAY, maxW: bw - 24 * UI });
+    game.menuBtns.push({ id: 'charOk', x: bx, y: by, w: bw, h: bh });
+    return;
+  }
+  const left = (c.need | 0) - Save.stagesCleared();
+  surface(bx, by, bw, bh, { r: 16, fill: 'rgba(18,24,44,0.9)', border: 'rgba(255,255,255,0.22)', lw: 2 });
+  txt(ja ? `🔒 あと ${left} ステージ制覇で開く` : `🔒 ${left} more stage${left === 1 ? '' : 's'} to unlock`,
+    W / 2, by + bh / 2, { size: 14 * UI, weight: 800, color: '#c6d6f0', maxW: bw - 24 * UI });
+}
+
+function drawOneCard(c, ja, bottom, open = true) {
   const cw = Math.min(W * 0.9, 380), cx = (W - cw) / 2;
   // **枠を中身に合わせる。** 前は使える高さを全部枠にしてから、余りを
   //   棒4本の間隔に流していた。背の高い端末では棒が180px間隔に開き、
@@ -1081,17 +1127,23 @@ function drawOneCard(c, ja, bottom) {
   // 余りは上より下に多く残す。下にはページ点と案内文が続くので、
   //   ぴったり中央に置くと案内文だけが遠くに離れて浮いてしまう。
   const top = availTop + Math.max(0, (availH - ch2) * 0.22);
-  surface(cx, top, cw, ch2, { r: 22, fill: 'rgba(12,17,36,0.9)', border: c.col, lw: 2.5 });
+  surface(cx, top, cw, ch2, { r: 22, fill: 'rgba(12,17,36,0.9)', border: open ? c.col : 'rgba(255,255,255,0.22)', lw: 2.5 });
 
   let y = top + pad;
 
   // --- 誰か ---
+  //   まだ開いていない子は **中身は全部見せたまま、色だけ落とす。**
+  //   シルエットで隠すと「何が来るのか」が分からず、欲しくならない。
+  const dim = open ? 1 : 0.42;
   const glow = ctx.createRadialGradient(W / 2, y + eSize * 0.6, 4, W / 2, y + eSize * 0.6, eSize * 0.9);
-  glow.addColorStop(0, c.col + '55'); glow.addColorStop(1, c.col + '00');
+  glow.addColorStop(0, c.col + (open ? '55' : '22')); glow.addColorStop(1, c.col + '00');
   ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(W / 2, y + eSize * 0.6, eSize * 0.9, 0, Math.PI * 2); ctx.fill();
+  ctx.save(); ctx.globalAlpha *= dim;
   emojiCentered(c.emoji, W / 2, y + eSize * 0.6, eSize);
+  ctx.restore();
+  if (!open) emojiCentered('🔒', W / 2 + eSize * 0.58, y + eSize * 0.72, eSize * 0.4);
   y += eSize * 1.2 + 8 * UI;
-  txt(ja ? c.name : c.en, W / 2, y, { size: 23 * UI, weight: 800, color: c.col, family: FONT_DISPLAY, maxW: cw - 30 });
+  txt(ja ? c.name : c.en, W / 2, y, { size: 23 * UI, weight: 800, color: open ? c.col : 'rgba(198,214,240,0.65)', family: FONT_DISPLAY, maxW: cw - 30 });
   y += 24 * UI;
   txt(ja ? c.tag : c.tagEn, W / 2, y, { size: 12 * UI, weight: 700, color: COL.sub, maxW: cw - 34 });
   y += 26 * UI;
@@ -1127,22 +1179,24 @@ function drawOneCard(c, ja, bottom) {
   drawTrajPreview(c, cx + 18 * UI, y, cw - 36 * UI, trajH);
   y += trajH + 12 * UI;
 
-  // --- 数値(4本・全部実際に効いている値) ---
+  // --- 数値 ---
+  //   **棒の合計は全員ほぼ同じ。** 長い棒があれば必ず短い棒がある。
+  //   最後の「あつかいやすさ」だけは他と種類が違うので、色を変えて分ける。
   rows0.forEach((st, i) => {
     const ry = y + i * ROW + ROW * 0.5;
     txt(ja ? st.ja : st.en, cx + 18 * UI, ry,
-      { size: 9.5 * UI, weight: 700, color: COL.mute, align: 'left', maxW: 76 * UI });
+      { size: 9.5 * UI, weight: 700, color: st.soft ? 'rgba(255,255,255,0.5)' : COL.mute, align: 'left', maxW: 76 * UI });
     const bx2 = cx + 100 * UI, bw2 = cw - 118 * UI;
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
     roundRect(bx2, ry - 5 * UI, bw2, 9 * UI, 4.5 * UI); ctx.fill();
-    ctx.fillStyle = c.col;
+    ctx.fillStyle = st.soft ? 'rgba(255,255,255,0.42)' : c.col;
     roundRect(bx2, ry - 5 * UI, Math.max(9 * UI, bw2 * (0.08 + st.v * 0.92)), 9 * UI, 4.5 * UI); ctx.fill();
   });
   y += ROW * rows0.length;
 
   // --- 説明文 ---
   //   「ファーマーとベイカーの違いが正直わからない」と言われた。
-  //   棒4本だけでは差が伝わらないので、得手不得手を文章で置く。
+  //   棒だけでは差が伝わらないので、得手不得手を文章で置く。
   //   **読める大きさが入るときだけ**出す。読めない字は無いのと同じ。
   if (loreH) {
     wrapTxt(ja ? c.lore : c.loreEn, W / 2, y + 4 * UI, cw - 44 * UI,
@@ -1150,7 +1204,8 @@ function drawOneCard(c, ja, bottom) {
   }
 
   // --- 特記 ---
-  const marks = [c.pierce ? (ja ? 'つらぬく' : 'PIERCE') : '', c.slow ? (ja ? 'おそくする' : 'SLOW') : '',
+  const marks = [c.pierce ? (ja ? `${c.pierce}たいまで つらぬく` : `PIERCES ${c.pierce}`) : '',
+                 c.slow ? (ja ? 'おそくする' : 'SLOW') : '',
                  c.spread ? (ja ? 'ひろがる' : 'WIDE') : '',
                  // 「弾が大きい」は当たりやすさそのもの。数字の棒には出ないので印にする。
                  (c.size >= 6.5 ? (ja ? 'たまがおおきい' : 'BIG SHOT') : '')].filter(Boolean);
@@ -1162,29 +1217,58 @@ function drawOneCard(c, ja, bottom) {
 
 function drawCharGrid() {
   const time = game.titleAnim, ja = getLang() === 'ja';
-  txt(ja ? 'キャラクターをえらぶ' : 'CHOOSE YOUR FIGHTER', W / 2, vy(0.075),
+  txt(ja ? 'キャラクターをえらぶ' : 'CHOOSE YOUR FIGHTER', W / 2, vy(0.062),
     { size: 18 * UI, weight: 800, color: COL.gold, family: FONT_DISPLAY, maxW: W * 0.9 });
-  txt(ja ? 'タップでカードを見る · ステージのあいだで変えられます'
-         : 'Tap for the card · you can switch between stages',
-    W / 2, vy(0.115), { size: 10.5 * UI, weight: 600, color: COL.mute, maxW: W * 0.92 });
+  // **一番言いたいことを一番上に置く。** 「後のキャラほど強い」と思われたら、
+  //   選ぶ理由が「一番強いのはどれか」になって、16体ぶんの作りが全部無駄になる。
+  txt(ja ? 'どれを選んでも つよさは同じ。ちがうのは クセ。'
+         : 'They are all equally strong. What differs is the quirk.',
+    W / 2, vy(0.103), { size: 11 * UI, weight: 700, color: '#9fe8c0', maxW: W * 0.92 });
+  const nxt = Save.nextCharUnlock();
+  txt(nxt
+      ? (ja ? `つかえる ${Save.unlockedChars()}/${CHARS.length} · あと ${nxt.left} ステージで ${nxt.char.emoji} が開く`
+            : `${Save.unlockedChars()}/${CHARS.length} unlocked · ${nxt.left} more stage${nxt.left === 1 ? '' : 's'} for ${nxt.char.emoji}`)
+      : (ja ? `ぜんぶ つかえる (${CHARS.length}/${CHARS.length})` : `All ${CHARS.length} unlocked`),
+    W / 2, vy(0.138), { size: 10.5 * UI, weight: 600, color: COL.mute, maxW: W * 0.92 });
   game.menuBtns = [];
   const cur = Save.charIndex();
   const gap = 8 * UI;
   const cols = CHARS.length > 9 ? 4 : 3;
   const rows = Math.ceil(CHARS.length / cols);
-  const gy = vy(0.165);
+  const gy = vy(0.185);
   const bottom = H - SAFE.bottom;
   const avail = (bottom - 118 * UI) - gy;
   const cw = Math.min((Math.min(W * 0.94, 392) - gap * (cols - 1)) / cols,
                       (avail - gap * (rows - 1)) / rows / 1.02);
   const chh = cw * 1.02;
   const gx = (W - (cw * cols + gap * (cols - 1))) / 2;
+  // マスの大きさは横幅で決まることが多いので、縦には余りが出る。
+  //   上に詰めると下に大穴が空くので、余りを分けて少し下げる。
+  const gh = chh * rows + gap * (rows - 1);
+  const gy2 = gy + Math.max(0, avail - gh) * 0.34;
   CHARS.forEach((c, i) => {
-    const x = gx + (i % cols) * (cw + gap), y = gy + Math.floor(i / cols) * (chh + gap);
+    const x = gx + (i % cols) * (cw + gap), y = gy2 + Math.floor(i / cols) * (chh + gap);
     const sel = i === cur;
-    surface(x, y, cw, chh, { r: 14, fill: sel ? c.col : 'rgba(13,19,40,0.82)', border: sel ? '#ffffff' : 'rgba(255,255,255,0.18)', lw: sel ? 3 : 2 });
+    const open = Save.charUnlocked(i);
+    surface(x, y, cw, chh, {
+      r: 14,
+      fill: sel ? c.col : (open ? 'rgba(13,19,40,0.82)' : 'rgba(10,14,28,0.72)'),
+      border: sel ? '#ffffff' : (open ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.10)'),
+      lw: sel ? 3 : 2,
+    });
+    // 鍵つきでも **顔は見せる**。何が待っているか分かるから続きを遊ぶ。
+    ctx.save(); ctx.globalAlpha *= open ? 1 : 0.34;
     emojiCentered(c.emoji, x + cw / 2, y + chh * 0.40, cw * 0.5);
-    txt(ja ? c.name : c.en, x + cw / 2, y + chh * 0.82, { size: 10 * UI, weight: 700, color: sel ? '#141018' : '#e6efff', maxW: cw - 6 });
+    ctx.restore();
+    if (open) {
+      txt(ja ? c.name : c.en, x + cw / 2, y + chh * 0.82,
+        { size: 10 * UI, weight: 700, color: sel ? '#141018' : '#e6efff', maxW: cw - 6 });
+    } else {
+      const left = (c.need | 0) - Save.stagesCleared();
+      emojiCentered('🔒', x + cw * 0.78, y + chh * 0.22, cw * 0.2);
+      txt(ja ? `あと${left}` : `${left} to go`, x + cw / 2, y + chh * 0.82,
+        { size: 10 * UI, weight: 800, color: '#9db3d6', maxW: cw - 6 });
+    }
     game.menuBtns.push({ id: 'char' + i, x, y, w: cw, h: chh });
   });
   // ボタンは一番下に固定して、16マスぶんの高さを稼ぐ
@@ -1929,8 +2013,21 @@ function drawClear() {
   {
     const ja2 = getLang() === 'ja';
     const c = CHARS[Save.charIndex()];
-    txt(ja2 ? `つぎのステージまでにキャラを変えられます` : 'You can switch fighter before the next stage',
-      W / 2, vy(0.66), { size: 11 * UI, weight: 600, color: COL.mute, maxW: W * 0.86 });
+    const fresh = Array.isArray(game.newChars) ? game.newChars : [];
+    if (fresh.length) {
+      // **開いた瞬間に、その画面で言う。** タイトルへ戻ってから増えていても、
+      //   誰も一覧を開き直さないので、増えたこと自体が伝わらない。
+      const names = fresh.map(n => `${n.emoji} ${ja2 ? n.name : n.en}`).join(' · ');
+      const bw3 = Math.min(W * 0.86, 340), bx3 = (W - bw3) / 2, by3 = vy(0.625);
+      surface(bx3, by3, bw3, 46 * UI, { r: 14, fill: 'rgba(255,223,107,0.12)', border: '#ffdf6b', lw: 2 });
+      txt(ja2 ? 'あたらしいキャラ' : 'NEW FIGHTER', W / 2, by3 + 14 * UI,
+        { size: 9.5 * UI, weight: 800, color: '#ffdf6b', track: 1.4 });
+      txt(names, W / 2, by3 + 32 * UI,
+        { size: 13 * UI, weight: 800, color: '#ffffff', maxW: bw3 - 20 * UI });
+    } else {
+      txt(ja2 ? `つぎのステージまでにキャラを変えられます` : 'You can switch fighter before the next stage',
+        W / 2, vy(0.66), { size: 11 * UI, weight: 600, color: COL.mute, maxW: W * 0.86 });
+    }
     const bw2 = Math.min(W * 0.7, 300), bx2 = (W - bw2) / 2, by2 = vy(0.70);
     const cy2 = by2 + 22 * UI;
     surface(bx2, by2, bw2, 44 * UI, { r: 14, fill: 'rgba(13,19,40,0.85)', border: c.col, lw: 2 });
@@ -1939,12 +2036,15 @@ function drawClear() {
     //   中身の重心が枠の中心から 30px 近く左にずれていた。毎面出る画面なので
     //   ここのずれが一番目についていたはず。
     {
-      const nm = ja2 ? 'キャラを変える' : 'Change fighter';
+      const nm = fresh.length ? (ja2 ? 'つかってみる' : 'Try it') : (ja2 ? 'キャラを変える' : 'Change fighter');
+      // 「つかってみる」の横に、いま使っている子の顔が出ていると
+      //   どっちを試すのか分からない。誘っている相手の顔を出す。
+      const face = fresh.length ? fresh[0].emoji : c.emoji;
       const is = 22 * UI, gap = 9 * UI, fs = 13 * UI;
       f(fs, 700);
       const tw = Math.min(ctx.measureText(nm).width, bw2 - is - gap - 24 * UI);
       const left = bx2 + bw2 / 2 - (is + gap + tw) / 2;
-      emojiCentered(c.emoji, left + is / 2, cy2, is);
+      emojiCentered(face, left + is / 2, cy2, is);
       txt(nm, left + is + gap, cy2, { size: fs, weight: 700, color: '#e6efff', align: 'left', maxW: tw });
     }
     game.menuBtns = [{ id: 'clearChar', x: bx2, y: by2, w: bw2, h: 44 * UI }];
