@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   makeRng, hashStr, clamp, lerp, CFG,
-  STAGES, BOSS_STYLES, STYLE_KEYS, CHARS, DIRS, MOVES, MOVE_BY_EMOJI, BELLS, POWER_SHOT_EMOJIS, TRAJ_PREVIEW,
+  STAGES, BOSS_STYLES, STYLE_KEYS, CHARS, DIRS, MOVES, MOVE_BY_EMOJI, BELLS, POWER_SHOT_EMOJIS, TRAJ_PREVIEW, powerScore,
 } from '../src/config.js';
 import { proceduralStage } from '../src/aistage.js';
 
@@ -261,13 +261,60 @@ test('CHARS: every character is uniquely identifiable and has sane stats', () =>
   }
 });
 
-test('CHARS: damage-per-second stays within one band, so no character is strictly best', () => {
-  // 1発の重さ(dmg)と連射(fire)を掛け合わせた素の火力。広がりや貫通は別価値なので
-  // ここでは見ない。倍以上の差がついたら、それは選択肢ではなく正解になってしまう。
+test('CHARS: 素の dmg/fire が極端に開いていない', () => {
+  // **この指標だけでは釣り合いを見られない。** 以前はここだけを 2.45 倍で
+  // 縛っていて、それが ⚡ を見逃した原因だった —— dmg も fire も平凡なまま、
+  // 無制限の貫通で実際の火力だけが跳ね上がっていて、この式には出てこなかった。
+  // いまの本命は下の powerScore のテスト。ここは「数字そのものが暴走して
+  // いないか」を見るゆるい歯止めとして残す。
   const dps = CHARS.map(c => ({ id: c.id, v: (c.dmg || 1) / c.fire }));
   const lo = Math.min(...dps.map(d => d.v)), hi = Math.max(...dps.map(d => d.v));
-  assert.ok(hi / lo < 2.45,
+  assert.ok(hi / lo < 3.2,
     `raw damage spread is ${(hi / lo).toFixed(2)}x — ${JSON.stringify(dps.sort((a, b) => b.v - a.v).slice(0, 3))}`);
+});
+
+test('CHARS: 実効火力は全員ほぼ同じ(どのキャラを選んでも難易度が変わらない)', () => {
+  // 遊ぶほどキャラが増える以上、**後から開くキャラが強かったら進めた人だけ
+  // 簡単になる**。それはもう腕前ではないので、ここで禁止する。
+  const p = CHARS.map(c => ({ id: c.id, v: powerScore(c) }));
+  const lo = Math.min(...p.map(x => x.v)), hi = Math.max(...p.map(x => x.v));
+  assert.ok(hi / lo < 1.15,
+    `実効火力の開きが ${(hi / lo).toFixed(3)} 倍 — ${JSON.stringify(p.sort((a, b) => b.v - a.v).slice(0, 3))}`);
+});
+
+test('CHARS: 開放が進んでも強くならない(順番と火力が相関しない)', () => {
+  // 「後半のキャラのほうが強い」を、平均の比較で禁止する。
+  // 前半8体と後半8体の平均が 4% 以上ずれたら、それは進行報酬になっている。
+  const p = CHARS.map(c => powerScore(c));
+  const half = Math.floor(p.length / 2);
+  const a = p.slice(0, half).reduce((x, y) => x + y, 0) / half;
+  const b = p.slice(half).reduce((x, y) => x + y, 0) / (p.length - half);
+  assert.ok(Math.abs(b / a - 1) < 0.04,
+    `最初の${half}体の平均 ${a.toFixed(3)} に対して、後の${p.length - half}体は ${b.toFixed(3)} (${((b / a - 1) * 100).toFixed(1)}%)`);
+});
+
+test('CHARS: 貫通は必ず有限。無制限の貫通を作らない', () => {
+  // ⚡ が壊れていた原因そのもの。pierce は「何体まで当てられるか」の予算で、
+  // 4体を超えると1発で1列消えてしまい、そのキャラだけ別のゲームになる。
+  for (const c of CHARS) {
+    const pi = c.pierce || 0;
+    assert.ok(Number.isInteger(pi) && pi >= 0 && pi <= 4,
+      `character "${c.id}" pierce ${pi} — 0〜4 の整数であること(1体ぶんは pierce:0 と同じ扱い)`);
+  }
+  const piercers = CHARS.filter(c => (c.pierce || 0) >= 2);
+  assert.ok(piercers.length <= 5,
+    `貫通持ちが ${piercers.length} 体 — 多すぎると「貫通が普通」になって特徴でなくなる`);
+});
+
+test('CHARS: 開放順は need で決まり、飛ばしも重複もない', () => {
+  const needs = CHARS.map(c => c.need | 0);
+  assert.ok(needs.every((n, i) => i === 0 || n >= needs[i - 1]),
+    `CHARS の並び順と need が食い違っている: ${needs.join(',')}`);
+  assert.equal(needs.filter(n => n === 0).length, 3,
+    '最初から使えるのは3体(初見で4つ以上の選択肢を並べない)');
+  const last = needs[needs.length - 1];
+  assert.ok(last <= 14,
+    `全部開くのに ${last} 面クリアが要る — 2章(14面)以内に収めること`);
 });
 
 // === ベル ===

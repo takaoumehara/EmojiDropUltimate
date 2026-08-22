@@ -9,7 +9,7 @@
 //   失敗時はメモリ上のフォールバックストアに静かに切り替える(セーブは
 //   永続化されないが、ゲーム自体は最後まで普通に遊べる)。
 // ============================================================
-import { SKINS, CHARS, todayKey } from './config.js';
+import { SKINS, CHARS, todayKey, charUnlocked, unlockedCharCount, nextCharUnlock } from './config.js';
 
 const KEY = 'edu_save';
 const DEF = {
@@ -17,6 +17,8 @@ const DEF = {
   kills: 0, shots: 0, hits: 0, deaths: 0, runs: 0,
   streak: 0, lastPlay: '', dailyPlayed: '', dailyBest: 0,
   skin: 0, name: '', cid: '', char: 0,
+  charId: '',   // 選んでいるキャラの id。並び順を変えても選択が飛ばないように番号では持たない
+  sc: -1,       // 通算で制覇したステージ数(キャラ開放の通貨)。-1 = 未移行
   cleared: 0,   // 現在の章で制覇したステージのビットマスク(1<<i)
   resume: 0,    // 次に挑むステージ番号(つづきから)
   rp: null,     // 死んだ地点(ステージ内の進行度)
@@ -145,6 +147,9 @@ export const Save = {
   clearedCount() { let n = 0; for (let i = 0; i < CHAPTER_LEN; i++) if (this.isCleared(i)) n++; return n; },
   // ステージ制覇を記録。章を全制覇したら true を返す(勝利演出→次章解放)
   markCleared(i, total) {
+    // **同じ面を何度クリアしても、キャラ開放は1回ぶんしか進まない。**
+    //   進めないと、1面を往復するだけで16体そろってしまう。
+    if (!this.isCleared(i)) this.bumpStagesCleared();
     this.data.cleared |= (1 << i);
     const done = this.clearedCount() >= total;
     if (done) { this.data.chapter = this.chapter() + 1; this.data.cleared = 0; this.data.resume = 0; }
@@ -172,10 +177,60 @@ export const Save = {
   },
   clearResumePoint() { this.data.rp = null; this.persist(); },
 
-  // 自機キャラクター(全員最初から選べる)
-  charIndex() { const i = this.data.char | 0; return i >= 0 && i < CHARS.length ? i : 0; },
-  char() { return CHARS[this.charIndex()]; },
-  setChar(i) { this.data.char = ((i % CHARS.length) + CHARS.length) % CHARS.length; this.persist(); return this.char(); },
+  // === 自機キャラクター ===
+  //   **最初から全員は選べない。** 3体で始まり、ステージを制覇するたびに1体開く。
+  //   ただし後から開くキャラが強いわけではない(config.js の powerScore を参照)。
+  //   増えるのは選択肢とクセであって、火力ではない。
+
+  /** キャラ開放の通貨 = 通算で制覇したステージ数。 */
+  stagesCleared() {
+    const d = this.data;
+    if ((d.sc | 0) >= 0) return d.sc | 0;
+    // 移行: キャラ開放より前から遊んでいた人を、いきなり3体に戻さない。
+    //   到達した最高ステージ + 突破した章ぶんを、制覇したものとして数える。
+    const derived = (d.bestWorld | 0) + (d.chapter | 0) * CHAPTER_LEN;
+    // **すでに使っていたキャラは取り上げない。** 昨日まで 🦍 で遊んでいた人の
+    //   画面から 🦍 が消えるのは、新しい仕組みの説明ではなく没収に見える。
+    //   その1体が開くところまで進んでいたことにする。
+    const legacyId = LEGACY_CHAR_ORDER[d.char | 0];
+    const legacy = legacyId ? CHARS.find(c => c.id === legacyId) : null;
+    d.sc = Math.max(0, derived, legacy ? (legacy.need | 0) : 0);
+    this.persist();
+    return d.sc;
+  },
+  bumpStagesCleared() {
+    const before = this.unlockedChars();
+    this.data.sc = this.stagesCleared() + 1;
+    this.persist();
+    return this.unlockedChars() - before;   // 新しく開いた人数
+  },
+  unlockedChars() { return unlockedCharCount(this.stagesCleared()); },
+  charUnlocked(i) { return charUnlocked(i, this.stagesCleared()); },
+  /** 次に開くキャラと、あと何面か。全部開いていたら null。 */
+  nextCharUnlock() { return nextCharUnlock(this.stagesCleared()); },
+
+  charIndex() {
+    const d = this.data;
+    // id で持つ。番号は「キャラ開放の並び替え」より前のセーブからの移行用。
+    let i = d.charId ? CHARS.findIndex(c => c.id === d.charId) : -1;
+    if (i < 0) i = LEGACY_CHAR_ORDER[d.char | 0] ? CHARS.findIndex(c => c.id === LEGACY_CHAR_ORDER[d.char | 0]) : 0;
+    if (i < 0) i = 0;
+    // まだ開いていないキャラが刺さっていたら、必ず使える1体目に戻す。
+    return this.charUnlocked(i) ? i : 0;
+  },
+  char() { return CHARS[this.charIndex()] || CHARS[0]; },
+  /** 開いていないキャラは選べない。選べたらそのキャラ、駄目なら null(UIが鍵を出す)。 */
+  setChar(i) {
+    const n = CHARS.length;
+    const idx = ((i % n) + n) % n;
+    if (!this.charUnlocked(idx)) return null;
+    this.data.charId = CHARS[idx].id;
+    this.data.char = idx;
+    this.persist();
+    return CHARS[idx];
+  },
+  /** id で選ぶ(通信・共有リンクから来る値はこちら)。 */
+  setCharId(id) { return this.setChar(CHARS.findIndex(c => c.id === id)); },
 
   accuracy() { return this.data.shots ? Math.round(this.data.hits / this.data.shots * 100) : 0; },
   playedDailyToday() { return this.data.dailyPlayed === todayKey(); },
@@ -198,6 +253,10 @@ export const Save = {
   // ストリークが途切れそう(今日まだ遊んでいない)
   streakAtRisk() { return this.data.streak > 0 && this.data.lastPlay !== todayKey(); },
 };
+
+// キャラ開放を入れる前の CHARS の並び順。数字で保存されていた選択を id へ移す。
+const LEGACY_CHAR_ORDER = ['fighter', 'rocket', 'cat', 'bolt', 'pizza', 'unicorn', 'poop', 'genie',
+  'chef', 'farmer', 'snowman', 'tree', 'dog', 'gorilla', 'cow', 'chicken'];
 
 function load() {
   try { return Object.assign({}, DEF, JSON.parse(safeGet(KEY) || '{}')); }

@@ -87,8 +87,9 @@ test('save: resumeStage は 1章の面数の中だけを返す', async () => {
 
 // ---- setChar --------------------------------------------------------
 
-test('save: setChar wraps negative and overflowing indices, and clamps to a valid CHARS index', async () => {
+test('save: setChar は番号を巻き取る(開放済みの範囲で)', async () => {
   const Save = await freshSave(makeMemoryLocalStorage());
+  Save.data.sc = 99;                      // 全員開放した状態にして「巻き取り」だけを見る
   Save.setChar(-1);
   assert.equal(Save.charIndex(), CHARS.length - 1, 'setChar(-1) must wrap to the last character');
   Save.setChar(CHARS.length);
@@ -98,6 +99,53 @@ test('save: setChar wraps negative and overflowing indices, and clamps to a vali
   const c = Save.setChar(1);
   assert.equal(c, CHARS[1], 'setChar must return the resulting CHARS entry');
   assert.equal(Save.char(), CHARS[1]);
+});
+
+// ---- キャラの開放 ----------------------------------------------------
+
+test('save: 最初は3体だけ。ステージを制覇すると増える', async () => {
+  const Save = await freshSave(makeMemoryLocalStorage());
+  assert.equal(Save.stagesCleared(), 0);
+  assert.equal(Save.unlockedChars(), 3, '初見に4つ以上の選択肢を並べない');
+  // 4体目はまだ選べない
+  assert.equal(Save.setChar(3), null, '未開放のキャラは選べないこと');
+  assert.equal(Save.charIndex(), 0, '未開放を指したら1体目に戻ること');
+  Save.markCleared(0, 7);
+  assert.equal(Save.stagesCleared(), 1);
+  assert.equal(Save.unlockedChars(), 4, '1面制覇で1体増えること');
+  assert.ok(Save.setChar(3), '開いたら選べること');
+  assert.equal(Save.charIndex(), 3);
+});
+
+test('save: 同じ面を何度クリアしてもキャラは増えない', async () => {
+  const Save = await freshSave(makeMemoryLocalStorage());
+  Save.markCleared(0, 7);
+  Save.markCleared(0, 7);
+  Save.markCleared(0, 7);
+  assert.equal(Save.stagesCleared(), 1, '1面を往復するだけで全員そろってはいけない');
+});
+
+test('save: 全16体が2章(14面)以内に開く', async () => {
+  const Save = await freshSave(makeMemoryLocalStorage());
+  Save.data.sc = 14;
+  assert.equal(Save.unlockedChars(), CHARS.length);
+  assert.equal(Save.nextCharUnlock(), null, '全部開いたら「次」は無いこと');
+});
+
+test('save: 開放より前のセーブは、いきなり3体に戻らない', async () => {
+  const store = makeMemoryLocalStorage();
+  // 1章を突破して2章の3面まで進んでいた人(sc という概念がまだ無い)
+  store.setItem('edu_save', JSON.stringify({ bestWorld: 3, chapter: 1, char: 13 }));
+  const Save = await freshSave(store);
+  assert.equal(Save.stagesCleared(), 13, '使っていた 🦍 が開くところまで進んでいたことにする(没収しない)');
+  assert.equal(Save.char().id, 'gorilla', '番号で保存されていた選択が id へ移ること');
+});
+
+test('save: 進行だけがある古いセーブは、到達点から数え直す', async () => {
+  const store = makeMemoryLocalStorage();
+  store.setItem('edu_save', JSON.stringify({ bestWorld: 3, chapter: 1 }));   // char 未指定
+  const Save = await freshSave(store);
+  assert.equal(Save.stagesCleared(), 10, '到達ステージ + 突破した章から数え直すこと');
 });
 
 // ---- setName --------------------------------------------------------

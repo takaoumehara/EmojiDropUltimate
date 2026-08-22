@@ -55,6 +55,11 @@ export async function boot(opt = {}) {
   //   オープニング自体は test/story.test.js が受け持つ。
   const { Save } = await import('../src/save.js');
   if (!opt.story) for (let i = 0; i < 8; i++) Save.markSawStory(i);
+  // テストは16体ぜんぶを触る。実際の遊びでは3体から始まって徐々に開くが、
+  //   ここでその門を閉じたままにすると Save.setChar が黙って失敗し、
+  //   「全員ぶん確かめたつもり」で1体しか見ていない状態になる。
+  //   門そのものは test/save.test.js が別に縛っている。
+  if (opt.locked !== true) { Save.data.sc = 99; Save.persist(); }
   // 画面なしの実行にスピーカーは無い。鳴らさないと決めておけば
   //   BGM スケジューラが毎回の刻みで空回りする分も消える。
   Snd.muted = true;
