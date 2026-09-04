@@ -1,0 +1,14 @@
+{
+  "name": "edu-probe",
+  "private": true,
+  "version": "1.0.0",
+  "description": "実ブラウザでゲームを測る装置。ここだけが npm を使う —— src/ と出荷物は依存ゼロのまま。",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "report": "node write-report.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}

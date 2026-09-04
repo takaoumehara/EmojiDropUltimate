@@ -1,7 +1,7 @@
 // ============================================================
 // main.js — 起動・メインループ・上部ボタン配線
 // ============================================================
-import { ctx, resize, applyTransform, VIEW } from './env.js';
+import { ctx, resize, applyTransform, VIEW, noteFrame } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
 import { Weather, CITIES, pickCity, setCity } from './weather.js';
@@ -126,8 +126,12 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && (ga
 
 let lastT = performance.now();
 function loop(now) {
-  const dt = Math.min((now - lastT) / 1000, 0.034);
+  const raw = (now - lastT) / 1000;
+  const dt = Math.min(raw, 0.034);
   lastT = now;
+  // 端末が追いつけていないなら解像度を落とす(→ env.js の「解像度の自動調整」)。
+  //   下げた直後は resize() が走るので、その回の描画は新しい大きさで行われる。
+  noteFrame(raw);
   applyTransform();
   update(dt, keys);
   draw();

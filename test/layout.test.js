@@ -120,3 +120,56 @@ test('resize すると板が窓の中央に置かれ、指の座標がそこへ�
     env.resize();
   }
 });
+
+// ============================================================
+// 解像度の自動調整
+//
+//   フレーム時間は「塗るピクセル数」でほぼ決まる。実測(CPU 1/4、
+//   docs/probe-report.md)では DPR 2 で 30fps、DPR 1 で 60fps だった。
+//   同じ CPU・同じ盤面で、解像度を半分にしただけで倍になる。
+//
+//   ここで縛るのは3つ:
+//     1. 速い端末では**一度も下がらない**(見た目を勝手に変えない)
+//     2. 遅い端末では下がる
+//     3. **下がるだけで、戻らない**(行き来すると画面の作り直しが目立つ)
+// ============================================================
+
+const { QUALITY, noteFrame, resetQuality } = env;
+
+test('速い端末では解像度が一度も下がらない', () => {
+  resetQuality();
+  const before = QUALITY.cap;
+  for (let i = 0; i < 3000; i++) noteFrame(1 / 60);   // 60fps を維持
+  assert.equal(QUALITY.cap, before, '間に合っているのに解像度が下がった');
+  assert.equal(QUALITY.lowered, 0);
+  resetQuality();
+});
+
+test('起動直後の数フレームが遅くても、すぐには下げない', () => {
+  resetQuality();
+  for (let i = 0; i < 100; i++) noteFrame(0.2);       // 読み込み直後の詰まり
+  assert.equal(QUALITY.lowered, 0, '起動直後の数フレームで判断してしまっている');
+  resetQuality();
+});
+
+test('遅い端末では段階的に下がり、下限で止まる', () => {
+  resetQuality();
+  const start = QUALITY.cap;
+  for (let i = 0; i < 4000; i++) noteFrame(0.05);     // 20fps がずっと続く
+  assert.ok(QUALITY.cap < start, `遅いのに解像度が下がっていない (${QUALITY.cap})`);
+  assert.equal(QUALITY.cap, 1, `下限まで下がること (${QUALITY.cap})`);
+  const lowered = QUALITY.lowered;
+  for (let i = 0; i < 4000; i++) noteFrame(0.05);
+  assert.equal(QUALITY.lowered, lowered, '下限を超えて下げ続けている');
+  resetQuality();
+});
+
+test('一度下げたら、速くなっても戻さない', () => {
+  resetQuality();
+  for (let i = 0; i < 1000; i++) noteFrame(0.05);     // 遅い
+  const lowered = QUALITY.cap;
+  assert.ok(lowered < 2, '前提: 一度下がっていること');
+  for (let i = 0; i < 3000; i++) noteFrame(1 / 60);   // 速くなった
+  assert.equal(QUALITY.cap, lowered, '戻してしまっている(画面の作り直しが目立つ)');
+  resetQuality();
+});
