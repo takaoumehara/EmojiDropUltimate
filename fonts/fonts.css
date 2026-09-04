@@ -1,0 +1,40 @@
+/* ============================================================
+   fonts.css — 書体を自分で配る
+
+   なぜ同梱するのか:
+     もともとは <head> の中で Google Fonts のスタイルシートを
+     rel="stylesheet" で読んでいた。これは**描画をブロックする**ので、
+     third-party の CDN が返ってくるまでゲームは1行も動けない。
+     実測(Playwright、この環境の proxy 越し)では、その1本に 12.4秒かかり、
+     DOMContentLoaded ごとゲームの起動が止まっていた。
+     秒数はこの環境固有だが、**third-party が起動の一本道に居る**という
+     形そのものが問題で、回線が悪い所やCDNが届かない所では同じことが起きる。
+
+     もうひとつ。sw.js は cross-origin を素通しする(そうしないと
+     api/ まで巻き込む)ので、この1本だけは**オフラインでキャッシュされない**。
+     「PWA でオフライン対応」と言いながら、書体だけ毎回取りに行っていた。
+
+   何を持ってきたか:
+     Baloo 2 と Outfit の **latin サブセットのみ**。どちらも可変フォントなので
+     ウェイトごとにファイルは要らず、2ファイル・計65KB で足りる。
+     このゲームの表示は日本語と英語で、latin-ext / vietnamese / devanagari は使わない。
+
+   ライセンス:
+     どちらも SIL Open Font License 1.1。再配布可。→ fonts/OFL.txt
+   ============================================================ */
+
+@font-face {
+  font-family: 'Baloo 2';
+  font-style: normal;
+  font-weight: 400 800;   /* 可変フォント。1ファイルで全ウェイト */
+  font-display: swap;
+  src: url('Baloo2.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('Outfit.woff2') format('woff2');
+}

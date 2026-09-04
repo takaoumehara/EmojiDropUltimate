@@ -55,9 +55,19 @@ test('コールドスタート: 開いてから遊べるまで', async ({ page }
     const n = performance.getEntriesByType('navigation')[0] || {};
     return { domContentLoaded: Math.round(n.domContentLoaded || 0), load: Math.round(n.loadEventEnd || 0) };
   });
-  results.coldStart = { readyMs: ready, ...nav };
-  console.log(`  コールドスタート: ${ready}ms (DCL ${nav.domContentLoaded}ms)`);
+  // 起動を待たせているものを一緒に記録する。ここに third-party が居ると、
+  //   ゲームが動き出す時刻が他人の CDN 任せになる。実際そうなっていた:
+  //   Google Fonts のスタイルシート1本(rel="stylesheet" は描画をブロックする)を
+  //   待って 12.4秒、DOMContentLoaded ごと止まっていた。いまは同梱している。
+  const blockers = await page.evaluate(() => performance.getEntriesByType('resource')
+    .filter(r => new URL(r.name).origin !== location.origin)
+    .map(r => ({ url: r.name, ms: Math.round(r.duration) })));
+
+  results.coldStart = { readyMs: ready, ...nav, thirdParty: blockers };
+  console.log(`  コールドスタート: ${ready}ms（DCL ${nav.domContentLoaded}ms） / 外部リソース ${blockers.length}件`);
   expect(ready).toBeLessThan(15_000);
+  // 起動の一本道に third-party を置かない。
+  expect(blockers.map(b => b.url), '起動時に外部から読んでいるものがある').toEqual([]);
 });
 
 test('遊んでいる間のフレーム時間', async ({ page }) => {

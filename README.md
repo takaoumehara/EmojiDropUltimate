@@ -166,6 +166,11 @@ server/       中継サーバー(任意・依存ゼロ)。立てなくても遊�
   index.js    起動口(node server/index.js)
 test/         node --test 用のテスト
   headless.js 画面なしでゲームを走らせるハーネス(自動プレイのボット付き)
+tools/        検証の道具。ここだけが npm を使う(src/ と出荷物は依存ゼロのまま)
+  verify.mjs        検証をひととおり回す入口
+  sim/              自動プレイを何百本も回してバランスを測る(依存ゼロ)
+  probe/            実ブラウザで性能・オフライン・画面を測る(Playwright)
+  native-audit.mjs  ネイティブ化の価値を台帳にして再生成する
 sw.js / manifest.webmanifest / icons/   PWA
 docs/brief.md 設計判断の記録
 vercel.json
@@ -190,6 +195,28 @@ QRエンコーダ、セーブと章進行、生成ステージの正規化、方
 
 中継サーバーは Node 22 標準の WebSocket クライアントで**実際に接続して**検証する
 (`server.test.js`)。3〜4人の部屋、送り主の識別、流量制限、70KB のメッセージ、絵文字まで。
+
+### 遊びのほうを測る
+
+テストは「壊れていないか」を守るが、**遊びの良し悪しは見ていない**。
+初見が13秒で死んでも、5秒なにも起きない空白があっても、テストは緑のまま通る。
+そこを測る道具が `tools/` にある。
+
+```bash
+node tools/verify.mjs           # テスト + 自動プレイ + 台帳(約1分・依存ゼロ)
+node tools/verify.mjs --full    # 実ブラウザの計測も(約5分・Playwright が要る)
+node tools/sim/run.mjs --report # 自動プレイ576本 → docs/sim-report.md
+```
+
+- **`tools/sim/`** — 16キャラ × 3難易度 × 4段階の腕前 × 種 で自動プレイし、
+  突破率・初回被弾までの時間・空白時間・ベル経済・ボスの札の分布を出す。
+  **1実行 = 1ワーカー**(モジュールのキャッシュで決定性が壊れるため。理由は
+  `tools/sim/worker.mjs` のヘッダ)。→ [docs/sim-report.md](docs/sim-report.md)
+- **`tools/probe/`** — 実ブラウザでフレーム時間・コールドスタート・
+  オフライン起動・ストレージ喪失・8ビューポート×日英の画面を測る。
+  npm はここの中だけ。→ [docs/probe-report.md](docs/probe-report.md)
+- 何が測れて**何が測れないか**は [docs/verify-loop.md](docs/verify-loop.md) に書いてある。
+  面白さは測れない。上がるのは床であって天井ではない。
 
 ## 🚀 デプロイ(Vercel + Gemini)
 AIステージ生成のAPIキーはサーバー側に隠します(静的HTMLに埋め込むと露出するため)。

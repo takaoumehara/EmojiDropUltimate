@@ -13,7 +13,7 @@
 // バージョンを上げると古い shell キャッシュが捨てられ、precache がやり直される。
 //   **モジュールを追加したら必ず上げる。** 上げないと、すでに遊んだ端末は
 //   新しいファイルが入っていない古い shell を持ち続ける。
-const VERSION = 'edu-v4';
+const VERSION = 'edu-v5';   // 書体を同梱したのでシェルが変わった
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const CURRENT_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
@@ -29,6 +29,11 @@ const APP_SHELL = [
   '/icons/icon-512.png',
   '/icons/icon-512-maskable.png',
   '/icons/apple-touch-icon.png',
+  // 書体は自分で配っている。cross-origin を素通しする作りなので、
+  //   外から読んでいたころはここだけオフラインでキャッシュできなかった。
+  '/fonts/fonts.css',
+  '/fonts/Baloo2.woff2',
+  '/fonts/Outfit.woff2',
   '/src/aistage.js',
   '/src/audio.js',
   '/src/bossai.js',

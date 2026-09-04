@@ -304,3 +304,58 @@ test('resume point: storage that throws does not break the run', async () => {
   assert.deepEqual(Save.resumePoint(), { stage: 1, time: 5000, wave: 2 },
     'the point must still be usable in memory even when it cannot be persisted');
 });
+
+// ============================================================
+// 画面のゆれ と OS の「動きを減らす」設定
+//
+//   docs/store-readiness.md は「prefers-reduced-motion は対応済み」と
+//   書いていたが、src/ にも index.html にも一度も出てこなかった。
+//   実体は設定画面の手動トグルだけで、OS の設定は読んでいなかった。
+//   ここで、読むようになったこと**と**、
+//   本人の選択がそれより優先されることの両方を縛る。
+// ============================================================
+
+/** matchMedia を差し替えて何かする。必ず元に戻す。 */
+async function withReducedMotion(reduce, fn) {
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
+  globalThis.matchMedia = (q) => ({ matches: reduce && /prefers-reduced-motion/.test(q) });
+  try { return await fn(); }
+  finally {
+    if (real) Object.defineProperty(globalThis, 'matchMedia', real);
+    else delete globalThis.matchMedia;
+  }
+}
+
+test('save: OS が「動きを減らす」なら、既定でゆれを抑える', async () => {
+  await withReducedMotion(true, async () => {
+    const Save = await freshSave(makeMemoryLocalStorage());
+    assert.equal(Save.data.shake, -1, '前提: 本人はまだ選んでいない');
+    assert.equal(Save.shake(), 0, 'OS が減らす設定なのに、ゆれたまま');
+  });
+});
+
+test('save: OS が何も言わないなら、既定はゆれあり', async () => {
+  await withReducedMotion(false, async () => {
+    const Save = await freshSave(makeMemoryLocalStorage());
+    assert.equal(Save.shake(), 1);
+  });
+});
+
+test('save: 本人が選んだら、OS の設定より本人が優先される', async () => {
+  await withReducedMotion(true, async () => {
+    const Save = await freshSave(makeMemoryLocalStorage());
+    Save.setShake(true);                       // OS は減らす設定だが「あり」を選んだ
+    assert.equal(Save.shake(), 1, '本人の選択が OS に上書きされている');
+    Save.setShake(false);
+    assert.equal(Save.shake(), 0);
+  });
+});
+
+test('save: matchMedia が無い環境でも落ちない', async () => {
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
+  delete globalThis.matchMedia;
+  try {
+    const Save = await freshSave(makeMemoryLocalStorage());
+    assert.equal(Save.shake(), 1, 'matchMedia が無いと例外になっている');
+  } finally { if (real) Object.defineProperty(globalThis, 'matchMedia', real); }
+});

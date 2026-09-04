@@ -23,11 +23,21 @@ const DEF = {
   resume: 0,    // 次に挑むステージ番号(つづきから)
   rp: null,     // 死んだ地点(ステージ内の進行度)
   diff: 1,      // むずかしさ 0=やさしい 1=ふつう 2=むずかしい
-  shake: 1,     // 画面のゆれ(0にすると揺れ・閃光・粒子を抑える)
+  shake: -1,    // 画面のゆれ。-1=未選択(OSの設定に従う) / 0=ひかえめ / 1=あり
   chapter: 0,   // いま挑んでいる章(0=第1章)
   sawStory: 0,  // オープニングを見た章のビットマスク
   tcuts: 0,     // きずなで切った数(案内をやめる判断に使う)
 };
+
+// OS の「動きを減らす」設定。matchMedia が無い環境(テストのハーネス・
+//   古い WebView)では黙って「減らさない」に倒す —— ここで例外を出すと
+//   保存まわり全部が巻き添えになる。
+function prefersReducedMotion() {
+  try {
+    return typeof matchMedia === 'function'
+      && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) { return false; }
+}
 
 // 1章の面数 = 道中6 + 決着1。ここを 6 のまま数えていると章が終わらない。
 export const CHAPTER_LEN = 7;
@@ -162,7 +172,16 @@ export const Save = {
   //   自動調整だけだと「子供に渡すときに弱くする」ができない。
   diff() { const d = this.data.diff; return d === 0 || d === 2 ? d : 1; },
   setDiff(d) { this.data.diff = d === 0 || d === 2 ? d : 1; this.persist(); },
-  shake() { return this.data.shake === 0 ? 0 : 1; },
+  // 画面のゆれ。**本人が選んでいればそれが最優先**で、選んでいないときだけ
+  //   OS の「視差効果を減らす / アニメーションを減らす」に従う。
+  //   ここを読んでいなかったので、docs/store-readiness.md が
+  //   「prefers-reduced-motion は対応済み」と書いているのに
+  //   src/ のどこにも存在しない、という食い違いになっていた。
+  shake() {
+    const v = this.data.shake;
+    if (v === 0 || v === 1) return v;          // 本人が選んだ
+    return prefersReducedMotion() ? 0 : 1;     // 選んでいない → OS に従う
+  },
   setShake(v) { this.data.shake = v ? 1 : 0; this.persist(); },
   // 死んだ地点(ステージ内のどこまで進んでいたか)。ステージ番号だけだと
   // 「つづき」がいつも頭からになり、同じ道のりを何度もやり直すことになる。
