@@ -113,6 +113,6 @@
 
 | 機能 | 要る設定 |
 |---|---|
-| ふたりでプレイの出会い | `UPSTASH_REDIS_REST_URL` / `_TOKEN` |
+| みんなでプレイの出会い | `UPSTASH_REDIS_REST_URL` / `_TOKEN` |
 | 直結の補助(TURN) | `TURN_URLS` / `TURN_CREDENTIAL`(無くても既定で動く) |
 | AIステージ生成 | `GEMINI_API_KEY` |

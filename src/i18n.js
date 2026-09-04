@@ -4,8 +4,9 @@
 // ============================================================
 
 // ストレージ無効環境(Safari プライベート等)では読み書きが例外を投げる。
-function safeLang() { try { return localStorage.getItem('edu_lang'); } catch (e) { return null; } }
-function safeSetLang(v) { try { localStorage.setItem('edu_lang', v); } catch (e) {} }
+import './legacy.js';   // 旧名(edu_*)の保存データを引き継ぐ。読む前に必ず走らせる
+function safeLang() { try { return localStorage.getItem('eb_lang'); } catch (e) { return null; } }
+function safeSetLang(v) { try { localStorage.setItem('eb_lang', v); } catch (e) {} }
 
 const DICT = {
   ja: {
@@ -19,8 +20,8 @@ const DICT = {
     mode_endless_sub: '毎回あたらしい',
     daily: 'デイリー',
     daily_sub: '全員同じ面で競う',
-    coop: 'ふたりでプレイ',
-    coop_sub: 'あいことばで友達と一緒に',
+    coop: 'みんなでプレイ',
+    coop_sub: 'あいことばで最大4人',
     coop_host_left: '🔁 ホストが抜けました — 引き継ぎます',
     boss_escaped: '🏃 逃げられた…',
     ls_revive: 'まだ終わっていない',
@@ -35,11 +36,11 @@ const DICT = {
     ls_greed_n: '強欲・{n}',
     ls_legacy_n: '{n} 撃破',
     ls_turn_n: '転・{n}',
-    // きずな(ふたり以上のときだけ張る線)
+    // きずな(2人以上のときだけ張る線)
     tether_snap: '💔 きずなが切れた!',
     tether_strain: '⚠️ 離れすぎ!',
     tether_back: '💞 きずながもどった',
-    tether_hint: '✂️ ふたりを結ぶ線に敵を当てると切れる(離れすぎると線が切れる)',
+    tether_hint: '✂️ 味方を結ぶ線に敵を当てると切れる(離れすぎると線が切れる)',
     weather_scene: 'この天気からステージを生成',
     locating: '現在地を取得中…',
     share: '📸 シェア / 保存',
@@ -102,7 +103,7 @@ const DICT = {
     daily: 'Daily',
     daily_sub: 'Everyone, same stage',
     coop: 'Play together',
-    coop_sub: 'Join a friend with a code',
+    coop_sub: 'Up to 4 with one code',
     coop_host_left: '🔁 Host left — taking over',
     boss_escaped: '🏃 It got away…',
     ls_revive: 'NOT OVER YET',

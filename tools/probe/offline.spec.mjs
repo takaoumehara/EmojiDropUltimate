@@ -55,7 +55,13 @@ test('サービスワーカーが登録され、app shell が入る', async ({ p
 test('回線を切っても起動して遊べる', async ({ page, context }) => {
   await page.goto('/');
   await page.waitForFunction(() => window.EDU && window.EDU.game);
+  // キャッシュが埋まるだけでは足りない。**サービスワーカーがこのページを
+  //   受け持っている**(controller が付いている)ところまで待たないと、
+  //   回線を切った瞬間の再読み込みが素通しでネットワークへ行き、
+  //   ERR_INTERNET_DISCONNECTED になる。sw.js は activate で clients.claim() を
+  //   呼ぶので、初回の訪問でもいずれ controller は付く。
   await page.waitForFunction(async () => {
+    if (!navigator.serviceWorker.controller) return false;
     const n = await caches.keys();
     if (!n.length) return false;
     const k = await (await caches.open(n[0])).keys();

@@ -656,7 +656,7 @@ function wordmark(cx, cy, scale = 1, alpha = 1) {
   const g = ctx.createLinearGradient(0, cy - size * 0.6, 0, cy + size * 0.55);
   g.addColorStop(0, '#fff6d0'); g.addColorStop(0.5, '#ffd23f'); g.addColorStop(1, '#f2a52c');
   ctx.shadowColor = 'rgba(255,190,60,0.45)'; ctx.shadowBlur = 26 * scale;
-  txt('EMOJI DROP', cx, cy, { size, weight: 800, family: FONT_DISPLAY, color: g });
+  txt('EMOJI BLASTERS', cx, cy, { size, weight: 800, family: FONT_DISPLAY, color: g });
   ctx.shadowBlur = 0;
   txt('U L T I M A T E', cx, cy + size * 0.72, { size: 10.5 * UI * scale, weight: 500, color: '#8ea6cc', track: 3.4 * scale });
   ctx.restore();
@@ -1315,7 +1315,7 @@ function drawQR(text, cx, cy, box) {
   return true;
 }
 
-// === ふたりでプレイ: ロビー ===
+// === みんなでプレイ: ロビー ===
 function drawCoopLobby() {
   const time = game.titleAnim, ja = getLang() === 'ja';
   nightSky('#04140f', '#0a2038');
@@ -1487,7 +1487,7 @@ function drawCoopLobby() {
         W / 2, by + 2 * UI, { size: 9.5 * UI, weight: 500, color: COL.gold, maxW: bw });
       by += 16 * UI;
     }
-    if (!host) txt(ja ? 'どちらが押してもふたり同時に始まります' : 'either player can start', W / 2, by + 2 * UI,
+    if (!host) txt(ja ? '誰が押しても全員同時に始まります' : 'anyone can start for everyone', W / 2, by + 2 * UI,
       { size: 9.5 * UI, weight: 500, color: COL.mute, maxW: bw });
     if (!host) by += 16 * UI;
   } else if (host) {

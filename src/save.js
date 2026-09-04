@@ -9,9 +9,10 @@
 //   失敗時はメモリ上のフォールバックストアに静かに切り替える(セーブは
 //   永続化されないが、ゲーム自体は最後まで普通に遊べる)。
 // ============================================================
+import './legacy.js';   // 旧名(edu_*)の保存データを引き継ぐ。読む前に必ず走らせる
 import { SKINS, CHARS, todayKey, charUnlocked, unlockedCharCount, nextCharUnlock } from './config.js';
 
-const KEY = 'edu_save';
+const KEY = 'eb_save';
 const DEF = {
   bestScore: 0, bestWorld: 0, bestDailyScore: 0,
   kills: 0, shots: 0, hits: 0, deaths: 0, runs: 0,

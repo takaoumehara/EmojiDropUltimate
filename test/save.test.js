@@ -8,6 +8,11 @@ installGlobals();
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CHARS, todayKey } from '../src/config.js';
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // save.js reads localStorage once at import time (`data: load()`), so to
 // exercise different storage backends across test cases we need a *fresh*
@@ -135,7 +140,7 @@ test('save: 全16体が2章(14面)以内に開く', async () => {
 test('save: 開放より前のセーブは、いきなり3体に戻らない', async () => {
   const store = makeMemoryLocalStorage();
   // 1章を突破して2章の3面まで進んでいた人(sc という概念がまだ無い)
-  store.setItem('edu_save', JSON.stringify({ bestWorld: 3, chapter: 1, char: 13 }));
+  store.setItem('eb_save', JSON.stringify({ bestWorld: 3, chapter: 1, char: 13 }));
   const Save = await freshSave(store);
   assert.equal(Save.stagesCleared(), 13, '使っていた 🦍 が開くところまで進んでいたことにする(没収しない)');
   assert.equal(Save.char().id, 'gorilla', '番号で保存されていた選択が id へ移ること');
@@ -143,7 +148,7 @@ test('save: 開放より前のセーブは、いきなり3体に戻らない', a
 
 test('save: 進行だけがある古いセーブは、到達点から数え直す', async () => {
   const store = makeMemoryLocalStorage();
-  store.setItem('edu_save', JSON.stringify({ bestWorld: 3, chapter: 1 }));   // char 未指定
+  store.setItem('eb_save', JSON.stringify({ bestWorld: 3, chapter: 1 }));   // char 未指定
   const Save = await freshSave(store);
   assert.equal(Save.stagesCleared(), 10, '到達ステージ + 突破した章から数え直すこと');
 });
@@ -358,4 +363,63 @@ test('save: matchMedia が無い環境でも落ちない', async () => {
     const Save = await freshSave(makeMemoryLocalStorage());
     assert.equal(Save.shake(), 1, 'matchMedia が無いと例外になっている');
   } finally { if (real) Object.defineProperty(globalThis, 'matchMedia', real); }
+});
+
+// ============================================================
+// 旧名からの引き継ぎ
+//
+//   ゲームの名前が EMOJI DROP ULTIMATE から EMOJI BLASTERS に変わり、
+//   localStorage のキーも `edu_*` → `eb_*` になった。
+//   すでに遊んでいる人の端末には `edu_*` しか無いので、そのままでは
+//   **名前を変えただけで章の進行もハイスコアも連続日数も消える**。
+//   遊んだ時間を製品側の都合で捨てないための引き継ぎを、ここで縛る。
+// ============================================================
+
+const { migrateLegacyKeys, LEGACY_KEYS } = await import('../src/legacy.js');
+
+test('legacy: 旧キーしか無い端末では、新キーに引き継がれる', () => {
+  const store = makeMemoryLocalStorage();
+  store.setItem('edu_save', JSON.stringify({ bestScore: 4200, chapter: 2 }));
+  store.setItem('edu_hiscore', '4200');
+  const moved = migrateLegacyKeys(store);
+  assert.ok(moved.includes('eb_save'), '進行データが引き継がれていない');
+  assert.equal(store.getItem('eb_hiscore'), '4200');
+  assert.equal(JSON.parse(store.getItem('eb_save')).chapter, 2);
+});
+
+test('legacy: 新キーが既にあるときは、旧キーで上書きしない', () => {
+  const store = makeMemoryLocalStorage();
+  store.setItem('edu_hiscore', '100');    // 昔の記録
+  store.setItem('eb_hiscore', '9999');    // いまの記録
+  migrateLegacyKeys(store);
+  assert.equal(store.getItem('eb_hiscore'), '9999', '新しい記録が古い記録で潰された');
+});
+
+test('legacy: 旧キーは消さない(引き継ぎに失敗しても元が残る)', () => {
+  const store = makeMemoryLocalStorage();
+  store.setItem('edu_save', '{"chapter":1}');
+  migrateLegacyKeys(store);
+  assert.equal(store.getItem('edu_save'), '{"chapter":1}', '旧キーを消してしまっている');
+});
+
+test('legacy: 保存が使えない端末でも例外を投げない', () => {
+  const moved = migrateLegacyKeys(makeThrowingLocalStorage());
+  assert.deepEqual(moved, [], '引き継げないなら空で返ること');
+});
+
+test('legacy: 引き継ぎの対象に、実際に使っているキーが漏れなく入っている', () => {
+  // src/ と index.html が読み書きしている eb_* を全部拾い、
+  // LEGACY_KEYS の右辺と突き合わせる。片方を足してもう片方を忘れると、
+  // その設定だけが名前変更で消える。
+  const files = readdirSync(join(ROOT, 'src')).filter(f => f.endsWith('.js')).map(f => join(ROOT, 'src', f));
+  files.push(join(ROOT, 'index.html'));
+  const used = new Set();
+  for (const f of files) {
+    for (const m of readFileSync(f, 'utf8').matchAll(/'(eb_[a-z_]+)'/g)) used.add(m[1]);
+  }
+  const covered = new Set(Object.values(LEGACY_KEYS));
+  const missing = [...used].filter(k => !covered.has(k)).sort();
+  assert.deepEqual(missing, [],
+    `引き継ぎの対象から漏れているキー: ${missing.join(', ')}\n` +
+    '  → src/legacy.js の LEGACY_KEYS に足すこと');
 });

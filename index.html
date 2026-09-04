@@ -4,20 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,maximum-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#05050f">
-<!-- 中継サーバー(任意)。設定すると、直結が張れない回線どうしでも2人プレイが繋がる。
+<!-- 中継サーバー(任意)。設定すると、直結が張れない回線どうしでも繋がる。
      直結と同時に試して速い方を使うので、繋がる回線ではこれまでと同じ速さのまま。
      空のままなら中継は一切使わず、これまで通り端末どうしの直結だけで動く。
      立て方: node server/index.js → server/README.md
      例) <meta name="coop-relay" content="wss://relay.example.com"> -->
 <meta name="coop-relay" content="">
-<title>EMOJI DROP ULTIMATE</title>
+<title>EMOJI BLASTERS</title>
 <meta name="description" content="方向がガラッと変わる絵文字シューティング。リアル天気連動AI・学習ボス・AIステージ無限生成。">
 <meta property="og:type" content="website">
-<meta property="og:title" content="EMOJI DROP ULTIMATE 🚀">
+<meta property="og:title" content="EMOJI BLASTERS 🚀">
 <meta property="og:description" content="方向がガラッと変わる絵文字シューティング。リアル天気で世界が変わり、AIが毎回ステージを生成。">
 <meta property="og:image" content="og.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="EMOJI DROP ULTIMATE 🚀">
+<meta name="twitter:title" content="EMOJI BLASTERS 🚀">
 <meta name="twitter:description" content="方向が変わる×リアル天気連動×AIが無限にステージ生成。ワンタップで即プレイ。">
 <meta name="twitter:image" content="og.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
@@ -26,7 +26,7 @@
 <!-- iOS は manifest.webmanifest の表示設定を無視するため個別に指定する -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="EMOJI DROP">
+<meta name="apple-mobile-web-app-title" content="EMOJI BLASTERS">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
@@ -187,7 +187,7 @@ canvas{display:block;position:fixed;inset:0}
 // ============================================================
 import { getLang } from './src/i18n.js';
 
-const DISMISS_KEY = 'edu_pwa_dismissed';
+const DISMISS_KEY = 'eb_pwa_dismissed';
 const nudge = document.getElementById('pwaNudge');
 const elTitle = document.getElementById('pnTitle');
 const elSub = document.getElementById('pnSub');
@@ -206,7 +206,7 @@ function isStandalone() {
   } catch (e) { return false; }
 }
 function hasPlayed() {
-  try { return !!localStorage.getItem('edu_save'); } catch (e) { return false; }
+  try { return !!localStorage.getItem('eb_save'); } catch (e) { return false; }
 }
 function wasDismissed() {
   try { return localStorage.getItem(DISMISS_KEY) === '1'; } catch (e) { return false; }

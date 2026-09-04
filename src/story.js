@@ -31,7 +31,7 @@ const CHAPTERS = [
     line: '{boss} から {target} をすくえ', lineEn: 'Save {target} from {boss}',
     saves: ['🐣', '🐥', '🐤', '🐰', '🐨', '🐼'],
     beats: [
-      { emoji: '🎪', ja: 'エモジドロップ団の、いつもの夜だった。', en: 'Just another night at the Emoji Drop show.' },
+      { emoji: '🎪', ja: 'エモジブラスター団の、いつもの夜だった。', en: 'Just another night at the Emoji Blasters show.' },
       { emoji: '🌪️', ja: 'とつぜん幕がめくれ、6人のなかまが連れ去られた。', en: 'The curtain tore. Six friends were dragged away.' },
       { emoji: '🐣', ja: 'ひとりずつ、ちがう世界に隠された。', en: 'One hidden in each world.' },
       { emoji: '🛩️', ja: 'かわりに飛べるのは、きみだけだ。', en: 'You are the only one left who can fly.' },

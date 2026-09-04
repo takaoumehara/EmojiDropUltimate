@@ -2,13 +2,14 @@
 // state.js — ゲーム状態の唯一の保持者
 //   game は setGame() で差し替える(ライブバインディングで全モジュールに伝播)。
 // ============================================================
+import './legacy.js';   // 旧名(edu_*)の保存データを引き継ぐ。読む前に必ず走らせる
 import { CFG, STAGES } from './config.js';
 
 // localStorage の読み取りは Safari プライベートブラウジング等で例外を投げうる。
 // ここは newGame() 呼び出し時(モジュール読込時含む)に即実行されるため、
 // 例外を握って安全側(ハイスコア未保存扱い)にフォールバックする。
 function safeHiScore() {
-  try { return parseInt(localStorage.getItem('edu_hiscore') || '0'); }
+  try { return parseInt(localStorage.getItem('eb_hiscore') || '0'); }
   catch (e) { return 0; }
 }
 

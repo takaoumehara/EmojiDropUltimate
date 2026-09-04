@@ -2,6 +2,7 @@
 // weather.js — AI World Engine (Open-Meteo, キー不要)
 //   現実の天気がゲームのルール(敵速度/湧き/落雷/夜/風…)を書き換える。
 // ============================================================
+import './legacy.js';   // 旧名(edu_*)の保存データを引き継ぐ。読む前に必ず走らせる
 import { clamp } from './config.js';
 import { getLang } from './i18n.js';
 
@@ -26,10 +27,10 @@ export const CITIES = [
 ];
 
 function savedCity() {
-  try { return localStorage.getItem('edu_city') || ''; } catch (e) { return ''; }
+  try { return localStorage.getItem('eb_city') || ''; } catch (e) { return ''; }
 }
 export function setCity(id) {
-  try { localStorage.setItem('edu_city', id); } catch (e) { /* 保存できなくても動く */ }
+  try { localStorage.setItem('eb_city', id); } catch (e) { /* 保存できなくても動く */ }
 }
 // タイムゾーンから地域を当てる。当たらなければ東京。位置情報の許可は一切求めない。
 export function pickCity() {

@@ -3,15 +3,15 @@
 > 2026-09-04 生成。`node tools/native-audit.mjs` で再生成する。**手で書き換えない。**
 >
 > 判断そのものは [native-decision.md](./native-decision.md) にある。ここはその材料。
-> 数字は `src/`(26ファイル・9448行)・`index.html`・`sw.js` の実測。
+> 数字は `src/`(28ファイル・9622行)・`index.html`・`sw.js` の実測。
 
 ## 1. いま何で出来ているか
 
 | | 件数 | どこに |
 |---|---:|---|
 | Canvas 2D の呼び出し | 734 | audio.js(27) env.js(4) render.js(662) theme.js(41) |
-| localStorage | 22 | audio.js(3) diag.js(2) engine.js(1) i18n.js(2) … |
-| navigator. | 33 | diag.js(1) i18n.js(1) main.js(3) sharecard.js(5) … |
+| localStorage | 26 | audio.js(3) diag.js(2) engine.js(1) i18n.js(2) … |
+| navigator. | 36 | diag.js(1) i18n.js(1) main.js(3) native.js(3) … |
 | requestAnimationFrame | 3 | main.js(2) index.html(1) |
 | サービスワーカー | 2 | index.html(2) |
 
@@ -23,7 +23,7 @@
 
 | 機能 | いまの実装 | 繋ぐ先 | Apple 4.2 に効くか |
 |---|---:|---|:--:|
-| 触覚(バイブ) | **0件** | ベル取得・コンボ上昇・ボス撃破 | ○ |
+| 触覚(バイブ) | 3件 | ベル取得・コンボ上昇・ボス撃破 | ○ |
 | プッシュ通知 | **0件** | デイリーチャレンジ / ストリーク | ○ |
 | 画面スリープ防止 | **0件** | 遊んでいるあいだ | — |
 | 全画面 | **0件** | 没入。PWA では manifest 任せ | — |
@@ -32,7 +32,7 @@
 | 課金 | **0件** | 無し。ゼロから | ○ |
 | 解析 | **0件** | 意図的に入れていない(src/diag.js:6-10) | — |
 
-**8 項目のうち 8 項目が 0 件。**
+**8 項目のうち 7 項目が 0 件。**
 つまり「ネイティブにすると device API が使える」という利点を、
 **このゲームはまだ一度も取りに行っていない**。
 包むだけでは、この列は 0 のままで何も増えない。

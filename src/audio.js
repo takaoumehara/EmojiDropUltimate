@@ -8,14 +8,15 @@
 //   compressor は「一斉に鳴ったとき歪む」のを防ぐ。convolver の残響は
 //   コードで作った減衰ノイズ(= インパルス応答)なので、外部ファイルは要らない。
 // ============================================================
+import './legacy.js';   // 旧名(edu_*)の保存データを引き継ぐ。読む前に必ず走らせる
 import { midiFreq, MUSIC_PALETTES } from './config.js';
 
 // localStorage は端末設定によっては読むだけで例外を投げる。音は落とさない。
 function readMute() {
-  try { return localStorage.getItem('edu_mute') === '1'; } catch (e) { return false; }
+  try { return localStorage.getItem('eb_mute') === '1'; } catch (e) { return false; }
 }
 function writeMute(v) {
-  try { localStorage.setItem('edu_mute', v ? '1' : '0'); } catch (e) { /* 保存できなくても鳴る */ }
+  try { localStorage.setItem('eb_mute', v ? '1' : '0'); } catch (e) { /* 保存できなくても鳴る */ }
 }
 
 // 音階の「度数」で考える。半音で足すと調から外れるが、度数なら必ず調の中に収まる。

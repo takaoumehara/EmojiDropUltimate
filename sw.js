@@ -1,5 +1,5 @@
 // ============================================================
-// sw.js — EMOJI DROP ULTIMATE service worker
+// sw.js — EMOJI BLASTERS service worker
 //   方針:
 //   - アプリシェル(HTML/manifest/icons/src の全モジュール)は install 時に precache。
 //   - ナビゲーションと /src/*.js は network-first: デプロイを即座に反映しつつ、
@@ -13,7 +13,7 @@
 // バージョンを上げると古い shell キャッシュが捨てられ、precache がやり直される。
 //   **モジュールを追加したら必ず上げる。** 上げないと、すでに遊んだ端末は
 //   新しいファイルが入っていない古い shell を持ち続ける。
-const VERSION = 'edu-v5';   // 書体を同梱したのでシェルが変わった
+const VERSION = 'eb-v1';   // 改名(EMOJI BLASTERS)でシェルもキーも変わった
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const CURRENT_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
@@ -47,7 +47,9 @@ const APP_SHELL = [
   '/src/i18n.js',
   '/src/input.js',
   '/src/leaderboard.js',
+  '/src/legacy.js',
   '/src/main.js',
+  '/src/native.js',
   '/src/qr.js',
   '/src/render.js',
   '/src/save.js',

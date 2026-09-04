@@ -11,6 +11,7 @@ import { Director } from './director.js';
 import { BossAI } from './bossai.js';
 import { t, getLang } from './i18n.js';
 import { generateStage, proceduralStage, scaleStage, chapterStages } from './aistage.js';
+import { Haptic } from './native.js';   // アプリの殻が居るときだけ触覚を出す(ブラウザでは無害)
 import { Save } from './save.js';
 import { SHARE_URL } from './sharecard.js';
 import { Leaderboard } from './leaderboard.js';
@@ -61,7 +62,7 @@ const DIFF = [
 ];
 export const diffMods = () => DIFF[Save.diff()];
 
-// === ふたりでプレイ: ホスト権威型の同期 ===
+// === みんなでプレイ: ホスト権威型の同期 ===
 //   敵・弾・ベル・ボスは「ホストの計算結果だけ」を正とし、ゲストはそれを映す。
 //   (各端末で別々に乱数・AI難易度調整・天気を回すと必ずズレるため)
 //   自機と自分の弾は各端末でローカルに動かす → 操作は遅延ゼロのまま。
@@ -297,6 +298,7 @@ function killPlayer() {
   explosion(p.x, p.y, 9, '#ff6600');
   game.flash = 0.5;
   game.stats.deathTimes.push(performance.now());
+  Haptic.hit();
   p.dead = true;
   p.power = Math.max(1, p.power - 1);
   p.options = Math.max(0, p.options - 1);
@@ -993,8 +995,12 @@ function damageEnemy(e, dmg) {
 }
 function killEnemy(e, silent = false) {
   const now = performance.now();
+  const mulWas = game.comboMul;
   if (now - game.lastKill < CFG.COMBO_WINDOW) { game.combo++; game.comboMul = Math.min(1 + Math.floor(game.combo / 3), CFG.MAX_COMBO_MUL); }
   else { game.combo = 0; game.comboMul = 1; }
+  // 倍率が「上がった瞬間」だけ。1体倒すごとに震わせると手が鈍って、
+  //   本当に強い場面が強く感じられなくなる。
+  if (game.comboMul > mulWas) Haptic.combo();
   game.lastKill = now;
   game.stats.kills++; game.stats.killTimes.push(now);
   gainSuper(SUPER_GAIN.kill);   // 必殺技は「倒した数」で溜まる。被弾では溜めない
@@ -1031,7 +1037,7 @@ function spawnBoss() {
     // 出現ごとに攻撃の並びを混ぜる → 同じボスでも毎回パターンが読めない
     phases: style.phases.map(ph => ({ attacks: shuffled(ph.attacks) })),
     ringAng: 0, spiralAng: 0,
-    scale: game.coop ? 2.15 : 1,   // ふたりで挑む時は画面を圧するサイズに
+    scale: game.coop ? 2.15 : 1,   // みんなで挑む時は画面を圧するサイズに
     // 「倒した」と思わせてから蘇る。1面だけで起きて2面3面で起きないと
     //   「たまたま」に見えて驚きにならないので、**全ボスが必ず一度は蘇る**。
     // 終盤に引ける札の数。人数が多いほど二段構えになる。
@@ -1476,6 +1482,7 @@ function bossRevive() {
 function bossDefeated() {
   const b = game.boss;
   if (!b) return;
+  Haptic.boss();
   // ここで state が finale に移り、ワールド配信が止まる。相方には
   // 「ボスが消えた世界」が永久に届かないので、撃破そのものを送る。
   if (game.coop && Coop.role === 'host') Coop.send({ t: 'bd' });
@@ -1616,6 +1623,7 @@ function hitBell(bell) {
 }
 function collectBell(bell) {
   gainSuper(SUPER_GAIN.bellPick);   // ベルは必殺技への一番大きな供給源
+  Haptic.bell();
   const bt = BELLS[bell.idx], p = game.player;
   Snd.power(); particles(bell.x, bell.y, 14, bt.color);
   popup(bell.x, bell.y - 16, bt.name + '!', bt.color);
@@ -1961,7 +1969,7 @@ function updateShake(dt) {
 
 // === 状態遷移 ===
 function saveHi() {
-  if (game.score > game.hi) { game.hi = game.score; trySetHi('edu_hiscore', String(game.hi)); }
+  if (game.score > game.hi) { game.hi = game.score; trySetHi('eb_hiscore', String(game.hi)); }
 }
 function freshGame() {
   const hi = game.hi; setGame(newGame()); game.hi = hi;
