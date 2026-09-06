@@ -12,7 +12,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { boot, sim, Bot, shutdown } from './headless.js';
+import { boot, sim, Bot, shutdown, makeHunter } from './headless.js';
 import { chapterOf, chapterCount, isHandmade, missionFor, finalMissionFor, finalStage } from '../src/story.js';
 import { chapterStages } from '../src/aistage.js';
 import { STAGES } from '../src/config.js';
@@ -232,8 +232,17 @@ test('章を制覇すると「つぎのショー」が立つ', async () => {
   now(h).stageTime = h.geo.stage().dur - 200;
   sim(h, { steps: 60 * 40, bot: Bot.idle, until: q => !!q.boss && !q.boss.entering });
   assert.ok(now(h).boss, 'ボスが出ること');
-  now(h).boss.hp = 1;
-  sim(h, { steps: 60 * 20, bot: Bot.idle, until: q => q.showT > 0 || q.state === 'victory' });
+  // 見たいのは「章を制覇したら予告が立つ」ことだけ。**終盤にどの札を引いたかに
+  //   依らせない。** 以前は boss.hp=1 を一度だけ置いて20秒待っていたが、それは
+  //   「その種でたまたま即死札(legacy 等)が出る」ことに寄りかかった書き方で、
+  //   乱数の並びが少しずれるだけで落ちた(ベルの供給を1つ足したら実際に落ちた)。
+  //   分裂・逃走・転回のどれを引いても決着するまで削り、事故死は数から外す。
+  now(h).lives = 99;
+  const bot = makeHunter(h.geo);
+  for (let i = 0; i < 60 && now(h).showT <= 0 && now(h).state !== 'victory'; i++) {
+    if (now(h).boss) now(h).boss.hp = 1;
+    sim(h, { steps: 60, bot, until: q => q.showT > 0 || q.state === 'victory' });
+  }
   const g2 = now(h);
   shutdown(h);
   assert.ok(g2.showT > 0, `つぎのショーの演出が立つこと (showT=${g2.showT})`);

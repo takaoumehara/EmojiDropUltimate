@@ -1,7 +1,8 @@
 // ============================================================
 // engine.js — ゲームロジック(更新・生成・当たり判定・状態遷移)
 // ============================================================
-import { CFG, BELLS, MAX_LIFE_BELL, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, MOVE_BY_EMOJI, DIRS, CHARS, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey } from './config.js';
+import { CFG, BELLS, MAX_LIFE_BELL, BOSS_PHASES, BOSS_STYLES, STYLE_KEYS, STAGES, PATTERNS, MOVE_BY_EMOJI, DIRS, CHARS, rand, randInt, pick, dist, clamp, lerp, makeRng, hashStr, todayKey, BOSS_BELL_MIN, BOSS_BELL_MAX,
+} from './config.js';
 import { W, H, SAFE } from './env.js';
 import { game, newGame, setGame } from './state.js';
 import { stage, dirDef, fwAngle, inAngle, isVert, latSpan, fwSpan, posFromPL, invPL, latOf, playerHome } from './geo.js';
@@ -1662,6 +1663,18 @@ function startStage(i) {
 function updateStage(dt) {
   game.stageTime += dt * 1000;
   const st = stage();
+  // ボス戦のあいだも、道中よりずっと遅くベルを降らせる。
+  //   終盤の `greed` は「撃破の瞬間に盤面へベルが在ること」を条件にしているのに、
+  //   供給がここで止まっていたので**条件が満たされる盤面が一度も作られなかった**
+  //   (自動プレイ66回で0回)。条件を緩めず、条件が満たされうる盤面を作る。
+  //   拾って強くなるか、残してボスに喰われる危険を取るか —— 判断もここで生まれる。
+  if (game.bossActive) {
+    game.nextBell -= dt * 1000;
+    if (game.nextBell <= 0) {
+      spawnBell();
+      game.nextBell = rand(BOSS_BELL_MIN, BOSS_BELL_MAX);
+    }
+  }
   if (!game.bossActive && game.warnT <= 0) {
     game.nextWave -= dt * 1000;
     if (game.nextWave <= 0) {
