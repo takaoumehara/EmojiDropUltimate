@@ -1,9 +1,9 @@
 # ネイティブ化の価値 — 台帳
 
-> 2026-09-04 生成。`node tools/native-audit.mjs` で再生成する。**手で書き換えない。**
+> 2026-09-06 生成。`node tools/native-audit.mjs` で再生成する。**手で書き換えない。**
 >
 > 判断そのものは [native-decision.md](./native-decision.md) にある。ここはその材料。
-> 数字は `src/`(28ファイル・9622行)・`index.html`・`sw.js` の実測。
+> 数字は `src/`(28ファイル・9646行)・`index.html`・`sw.js` の実測。
 
 ## 1. いま何で出来ているか
 

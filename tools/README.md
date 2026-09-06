@@ -20,6 +20,7 @@ node tools/verify.mjs --quick   # テストだけ(3秒)
 | `sim/` | 自動プレイを何百本も回して**遊びを測る** | ゼロ | [docs/sim-report.md](../docs/sim-report.md) |
 | `probe/` | 実ブラウザで**性能・オフライン・画面を測る** | Playwright | [docs/probe-report.md](../docs/probe-report.md) |
 | `native-audit.mjs` | ネイティブ化の価値を**台帳にする** | ゼロ | [docs/native-value.md](../docs/native-value.md) |
+| `og.mjs` | **SNS のリンクプレビュー画像を作り直す** | probe の Chromium を借りる | `og.png` |
 | `emoji-sheet.mjs` | 絵文字の見え方を並べる | ゼロ | `docs/emoji.html` |
 
 判断そのものは [docs/verify-loop.md](../docs/verify-loop.md) と

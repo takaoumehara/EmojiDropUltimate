@@ -118,3 +118,24 @@ test('fonts.css が参照する書体ファイルが実在する', () => {
     assert.ok(existsSync(join(ROOT, 'fonts', u)), `fonts.css が指すファイルが無い: ${u}`);
   }
 });
+
+test('OGP画像が規定のサイズで、app shell に入っている', () => {
+  // SNS のリンクプレビューは 1200x630。ここがずれると勝手に切り取られる。
+  // 改名したとき、タイトルもロゴも docs も直したのに og.png だけ旧名のまま
+  // 残っていた —— 画像は grep に掛からないので、こうして縛っておく。
+  // 作り直しは `node tools/og.mjs`(再生成できる形にしてある)。
+  const p = join(ROOT, 'og.png');
+  assert.ok(existsSync(p), 'og.png が無い');
+  const buf = readFileSync(p);
+  assert.equal(buf.subarray(1, 4).toString(), 'PNG', 'PNG ではない');
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
+  assert.equal(w, 1200, `OGP画像の幅が 1200 でない (${w})`);
+  assert.equal(h, 630, `OGP画像の高さが 630 でない (${h})`);
+  assert.ok(sw.includes("'/og.png'"), 'og.png が APP_SHELL に無い');
+});
+
+test('OGP画像を作り直す道具が残っている', () => {
+  // 手で作った画像は必ず腐る。次の改名でも1コマンドで済むようにしておく。
+  assert.ok(existsSync(join(ROOT, 'tools/og.mjs')),
+    'tools/og.mjs が無い —— og.png を手で作り直すことになる');
+});
