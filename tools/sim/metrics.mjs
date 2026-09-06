@@ -34,9 +34,39 @@ export function mean(arr) {
  * 1回の実行ぶんの観測者。
  * @param {*} geo src/geo.js（ベルの取り逃しを進行方向で判定するのに要る）
  */
+/**
+ * 死因を推定する。engine の当たり判定は
+ *   ① 敵弾  ② 敵の本体  ③ ボス本体
+ * の順に見て、最初に当たったところで抜ける(src/engine.js の checkCollisions)。
+ * ハーネスからはどの枝が発火したか直接は見えないので、
+ * **死ぬ直前のフレームで一番近かった脅威**で当てる。
+ * 当たり判定の半径は 4.4〜10.5 と小さいので、この推定はほぼ一意に決まる。
+ */
+function nearestThreat(g) {
+  const p = g.player;
+  let best = { kind: null, d: Infinity };
+  for (const b of g.eBullets) {
+    const d = Math.hypot(b.x - p.x, b.y - p.y) - (b.size || 5);
+    if (d < best.d) best = { kind: 'bullet', d };
+  }
+  for (const e of g.enemies) {
+    if (e.delay > 0) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y) - (e.size || 12) * 0.72;
+    if (d < best.d) best = { kind: 'enemy', d };
+  }
+  if (g.boss && !g.boss.entering) {
+    const d = Math.hypot(g.boss.x - p.x, g.boss.y - p.y) - 38 * (g.boss.scale || 1);
+    if (d < best.d) best = { kind: 'boss', d };
+  }
+  return best;
+}
+
 export function makeCollector(geo) {
   let deadRun = 0, deadMax = 0, deadTotal = 0;
   let firstDeath = null, deaths = 0, prevLives = null;
+  const causes = { bullet: 0, enemy: 0, boss: 0, unknown: 0 };
+  let prevThreat = { kind: null, d: Infinity };
+  let threatSum = 0, threatN = 0;
   let peakParticles = 0, peakEnemies = 0, peakEBullets = 0, peakPBullets = 0;
   let peakPower = 0, peakOptions = 0;
   const bells = new Map();          // ベル実体 -> 最後に見た prog
@@ -53,8 +83,17 @@ export function makeCollector(geo) {
       if (prevLives !== null && g.lives < prevLives) {
         deaths++;
         if (firstDeath === null) firstDeath = t;
+        causes[prevThreat.kind || 'unknown']++;
       }
       prevLives = g.lives;
+
+      // 「脅威がどれだけ近くを通っているか」。避ける必要が本当にあるかの目安。
+      //   遠いままなら、動いても動かなくても結果は変わらない。
+      if (g.state === 'play' && !g.player.dead) {
+        const th = nearestThreat(g);
+        prevThreat = th;
+        if (Number.isFinite(th.d)) { threatSum += Math.min(th.d, 400); threatN++; }
+      }
 
       if (g.particles.length > peakParticles) peakParticles = g.particles.length;
       if (g.enemies.length > peakEnemies) peakEnemies = g.enemies.length;
@@ -90,6 +129,8 @@ export function makeCollector(geo) {
         stageIndex: g.stageIndex,
         score: g.score, lives: g.lives,
         deaths, timeToFirstDeath: firstDeath === null ? null : +firstDeath.toFixed(2),
+        causes,
+        meanThreatDist: threatN ? +(threatSum / threatN).toFixed(1) : null,
         shots: g.stats.shots, hits: g.stats.hits, kills: g.stats.kills,
         accuracy: g.stats.shots ? +(g.stats.hits / g.stats.shots).toFixed(4) : null,
         deadMaxSec: +(deadMax / 60).toFixed(2),

@@ -86,13 +86,23 @@ export function writeReport(res, rows, root) {
   if (bs.length > 1) {
     L.push('## 腕前別（同じ盤面を、違う上手さで遊ぶ）');
     L.push('');
-    L.push('| ボット | 何を代表するか | 突破率 | 初回被弾までの中央値 |');
-    L.push('|---|---|---:|---:|');
-    const what = { hunter: '狙って避ける（上手い人）', dodge: '避けるが狙わない（普通の人）', sweep: '往復するだけ（初見）', idle: '何も押さない（床）' };
-    for (const [b, s] of bs) L.push(`| \`${b}\` | ${what[b] || ''} | ${pctS(s.clearRate)} | ${n(s.ttfd)}s |`);
+    const what = {
+      hunter: '狙って避ける（キー操作）', drag: '**指の速さで避ける（実機に一番近い）**',
+      dodge: '避けるが狙わない（キー操作）', sweep: '往復するだけ（キー操作）', idle: '何も押さない（床）',
+    };
     L.push('');
-    L.push('> **初見（`sweep`）の初回被弾が短すぎると、何も学ぶ前に死ぬ。**');
-    L.push('> 逆に `idle` が長く生き残るなら、放っておいても死なない＝緊張が無い。');
+    L.push('| ボット | 何を代表するか | 突破率 | 初回被弾 | 死因: 弾 / 敵本体 |');
+    L.push('|---|---|---:|---:|---:|');
+    for (const [b, s] of bs) {
+      const c = s.causes || {};
+      L.push(`| \`${b}\` | ${what[b] || ''} | ${pctS(s.clearRate)} | ${n(s.ttfd)}s | ${c.bullet || 0} / ${c.enemy || 0} |`);
+    }
+    L.push('');
+    L.push('> **キー操作のボットと `drag` を混ぜて読まないこと。**');
+    L.push('> `src/input.js` は指の移動量を1.7倍して自機へ渡すので、');
+    L.push('> 指は `CFG.PLAYER_SPEED`(330px/秒)の**約4倍**動ける。');
+    L.push('> キーのボットで「動いても避けられない」と出ても、それはゲームの性質ではなく');
+    L.push('> **ボットが遅いだけ**のことがある（実際そうだった → docs/verify-loop.md §3.2）。');
     L.push('');
   }
 

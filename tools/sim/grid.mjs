@@ -10,7 +10,7 @@
 // ============================================================
 import { CHARS } from '../../src/config.js';
 
-export const BOTS = ['hunter', 'dodge', 'sweep', 'idle'];
+export const BOTS = ['hunter', 'drag', 'dodge', 'sweep', 'idle'];
 export const DIFFS = [0, 1, 2];
 export const DIFF_NAME = { 0: 'やさしい', 1: 'ふつう', 2: 'むずかしい' };
 
@@ -25,6 +25,7 @@ export function buildGrid(opt = {}) {
   const bots = opt.bots || ['hunter'];
   const steps = opt.steps || STAGE_STEPS;
   const wallClock = !!opt.wallClock;
+  const maxSecs = opt.maxSecs || 0;   // 0 = 制限なし。序盤だけを見たいときに使う
   const freezeDirector = !!opt.freezeDirector;
 
   const cells = [];
@@ -35,7 +36,7 @@ export function buildGrid(opt = {}) {
           for (const bot of bots)
             cells.push({
               seed, charIndex, charId: CHARS[charIndex].id, charEmoji: CHARS[charIndex].emoji,
-              diff, stage, bot, steps, wallClock, freezeDirector,
+              diff, stage, bot, steps, wallClock, freezeDirector, maxSecs,
             });
   return cells;
 }

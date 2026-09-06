@@ -45,10 +45,10 @@ function installGameClock() {
 }
 
 export async function runOne(cell) {
-  const { seed, charIndex, diff, stage, bot: botName, steps, wallClock = false, freezeDirector = false } = cell;
+  const { seed, charIndex, diff, stage, bot: botName, steps, wallClock = false, freezeDirector = false, maxSecs = 0 } = cell;
   const clock = wallClock ? null : installGameClock();
 
-  const { boot, sim, shutdown, Bot, makeHunter } = await import(HEADLESS);
+  const { boot, sim, shutdown, Bot, makeHunter, makeDragBot } = await import(HEADLESS);
   const h = await boot({ seed });
   const { Save } = await import(new URL('../../src/save.js', import.meta.url).href);
 
@@ -64,7 +64,9 @@ export async function runOne(cell) {
     Director.update = () => {};
   }
 
-  const bot = botName === 'hunter' ? makeHunter(h.geo) : Bot[botName];
+  const bot = botName === 'hunter' ? makeHunter(h.geo)
+    : botName === 'drag' ? makeDragBot(h.env)
+    : Bot[botName];
   if (!bot) throw new Error(`未知のボット: ${botName}`);
 
   const col = makeCollector(h.geo);
@@ -78,6 +80,7 @@ export async function runOne(cell) {
   for (; n < steps; n++) {
     const g = h.state.game;
     if (g.state === 'over' || g.stageIndex > startStage) break;
+    if (maxSecs && t >= maxSecs) break;   // 序盤だけを見るとき
     try { h.engine.update(dt, bot(t, g)); }
     catch (e) { error = e; break; }
     t += dt;

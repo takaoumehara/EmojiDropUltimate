@@ -56,7 +56,7 @@ if (chars && chars.some(i => i < 0 || i >= CHARS.length)) {
   process.exit(2);
 }
 
-const cells = buildGrid({ seeds, chars, diffs, bots, stages, wallClock: flag('wall-clock'), freezeDirector: flag('freeze-director') });
+const cells = buildGrid({ seeds, chars, diffs, bots, stages, wallClock: flag('wall-clock'), freezeDirector: flag('freeze-director'), maxSecs: Number(val('secs', 0)) });
 
 // --- 実行 ---------------------------------------------------
 const t0 = Date.now();
@@ -99,6 +99,14 @@ const summarize = (rs) => ({
   neverDied: rs.filter(r => r.timeToFirstDeath === null).length,
   deadMaxSec: Math.max(...rs.map(r => r.deadMaxSec)),
   deadRatio: +mean(rs.map(r => r.deadRatio)).toFixed(4),
+  causes: rs.reduce((a, r) => {
+    for (const k of Object.keys(r.causes || {})) a[k] = (a[k] || 0) + r.causes[k];
+    return a;
+  }, {}),
+  meanThreatDist: (() => {
+    const v = rs.map(r => r.meanThreatDist).filter(x => x != null);
+    return v.length ? +mean(v).toFixed(1) : null;
+  })(),
   peakParticles: Math.max(...rs.map(r => r.peakParticles)),
   bellsSeen: rs.reduce((s, r) => s + r.bellsSeen, 0),
   bellsGot: rs.reduce((s, r) => s + r.bellsGot, 0),

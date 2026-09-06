@@ -116,6 +116,61 @@ export const Bot = {
 };
 
 /**
+ * **指でドラッグする人**を模したボット。
+ *
+ * なぜ要るのか:
+ *   上の Bot.* は矢印キーを押す。キーボードの移動は
+ *   `CFG.PLAYER_SPEED`(330px/秒)× キャラ係数に縛られるが、
+ *   このゲームの主な入力は**指のドラッグ**で、`src/input.js` は
+ *   指の移動量を **1.7倍して自機にそのまま渡す**。画面幅を 0.3秒で
+ *   横切れば秒速1300px を超え、**キーボードの約4倍**動ける。
+ *
+ *   つまりキーのボットで「動いても避けられない」と出ても、それは
+ *   ゲームの性質ではなく**ボットが遅いだけ**かもしれない。
+ *   実際、序盤の計測でその区別が付かなくなった(→ docs/verify-loop.md)。
+ *   指の速さで動くボットを別に用意して、初めて両者を比べられる。
+ *
+ *   キー入力は返さず、input.js と同じように座標を直接動かす。
+ *   可動域の clamp も engine 側と同じにしてある。
+ *
+ * @param {*} env boot() 後の src/env.js
+ * @param {{pxPerSec?: number, fear?: number}} opt
+ */
+export function makeDragBot(env, opt = {}) {
+  const speed = opt.pxPerSec ?? 1300;   // 指ドラッグの実測相当
+  const fear = opt.fear ?? 150;
+  return function drag(t, game) {
+    const p = game.player;
+    if (p.dead) return {};
+    // 一番危ない脅威(近い順)から離れる向きを求める
+    let tx = p.x, ty = p.y, worst = null, wd = 1e9;
+    for (const b of game.eBullets) {
+      const d = Math.hypot(b.x - p.x, b.y - p.y);
+      if (d < wd) { wd = d; worst = b; }
+    }
+    for (const e of game.enemies) {
+      if (e.delay > 0) continue;
+      const d = Math.hypot(e.x - p.x, e.y - p.y) - (e.size || 12);
+      if (d < wd) { wd = d; worst = e; }
+    }
+    if (worst && wd < fear) {
+      const ax = p.x - worst.x, ay = p.y - worst.y;
+      const m = Math.hypot(ax, ay) || 1;
+      tx = p.x + (ax / m) * 60; ty = p.y + (ay / m) * 60;
+    }
+    const dx = tx - p.x, dy = ty - p.y;
+    const m = Math.hypot(dx, dy);
+    if (m > 0.5) {
+      const step = Math.min(m, speed / 60);
+      const W = env.W, H = env.H, S = env.SAFE;
+      p.x = Math.max(22 + S.left, Math.min(W - 22 - S.right, p.x + (dx / m) * step));
+      p.y = Math.max(40 + S.top, Math.min(H - 22 - S.bottom, p.y + (dy / m) * step));
+    }
+    return {};   // キーは押さない。移動は座標で済ませた
+  };
+}
+
+/**
  * 実際にステージをクリアできる強さのボットを作る。
  *
  * 「例外なく走った」だけでは、決着まで到達する経路(ボス撃破・ステージ遷移・
