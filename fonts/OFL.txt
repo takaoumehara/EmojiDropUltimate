@@ -1,0 +1,16 @@
+このディレクトリの書体について
+================================
+
+Baloo 2   — SIL Open Font License 1.1
+            https://fonts.google.com/specimen/Baloo+2
+            Copyright (c) Ek Type
+
+Outfit    — SIL Open Font License 1.1
+            https://fonts.google.com/specimen/Outfit
+            Copyright (c) Smartsheet Inc., Owen Earl
+
+どちらも SIL Open Font License, Version 1.1 で配布されている。
+同 License は再配布を認めており、本リポジトリは latin サブセットの
+可変フォント(.woff2)をそのまま同梱している。改変はしていない。
+
+License 全文: https://openfontlicense.org/

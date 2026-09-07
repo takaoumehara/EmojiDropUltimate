@@ -16,6 +16,22 @@
 //   import { boot, sim, Bot } from './headless.js';
 //   const h = await boot();
 //   const r = sim(h, { steps: 60 * 60, bot: Bot.dodge });
+//
+// ⚠ 1プロセスで boot() を呼べるのは実質1回だけ:
+//   boot() は動的 import() で src/ を読む。**ES モジュールはプロセス内で
+//   キャッシュされる**ので、2回目の boot() は Math.random を撒き直すだけで、
+//   モジュール階層に溜まった状態——セーブデータ、学習するボス(bossai.js)、
+//   ディレクター(director.js)、ボス終盤の札の履歴——は前の回のまま残る。
+//
+//   実測: 同一プロセスで seed 7 を2回、1面クリアまで走らせると
+//     1回目 11,195歩 / 163,700点 / 残機1
+//     2回目  6,997歩 / 144,500点 / 残機2   ← 同じ種なのに違う
+//   プロセスを分ければ3回とも 11,195歩 / 163,700点 で完全に一致する。
+//
+//   短い実行なら差が出ないので、下の「同じ種は同じ結果になる」テストは
+//   ゲーム内1分で通る。だが**通っている理由は短いからでしかない**。
+//   何本も回して統計を取るときは 1実行 = 1ワーカーにすること
+//   (→ tools/sim/worker.mjs)。使い回すと数字が静かに嘘になる。
 // ============================================================
 
 import './bootstrap.js';
@@ -98,6 +114,61 @@ export const Bot = {
     return Bot.sweep(t);
   },
 };
+
+/**
+ * **指でドラッグする人**を模したボット。
+ *
+ * なぜ要るのか:
+ *   上の Bot.* は矢印キーを押す。キーボードの移動は
+ *   `CFG.PLAYER_SPEED`(330px/秒)× キャラ係数に縛られるが、
+ *   このゲームの主な入力は**指のドラッグ**で、`src/input.js` は
+ *   指の移動量を **1.7倍して自機にそのまま渡す**。画面幅を 0.3秒で
+ *   横切れば秒速1300px を超え、**キーボードの約4倍**動ける。
+ *
+ *   つまりキーのボットで「動いても避けられない」と出ても、それは
+ *   ゲームの性質ではなく**ボットが遅いだけ**かもしれない。
+ *   実際、序盤の計測でその区別が付かなくなった(→ docs/verify-loop.md)。
+ *   指の速さで動くボットを別に用意して、初めて両者を比べられる。
+ *
+ *   キー入力は返さず、input.js と同じように座標を直接動かす。
+ *   可動域の clamp も engine 側と同じにしてある。
+ *
+ * @param {*} env boot() 後の src/env.js
+ * @param {{pxPerSec?: number, fear?: number}} opt
+ */
+export function makeDragBot(env, opt = {}) {
+  const speed = opt.pxPerSec ?? 1300;   // 指ドラッグの実測相当
+  const fear = opt.fear ?? 150;
+  return function drag(t, game) {
+    const p = game.player;
+    if (p.dead) return {};
+    // 一番危ない脅威(近い順)から離れる向きを求める
+    let tx = p.x, ty = p.y, worst = null, wd = 1e9;
+    for (const b of game.eBullets) {
+      const d = Math.hypot(b.x - p.x, b.y - p.y);
+      if (d < wd) { wd = d; worst = b; }
+    }
+    for (const e of game.enemies) {
+      if (e.delay > 0) continue;
+      const d = Math.hypot(e.x - p.x, e.y - p.y) - (e.size || 12);
+      if (d < wd) { wd = d; worst = e; }
+    }
+    if (worst && wd < fear) {
+      const ax = p.x - worst.x, ay = p.y - worst.y;
+      const m = Math.hypot(ax, ay) || 1;
+      tx = p.x + (ax / m) * 60; ty = p.y + (ay / m) * 60;
+    }
+    const dx = tx - p.x, dy = ty - p.y;
+    const m = Math.hypot(dx, dy);
+    if (m > 0.5) {
+      const step = Math.min(m, speed / 60);
+      const W = env.W, H = env.H, S = env.SAFE;
+      p.x = Math.max(22 + S.left, Math.min(W - 22 - S.right, p.x + (dx / m) * step));
+      p.y = Math.max(40 + S.top, Math.min(H - 22 - S.bottom, p.y + (dy / m) * step));
+    }
+    return {};   // キーは押さない。移動は座標で済ませた
+  };
+}
 
 /**
  * 実際にステージをクリアできる強さのボットを作る。

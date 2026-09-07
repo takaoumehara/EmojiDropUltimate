@@ -35,7 +35,7 @@ const sweeper = setInterval(() => relay.sweep(), 60000);
 sweeper.unref();
 
 app.listen(PORT, () => {
-  process.stdout.write(`emoji-drop relay listening on :${PORT}\n`);
+  process.stdout.write(`emoji-blasters relay listening on :${PORT}\n`);
 });
 
 for (const sig of ['SIGINT', 'SIGTERM']) {

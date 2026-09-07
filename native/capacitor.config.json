@@ -1,0 +1,11 @@
+{
+  "appId": "app.emojiblasters.game",
+  "appName": "Emoji Blasters",
+  "webDir": "www",
+  "android": { "backgroundColor": "#05050f" },
+  "ios": { "backgroundColor": "#05050f", "contentInset": "never" },
+  "server": { "androidScheme": "https" },
+  "plugins": {
+    "StatusBar": { "overlaysWebView": true, "style": "DARK", "backgroundColor": "#05050f" }
+  }
+}

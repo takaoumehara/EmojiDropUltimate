@@ -13,7 +13,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -69,4 +69,73 @@ test('VERSION が付いていて、キャッシュ名に使われている', () 
   assert.match(sw, /\$\{VERSION\}-runtime/, 'runtime キャッシュ名に VERSION が入ること');
   // 古いキャッシュを捨てる処理があること(無いと VERSION を上げても意味がない)
   assert.match(sw, /caches\.delete/, '古いキャッシュを消す処理があること');
+});
+
+// ============================================================
+// 書体を自分で配っていること
+//
+//   もともと <head> で Google Fonts を rel="stylesheet" で読んでいた。
+//   これは2つの意味で効いていた:
+//     1. **描画をブロックする。** third-party の CDN が返るまでゲームが動けない。
+//        実測(Playwright)では、その1本が返るのを 12.4秒待って
+//        DOMContentLoaded ごと止まっていた(秒数は環境固有だが、
+//        third-party が起動の一本道に居るという形そのものが問題)。
+//     2. **オフラインでキャッシュされない。** sw.js は cross-origin を素通しする
+//        (そうしないと api/ まで巻き込む)ので、この1本だけ毎回取りに行っていた。
+//
+//   同梱に戻したので、その両方が閉じている。ここで釘を打っておかないと、
+//   誰かがまた <head> に CDN の1行を足したときに黙って戻る。
+// ============================================================
+
+test('index.html は書体を外から読んでいない', () => {
+  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
+  const external = [...html.matchAll(/(?:href|src)="(https?:\/\/[^"]+)"/g)].map(m => m[1]);
+  assert.deepEqual(external, [],
+    `出荷される HTML が外部から読んでいる: ${external.join(', ')}\n` +
+    '  → 起動が third-party 任せになり、オフラインでもキャッシュされない');
+});
+
+test('同梱した書体が app shell に入っている', () => {
+  for (const must of ['/fonts/fonts.css', '/fonts/Baloo2.woff2', '/fonts/Outfit.woff2']) {
+    assert.ok(sw.includes(`'${must}'`), `${must} が APP_SHELL に無い(オフラインで書体が落ちる)`);
+  }
+});
+
+test('app shell に挙げた書体のファイルが実在する', () => {
+  const listedFonts = (sw.match(/'\/fonts\/[^']+'/g) || []).map(s => s.replace(/'/g, ''));
+  assert.ok(listedFonts.length >= 3, '書体が一覧に入っていない');
+  for (const f of listedFonts) {
+    assert.ok(existsSync(join(ROOT, f.slice(1))), `sw.js に在るが実在しない: ${f}`);
+  }
+});
+
+test('fonts.css が参照する書体ファイルが実在する', () => {
+  const css = readFileSync(join(ROOT, 'fonts/fonts.css'), 'utf8');
+  const urls = [...css.matchAll(/url\('([^']+)'\)/g)].map(m => m[1]);
+  assert.ok(urls.length >= 2, `@font-face が足りない (${urls.length})`);
+  for (const u of urls) {
+    assert.ok(!/^https?:/.test(u), `fonts.css が外部を参照している: ${u}`);
+    assert.ok(existsSync(join(ROOT, 'fonts', u)), `fonts.css が指すファイルが無い: ${u}`);
+  }
+});
+
+test('OGP画像が規定のサイズで、app shell に入っている', () => {
+  // SNS のリンクプレビューは 1200x630。ここがずれると勝手に切り取られる。
+  // 改名したとき、タイトルもロゴも docs も直したのに og.png だけ旧名のまま
+  // 残っていた —— 画像は grep に掛からないので、こうして縛っておく。
+  // 作り直しは `node tools/og.mjs`(再生成できる形にしてある)。
+  const p = join(ROOT, 'og.png');
+  assert.ok(existsSync(p), 'og.png が無い');
+  const buf = readFileSync(p);
+  assert.equal(buf.subarray(1, 4).toString(), 'PNG', 'PNG ではない');
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
+  assert.equal(w, 1200, `OGP画像の幅が 1200 でない (${w})`);
+  assert.equal(h, 630, `OGP画像の高さが 630 でない (${h})`);
+  assert.ok(sw.includes("'/og.png'"), 'og.png が APP_SHELL に無い');
+});
+
+test('OGP画像を作り直す道具が残っている', () => {
+  // 手で作った画像は必ず腐る。次の改名でも1コマンドで済むようにしておく。
+  assert.ok(existsSync(join(ROOT, 'tools/og.mjs')),
+    'tools/og.mjs が無い —— og.png を手で作り直すことになる');
 });

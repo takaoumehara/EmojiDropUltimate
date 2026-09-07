@@ -458,3 +458,43 @@ test('privacy: no third-party host is contacted except the weather API', async (
       `src/ contacts "${h}" — every third-party host has to appear in docs/privacy.md, so add it there and here deliberately`);
   }
 });
+
+// ============================================================
+// アプリの殻(Capacitor)への橋
+//
+//   同じ src/ が**ブラウザでもアプリでも動く**ことに、この作品の性質がかかっている。
+//   `import '@capacitor/haptics'` と1行書いた瞬間に、このリポジトリは
+//   npm とビルド工程を持つ。src/native.js は実行時に window.Capacitor を
+//   見にいくことでそれを避けている。ここが崩れていないかを縛る。
+// ============================================================
+test('src/ は npm のパッケージを import していない(依存ゼロ・ビルド工程ゼロ)', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const dir = new URL('../src/', import.meta.url).pathname;
+  const bad = [];
+  for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.js'))) {
+    const code = fs.readFileSync(path.join(dir, f), 'utf8');
+    for (const m of code.matchAll(/(?:^|\n)\s*import\s[^;]*?from\s+'([^']+)'/g)) {
+      const spec = m[1];
+      // 相対パスだけが許される。'./x.js' '../x.js' 以外は npm 由来。
+      if (!spec.startsWith('./') && !spec.startsWith('../')) bad.push(`src/${f}: ${spec}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    `src/ が外部パッケージを import している: ${bad.join(', ')}\n` +
+    '  → 実行時に window.Capacitor を見る形にすること(src/native.js の書き方)');
+});
+
+test('触覚はブラウザでも例外を投げず、静かに何もしない', async () => {
+  const { Haptic, isNative, platform, setHaptics } = await import('../src/native.js');
+  assert.equal(isNative(), false, 'Node には殻が無いこと');
+  assert.equal(platform(), 'web');
+  // Capacitor も navigator.vibrate も無い環境で、全部の合図が落ちずに false を返す
+  for (const k of Object.keys(Haptic)) {
+    assert.equal(typeof Haptic[k], 'function', `${k} が関数でない`);
+    assert.equal(Haptic[k](), false, `${k} が何か起こしている`);
+  }
+  setHaptics(false);
+  assert.equal(Haptic.bell(), false, '切っても出ようとしている');
+  setHaptics(true);
+});

@@ -1,0 +1,8 @@
+shots/
+node_modules/
+results.json
+perf.json
+offline.json
+layout.json
+test-results/
+playwright-report/

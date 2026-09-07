@@ -90,7 +90,7 @@ export function resize() {
   SAFE.bottom = Math.max(0, raw.bottom - (winH - VIEW.y - H));
   SAFE.right = Math.max(0, raw.right - (winW - VIEW.x - W));
 
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  DPR = Math.min(window.devicePixelRatio || 1, QUALITY.cap);
   canvas.width = winW * DPR;
   canvas.height = winH * DPR;
   canvas.style.width = winW + 'px';
@@ -106,6 +106,57 @@ export function resize() {
 
   applyTransform();
   UI = uiScale(W, H);
+}
+
+// ============================================================
+// 解像度の自動調整
+//
+//   このゲームは**塗るピクセル数で決まる**。JS ではない。
+//   実測(Playwright + CPU を 1/4 に絞った状態、docs/probe-report.md):
+//
+//     DPR 2 … p50 33.4ms(30fps) / 33.3ms を超えるフレーム 78%
+//     DPR 1 … p50 16.7ms(60fps) / 33.3ms を超えるフレーム  0%
+//
+//   同じ CPU・同じ盤面で、解像度を半分にしただけで倍になる。
+//   プロファイラも同じことを言っていた —— 自己時間の 88% は JS ではなく
+//   ブラウザのラスタ側で、一番重い JS 関数(drawBackground)ですら 2.7% しかない。
+//
+//   なので安い端末では解像度を落とす。**下げるだけで、戻さない**
+//   (行ったり来たりすると、そのたびに画面が作り直されてかえって目立つ)。
+//   速い端末では一度も下がらないので、見た目は変わらない。
+// ============================================================
+const DPR_STEPS = [2, 1.5, 1];
+export const QUALITY = { cap: DPR_STEPS[0], lowered: 0 };
+
+const WATCH_WINDOW = 180;   // 3秒ぶん見てから決める。読み込み直後の数フレームで決めない
+const WARMUP = 120;         // 起動直後は何をしても遅い。ここは数えない
+const SLOW_FRAME = 0.028;   // 約36fps。60fps を少し割ったくらいでは動かさない
+let seen = 0, watched = 0, slow = 0;
+
+/** 主ループから毎フレーム呼ぶ。dt は秒。 */
+export function noteFrame(dt) {
+  if (QUALITY.cap <= DPR_STEPS[DPR_STEPS.length - 1]) return false;
+  if (++seen < WARMUP) return false;
+  watched++;
+  if (dt > SLOW_FRAME) slow++;
+  if (watched < WATCH_WINDOW) return false;
+
+  const tooSlow = slow > watched * 0.5;
+  watched = 0; slow = 0;
+  if (!tooSlow) return false;
+
+  const next = DPR_STEPS[DPR_STEPS.indexOf(QUALITY.cap) + 1];
+  if (next == null) return false;
+  QUALITY.cap = next;
+  QUALITY.lowered++;
+  resize();
+  return true;
+}
+
+/** テスト用。計測をやり直す。 */
+export function resetQuality() {
+  QUALITY.cap = DPR_STEPS[0]; QUALITY.lowered = 0;
+  seen = 0; watched = 0; slow = 0;
 }
 
 /**

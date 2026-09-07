@@ -1,7 +1,7 @@
 // ============================================================
 // main.js — 起動・メインループ・上部ボタン配線
 // ============================================================
-import { ctx, resize, applyTransform, VIEW } from './env.js';
+import { ctx, resize, applyTransform, VIEW, noteFrame } from './env.js';
 import { game } from './state.js';
 import { Snd } from './audio.js';
 import { Weather, CITIES, pickCity, setCity } from './weather.js';
@@ -9,6 +9,7 @@ import { update, initStars, togglePause, toTitle, startRun, requestAIStage, star
 import { draw } from './render.js';
 import { keys, updateMuteIcon } from './input.js';
 import { Save } from './save.js';
+import { setHaptics } from './native.js';
 import { Coop } from './coop.js';
 import { toggleLang, getLang } from './i18n.js';
 import { Diag } from './diag.js';
@@ -75,7 +76,13 @@ function syncSettings() {
 setBtn.addEventListener('click', e => { e.stopPropagation(); Snd.init(); setPanel.classList.toggle('show'); syncSettings(); });
 document.getElementById('setSound').addEventListener('click', () => { Snd.init(); updateMuteIcon(Snd.toggleMute()); syncSettings(); });
 document.getElementById('setDiff').addEventListener('click', () => { Save.setDiff((Save.diff() + 1) % 3); syncSettings(); });
-document.getElementById('setMotion').addEventListener('click', () => { Save.setShake(!Save.shake()); syncSettings(); });
+document.getElementById('setMotion').addEventListener('click', () => {
+  Save.setShake(!Save.shake());
+  // 触覚も同じつまみにぶら下げる。画面のゆれが苦手な人は触覚も苦手なことが多く、
+  //   設定を2つに割ると、片方だけ切って「まだ震える」になりやすい。
+  setHaptics(!!Save.shake());
+  syncSettings();
+});
 // 天気の地域。位置情報は使わないので、当たっていなければここで直す。
 document.getElementById('setCity').addEventListener('click', async () => {
   const cur = (Weather.city || pickCity()).id;
@@ -91,7 +98,7 @@ document.getElementById('setCity').addEventListener('click', async () => {
 document.getElementById('setDiag').addEventListener('click', async () => {
   const text = Diag.report();
   try {
-    if (navigator.share) { await navigator.share({ title: 'EMOJI DROP 動作レポート', text }); return; }
+    if (navigator.share) { await navigator.share({ title: 'EMOJI BLASTERS 動作レポート', text }); return; }
     await navigator.clipboard.writeText(text);
     alert((getLang() === 'ja' ? 'コピーしました:\n\n' : 'Copied:\n\n') + text);
   } catch (e) { alert(text); }
@@ -109,6 +116,7 @@ document.getElementById('setReset').addEventListener('click', () => {
 document.addEventListener('pointerdown', e => {
   if (setPanel.classList.contains('show') && !setPanel.contains(e.target) && e.target !== setBtn) setPanel.classList.remove('show');
 }, true);
+setHaptics(!!Save.shake());   // 起動時にも設定へそろえる
 syncSettings();
 
 function syncButtons() {
@@ -126,8 +134,12 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && (ga
 
 let lastT = performance.now();
 function loop(now) {
-  const dt = Math.min((now - lastT) / 1000, 0.034);
+  const raw = (now - lastT) / 1000;
+  const dt = Math.min(raw, 0.034);
   lastT = now;
+  // 端末が追いつけていないなら解像度を落とす(→ env.js の「解像度の自動調整」)。
+  //   下げた直後は resize() が走るので、その回の描画は新しい大きさで行われる。
+  noteFrame(raw);
   applyTransform();
   update(dt, keys);
   draw();
