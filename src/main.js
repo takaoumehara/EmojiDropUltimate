@@ -91,7 +91,7 @@ document.getElementById('setCity').addEventListener('click', async () => {
 document.getElementById('setDiag').addEventListener('click', async () => {
   const text = Diag.report();
   try {
-    if (navigator.share) { await navigator.share({ title: 'EMOJI DROP 動作レポート', text }); return; }
+    if (navigator.share) { await navigator.share({ title: 'EMOJI BLAST 動作レポート', text }); return; }
     await navigator.clipboard.writeText(text);
     alert((getLang() === 'ja' ? 'コピーしました:\n\n' : 'Copied:\n\n') + text);
   } catch (e) { alert(text); }

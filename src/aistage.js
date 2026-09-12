@@ -74,6 +74,41 @@ const THEMES = [
   { name: 'エモジ銀河', en: 'EMOJI GALAXY', emoji: '🌠', sky: ['#1b0b3a', '#6d3bd6'], night: ['#08041a', '#2a1466'], bg: ['🪐', '⭐', '🌙', '☄️'], en_list: ['🛸', '👽', '🌟', '☄️'], boss: ['🌞', 'ソーラータイタン', 'SOLAR TITAN'] },
 ];
 
+export const THEME_COUNT = THEMES.length;
+
+// エンドレスのテーマ選び。
+//
+//   以前はワールドごとに Math.random でテーマを引いていた。テーマは7個しかないので、
+//   3ワールド遊べば同じ絵を2度見る確率が4割を超え、2連続もふつうに起きていた。
+//   **無限に遊べるかどうかを決めるのは難易度ではなく既視感**なので、ここを袋引きにする。
+//
+//   7個で1周。周ごとに並べ替えるので、2周目は1周目と違う順で出てくる。
+//   周の変わり目で同じテーマが2連続にならないよう、先頭だけ入れ替える。
+//
+//   **状態を持たず、種とワールド番号だけから決まる。** これが共闘で効く ——
+//   全員が同じ計算をすれば必ず同じ答えになるので、次の面を配る通信が要らない。
+//   通信が要らないものは、届かなくてズレることもない。
+function cycleOrder(seedStr, cycle) {
+  const n = THEMES.length;
+  const order = THEMES.map((_, i) => i);
+  const rng = makeRng(hashStr(`${seedStr}-theme-${cycle}`));
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+export function themeForWorld(seedStr, world) {
+  const n = THEMES.length;
+  const w = Math.max(1, Math.floor(world) || 1);
+  const cycle = Math.floor((w - 1) / n);
+  const order = cycleOrder(seedStr, cycle);
+  if (cycle > 0 && n > 1 && order[0] === cycleOrder(seedStr, cycle - 1)[n - 1]) {
+    [order[0], order[1]] = [order[1], order[0]];
+  }
+  return order[(w - 1) % n];
+}
+
 // rng を渡すと決定論的(デイリー/URLシードで全員同じステージ)。省略時は Math.random。
 export function proceduralStage(rng = Math.random, themeIdx = -1) {
   const R = (a, b) => rng() * (b - a) + a;
@@ -140,19 +175,31 @@ export function chapterStages(n, baseStages) {
   return six.concat([out]);
 }
 
-// エンドレス用: ワールドが進むほど強く(世界1=等倍)
+// エンドレス用: ワールドが進むほど強く(世界1=等倍)。
+//
+//   前は一次関数で伸ばしていた。終わりのあるモードならそれで足りるが、
+//   終わらないモードでは必ずどこかで「上手い下手と関係なく勝てない」に着地する
+//   (旧式だとワールド30でHP5.6倍・道中24秒)。上限のない曲線は、無限モードでは
+//   ただの詰みの予約なので、伸びは残したまま頭を打たせる。
+//
+//   1 - 0.9^(w-1) は最初の10ワールドで伸びの65%を使い、あとはゆっくり上限へ寄る。
+//   例) 敵HP倍率 … W1:1.00 W5:1.69 W10:2.22 W20:2.73 W50:2.99 上限3.00
+//   もっと厳しくしたければ amount(伸びしろ)を上げ、早く効かせたければ rate を下げる。
+const ease = (w, amount, rate = 0.9) => 1 + amount * (1 - Math.pow(rate, Math.max(0, w - 1)));
 export function scaleStage(base, world) {
-  const f = 1 + (world - 1) * 0.11;
+  const w = Math.max(1, world);
   const s = JSON.parse(JSON.stringify(base));
   s.enemies = s.enemies.map(e => ({
     ...e,
-    hp: Math.max(1, Math.round(e.hp * (1 + (world - 1) * 0.16))),
-    speed: Math.round(clamp(e.speed * (1 + (world - 1) * 0.05), 40, 360)),
-    shootRate: e.shootRate ? clamp(e.shootRate * f, 0.4, 2.0) : 0,
-    pts: Math.round(e.pts * f),
+    hp: Math.max(1, Math.round(e.hp * ease(w, 2.0))),
+    speed: Math.round(clamp(e.speed * ease(w, 0.7), 40, 360)),
+    shootRate: e.shootRate ? clamp(e.shootRate * ease(w, 0.9), 0.4, 2.0) : 0,
+    pts: Math.round(e.pts * ease(w, 1.6)),
   }));
-  s.boss = { ...s.boss, hp: Math.round(s.boss.hp * (1 + (world - 1) * 0.18)) };
-  s.dur = Math.max(24000, Math.round((s.dur || 40000) * (1 - (world - 1) * 0.03)));
+  s.boss = { ...s.boss, hp: Math.round(s.boss.hp * ease(w, 2.6)) };
+  // 道中も詰めるが、際限なく詰めない。60秒の面が39秒より短くはならない。
+  //   ここを削りすぎると、遊んでいるのは「面」ではなくボス連戦になる。
+  s.dur = Math.max(26000, Math.round((s.dur || 40000) * (1 - 0.35 * (1 - Math.pow(0.9, w - 1)))));
   return s;
 }
 

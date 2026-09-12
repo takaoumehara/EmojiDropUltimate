@@ -577,7 +577,7 @@ function drawHUD() {
     + (p.rearT > 0 ? ` · ⬇︎${Math.ceil(p.rearT / 1000)}` : '')
     + (p.sideT > 0 ? ` · ↔︎${Math.ceil(p.sideT / 1000)}` : '');
   txt(st8, pad, H - 24 * UI - bot, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'left', baseline: 'top', shadow: 0.7 });
-  const slabel = game.coop ? '👥' : game.endless ? ('W' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('' + (game.stageIndex + 1));
+  const slabel = game.coop ? ('👥W' + game.world) : game.endless ? ('W' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('' + (game.stageIndex + 1));
   // 右下の表示。**絵文字を末尾に置くと画面の外へはみ出す** —— 絵文字は
   //   measureText の送り幅より広く描かれることがあり、右揃えの基準が
   //   実際の右端と合わない。文字を末尾にして、余白も指の届く幅まで広げる。
@@ -656,9 +656,9 @@ function wordmark(cx, cy, scale = 1, alpha = 1) {
   const g = ctx.createLinearGradient(0, cy - size * 0.6, 0, cy + size * 0.55);
   g.addColorStop(0, '#fff6d0'); g.addColorStop(0.5, '#ffd23f'); g.addColorStop(1, '#f2a52c');
   ctx.shadowColor = 'rgba(255,190,60,0.45)'; ctx.shadowBlur = 26 * scale;
-  txt('EMOJI DROP', cx, cy, { size, weight: 800, family: FONT_DISPLAY, color: g });
+  // 旧名より1文字長いので、狭い端末では縮めて必ず1行に収める。
+  txt('EMOJI BLAST', cx, cy, { size, weight: 800, family: FONT_DISPLAY, color: g, maxW: W * 0.86 });
   ctx.shadowBlur = 0;
-  txt('U L T I M A T E', cx, cy + size * 0.72, { size: 10.5 * UI * scale, weight: 500, color: '#8ea6cc', track: 3.4 * scale });
   ctx.restore();
 }
 
@@ -1435,6 +1435,8 @@ function drawCoopLobby() {
         ja ? '「もう一度つなぐ」で新しい部屋を作れます' : 'Reconnect to open a fresh room'],
       p2p_failed: [ja ? '直接つながれませんでした' : "Couldn't link the devices",
         ja ? '同じWi-Fiに繋ぐと成功しやすくなります' : 'Try putting both phones on the same Wi-Fi'],
+      room_full: [ja ? 'この部屋は満員です(4人)' : 'This room is full (4 players)',
+        ja ? '別のあいことばで新しい部屋を作ってください' : 'Open a new room with a different code'],
       closed: [ja ? '接続が切れました' : 'Connection lost', ja ? 'もう一度つないでください' : 'Please reconnect'],
     }[Coop.status] || [ja ? '接続できませんでした' : 'Connection failed', ja ? 'もう一度お試しください' : 'Please try again'];
     txt(S[0], W / 2, sy - 8 * UI, { size: 11.5 * UI, weight: 700, color: '#ffb37f', maxW: bw });
@@ -1480,9 +1482,9 @@ function drawCoopLobby() {
       : (ja ? `${n}人でスタート` : `START WITH ${n}`);
     drawBtn('coopStart', bx, by, bw, 52 * UI, btnLabel, '#ffffff', true, false, 18 * UI);
     by += 52 * UI + gap;
-    // 中継サーバー経由なら4人まで入れる。直結は2人まで。
+    // 直結(p2p)・中継(relay)どちらも4人まで入れる。
     //   まだ空きがあることを言わないと、3人目が「入れない」と思って諦める。
-    if (Coop.via() === 'relay' && n < 4) {
+    if ((Coop.via() === 'relay' || Coop.via() === 'p2p') && n < 4) {
       txt(ja ? `あと${4 - n}人まで、同じあいことばで入れます` : `${4 - n} more can join with the same code`,
         W / 2, by + 2 * UI, { size: 9.5 * UI, weight: 500, color: COL.gold, maxW: bw });
       by += 16 * UI;
@@ -1891,8 +1893,11 @@ function drawIntro() {
   ctx.fillStyle = 'rgba(0,0,10,0.55)'; ctx.fillRect(0, 0, W, H);
   const slide = tt < 0.2 ? (0.2 - tt) * 5 * 60 : 0;
   const fin = !!st.finale;
+  // ワールドが繋がるモードでは、面の名前より先に**いま何ワールド目か**を出す。
+  //   ここが「STAGE 1」のままだと、5面遊んでも進んでいる実感が出ない。
   label(fin ? (ja ? '⚡ さいごの舞台 ⚡' : '⚡ FINAL STAGE ⚡')
-      : game.aiMode ? '✨ ENDLESS ✨' : (t('stage') + ' ' + (game.stageIndex + 1)),
+      : game.endless ? `${game.coop ? '👥' : '✨'} ${t('world')} ${game.world}`
+        : game.aiMode ? '✨ ENDLESS ✨' : (t('stage') + ' ' + (game.stageIndex + 1)),
     W / 2, vy(0.26) - slide, fin ? '#ff9de2' : '#8fd3ff', 14 * UI);
   emojiCentered(st.emoji, W / 2, vy(0.38) - slide, 56 * UI);
   label(st.name, W / 2, vy(0.48) - slide, '#ffffff', 22 * UI);
@@ -2086,7 +2091,7 @@ function drawFinale() {
   ctx.restore();
   if (F.t > 500) label(`+${F.bonus}`, W / 2, vy(0.40) + 42 * UI, '#ffe14d', 20 * UI);
   if (F.kind === 'victory' && F.t > 900) label(ja ? '✨ 全ステージ制覇 ✨' : '✨ ALL STAGES CLEAR ✨', W / 2, vy(0.40) + 72 * UI, '#b98cff', 14 * UI);
-  if (F.kind === 'coop' && F.t > 900) label(ja ? `👥 ${Coop.partyLabel(true)} と一緒に撃破!` : `👥 Beaten with ${Coop.partyLabel(false)}!`, W / 2, vy(0.40) + 72 * UI, '#4ad6a0', 14 * UI);
+  if (F.kind === 'world' && game.coop && F.t > 900) label(ja ? `👥 ${Coop.partyLabel(true)} と一緒に撃破! つぎへ` : `👥 Beaten with ${Coop.partyLabel(false)} — next!`, W / 2, vy(0.40) + 72 * UI, '#4ad6a0', 14 * UI);
   if (game.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, 0.85)})`; ctx.fillRect(0, 0, W, H); }
 }
 
