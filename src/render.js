@@ -656,9 +656,9 @@ function wordmark(cx, cy, scale = 1, alpha = 1) {
   const g = ctx.createLinearGradient(0, cy - size * 0.6, 0, cy + size * 0.55);
   g.addColorStop(0, '#fff6d0'); g.addColorStop(0.5, '#ffd23f'); g.addColorStop(1, '#f2a52c');
   ctx.shadowColor = 'rgba(255,190,60,0.45)'; ctx.shadowBlur = 26 * scale;
-  txt('EMOJI DROP', cx, cy, { size, weight: 800, family: FONT_DISPLAY, color: g });
+  // 旧名より1文字長いので、狭い端末では縮めて必ず1行に収める。
+  txt('EMOJI BLAST', cx, cy, { size, weight: 800, family: FONT_DISPLAY, color: g, maxW: W * 0.86 });
   ctx.shadowBlur = 0;
-  txt('U L T I M A T E', cx, cy + size * 0.72, { size: 10.5 * UI * scale, weight: 500, color: '#8ea6cc', track: 3.4 * scale });
   ctx.restore();
 }
 

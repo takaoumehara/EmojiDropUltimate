@@ -22,7 +22,12 @@
   「まだ公開していない」の一言。**URLが無いなら「プロトタイプ」のままにします**
   （推測のURLは絶対に載せません）。
 
-### Q-2 名前は「EmojiDrop Ultimate」か「Emoji Blast」か ★
+### Q-2 名前は「EmojiDrop Ultimate」か「Emoji Blast」か ★ — **回答済み: Emoji Blast**
+> 2026-09-12 に②で確定。**アプリ側（一般ユーザーに見える部分）は改名済み**です:
+> ページタイトル・OGP・manifest・ホーム画面名・ロゴ・共有カード・ハッシュタグ（`#EmojiBlast`）・
+> 招待文・動作レポート・保存ファイル名・プライバシーポリシーの表題。
+> **未対応**: このケーススタディ一式（本ファイルを含む）、リポジトリ名、README、`docs/` の設計資料、
+> takaoumehara.com と creativityiseverywhere.com のカード。以下は改名前の記述です。
 - **どこの何か**: §1 プロジェクト名、§2 カード、ページのタイトル、`DISTRIBUTION-FACTS.md` 全体。
 - **なぜ分からないか**: リポジトリ名・README・`manifest.webmanifest`・`sharecard.js` の
   ハッシュタグ（`#EmojiDropUltimate`）・takaoumehara.com のカード・
