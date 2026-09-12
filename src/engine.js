@@ -61,7 +61,25 @@ const coopLives = n => Math.max(2, n) * 2 + 1;
 //   ボスだけ硬くして**道中がそのまま**だったこと。2人なら毎秒の火力は倍近いのに、
 //   撃つ相手の数は同じ —— それは強くなったのではなく、待ち時間が半分になっただけ。
 //   きずなで群れを薙げるようにしたぶんもここで受ける。2人 ×1.22 / 4人 ×1.66。
-const coopSpawnMul = n => 1 + (Math.max(2, n) - 1) * 0.22;
+// 道中の湧きも人数に比例させる。**ボスだけ人数ぶんにしても、道中は素通しだった。**
+//   2人なら火力も回避も2人ぶんあるのに、湧きは1.22倍しか増えていなかった。
+//   結果、ひとりあたりの仕事が半分になって「道中は消化試合、ボスだけ本番」に
+//   なっていた。ボスHPと同じ考え方でそろえる —— ひとりあたりの圧を人数によらず
+//   一定にする。ただし比例そのものではなく少し引く: 敵は同じ方向から入ってきて
+//   画面を共有するので、そのままだと重なって「数」ではなく「壁」になる。
+//   また、きずなが群れを薙ぐぶんの取り返しもここに乗っている(tether.js の DPS)。
+//   2人 ×1.9 / 3人 ×2.85 / 4人 ×3.8。
+//   **手強さを変えたいならここ。** 上げると波の間隔が縮む(下限1秒で頭打ち)。
+const COOP_SPAWN_PER_PLAYER = 0.95;
+const coopSpawnMul = n => COOP_SPAWN_PER_PLAYER * Math.max(2, n);
+// 画面に置いておける敵の数。**湧きを人数ぶんに上げた以上、栓が要る。**
+//   削り負けたぶんはそのまま積み上がる。上限が無いとスマホは発熱で落ちるし、
+//   そこへ行き着く前に「何が飛んでいるのか読めない」画面になる。
+//   間隔は詰めたまま、置ける数だけ頭を押さえる —— ちゃんと削れている人には
+//   一度も当たらず、溺れている人だけを助ける栓。
+//   ソロの実測は同時23体なので、34 はふだん効かない。
+//   2人40 / 3人50 / 4人60(1波ぶんは超える。硬い上限ではなく栓なので)。
+const enemyCap = () => (game.coop ? 20 + 10 * Math.max(2, Coop.playerCount()) : 34);
 
 // むずかしさ。Director の自動調整の「上」に掛ける固定倍率。
 //   自動調整だけだと、子供に渡すときに明示的に弱くできない。
@@ -1670,10 +1688,16 @@ function updateStage(dt) {
   if (!game.bossActive && game.warnT <= 0) {
     game.nextWave -= dt * 1000;
     if (game.nextWave <= 0) {
-      spawnWave();
-      const base = (2900 - game.stageIndex * 260) * Director.spawnMul * diffMods().spawn / Weather.mods.spawnMul
-                 / (game.coop ? coopSpawnMul(Coop.playerCount()) : 1);
-      game.nextWave = Math.max(1000, base + rand(-400, 400));
+      if (game.enemies.length >= enemyCap()) {
+        game.nextWave = 600;          // 詰まっているあいだは間を置いて様子を見る
+      } else {
+        spawnWave();
+        const base = (2900 - game.stageIndex * 260) * Director.spawnMul * diffMods().spawn / Weather.mods.spawnMul
+                   / (game.coop ? coopSpawnMul(Coop.playerCount()) : 1);
+        // 下限は共闘だけ下げる。1000ms のままだと 3人以上で頭打ちになり、
+        //   「人数ぶんに増やす」と書いておいて実際は2.9人ぶんで止まっていた。
+        game.nextWave = Math.max(game.coop ? 700 : 1000, base + rand(-400, 400));
+      }
     }
     updateMercyBell(dt);
     game.nextBell -= dt * 1000;
@@ -2088,8 +2112,7 @@ function nextWorldStage(world) {
     } else {
       st = proceduralStage(makeRng(hashStr(`${seedStr}-w${world}`)), themeForWorld(seedStr, world));
     }
-    st.dur = 34000;   // 共闘は短め(ソロより早くボスへ)。startCoop と同じ値
-    return scaleStage(st, world);
+    return scaleStage(st, world);   // 道中の長さは面のまま(startCoop と同じ扱い)
   }
   const ai = game.aiNext; game.aiNext = null;
   return scaleStage(ai || proceduralStage(Math.random, themeForWorld(game.worldSeed, world)), world);
@@ -2172,7 +2195,11 @@ export function startCoop() {
   let st;
   if (Coop.mode === 'story') st = JSON.parse(JSON.stringify(STAGES[Math.floor(rng() * STAGES.length)]));
   else st = proceduralStage(rng);
-  st.dur = 34000; // 共闘は短めセッション(ソロより早くボスへ)
+  // 道中の長さは面が持っている値のまま(手作り62〜80秒 / 生成60秒)。
+  //   ここは長らく 34秒に切り詰めてあった。**共闘がボス1体で終わっていた頃の名残**で、
+  //   1回きりのセッションなら早くボスへ着くのが正しかった。いまはクリアするたび
+  //   次のワールドが出るので、遊ぶ長さを決めるのは1面の尺ではなく「何ワールド
+  //   保つか」になった。切り詰めたままだと、道中が挨拶で終わってボスの往復になる。
   game.coop = true; game.aiMode = Coop.mode !== 'story';
   // 共闘もワールドを数える。ボスを倒したら終わりではなく、次の面がどんどん出る。
   game.endless = true; game.world = 1;

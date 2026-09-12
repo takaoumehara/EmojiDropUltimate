@@ -159,6 +159,36 @@ test('ワールド突破の残機回復は、上限を超えている人から�
   assert.ok(game.lives > game.livesCap, `上限超えの残機が没収されないこと (${game.lives} > ${game.livesCap})`);
 });
 
+// --- 共闘の道中は「挨拶」ではなく本編か ------------------------------------
+
+test('共闘の道中は、ソロと同じだけの尺がある', async () => {
+  // 長らく 34秒に切り詰めてあった。ボス1体で終わっていた頃の名残で、
+  //   ワールドが繋がるようになったいま、道中が挨拶で終わる理由はもう無い。
+  const { game } = await runCoop(31);
+  unseed();
+  assert.ok(game.stages[0].dur >= 45000,
+    `道中が切り詰められていないこと (${game.stages[0].dur}ms)`);
+});
+
+test('削り負けても、敵が画面に溜まり続けない', async () => {
+  // 湧きを人数ぶんに上げた以上、栓が要る。**一切撃たない**で走らせて、
+  //   それでも置かれる数に頭打ちがあることを見る。栓が無いと、道中60秒で
+  //   300体を超えて積み上がり、スマホは発熱で落ちる。
+  const h = await boot({ seed: 77 });
+  const { Coop } = await import('../src/coop.js');
+  Coop.reset();
+  Coop.active = true; Coop.role = 'host'; Coop.connected = true;
+  Coop.seed = 7; Coop.mode = 'ai';
+  for (let i = 2; i <= 4; i++) Coop.onMsg({ t: 'hello', name: 'p' + i }, '' + i);   // 4人部屋
+  h.engine.startCoop();
+  h.state.game.lives = 999;   // 死んで止まらないよう、道中を最後まで見せる
+  let peak = 0;
+  sim(h, { steps: 60 * 70, bot: (t, g) => { peak = Math.max(peak, g.enemies.length); return {}; } });
+  shutdown(h); unseed();
+  assert.ok(peak > 30, `そもそも湧いていること (${peak})`);
+  assert.ok(peak < 100, `置かれる数に頭打ちがあること (同時最大 ${peak})`);
+});
+
 test('ソロのエンドレスはワールドが繋がり続ける', async () => {
   const h = await boot({ seed: 5 });
   const { Coop } = await import('../src/coop.js');
@@ -167,7 +197,9 @@ test('ソロのエンドレスはワールドが繋がり続ける', async () =>
   h.engine.startFromSeed('endless-test');
   const g0 = h.state.game;
   g0.endless = true; g0.world = 1; g0.worldSeed = 'endless-test';
-  g0.lives = 12; g0.livesCap = 12;
+  // 見たいのは繋がり方なので、腕前で落ちないだけの残機を積んでおく
+  //   (2回ぶんの道中を通すのに実測7機使う)
+  g0.lives = 40; g0.livesCap = 40;
   const r = sim(h, {
     steps: LONG,
     bot: meltBoss(makeHunter(h.geo), Coop),
