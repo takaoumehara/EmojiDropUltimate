@@ -1,8 +1,17 @@
 // ============================================================
-// api/signal.js — ふたりでプレイ用 WebRTC シグナリング(Vercel KV)
-//   役割は「二人を引き合わせる」だけ。SDP(接続情報)をあいことば毎に
+// api/signal.js — 2〜4人プレイ用 WebRTC シグナリング(Vercel KV)
+//   役割は「引き合わせる」だけ。SDP(接続情報)をあいことば毎に
 //   5分だけ預かる。ゲーム中の通信は P2P (WebRTC DataChannel) で行われ、
 //   サーバーは一切経由しない。KV 未設定なら 503(フロントはデモにフォールバック)。
+//
+//   3〜4人にするための鍵は「枠(slot)」。ホストは自分ひとりに1本、
+//   ではなく **相方の分だけ(最大3本)** RTCPeerConnection を張る
+//   (host.js 側の話)。ここではその3本ぶんのSDPを枠ごとに別の鍵で預かる:
+//     sig:{code}:{slot}:offer / sig:{code}:{slot}:answer   (slot = 1|2|3)
+//   answer だけは SET…NX で書く。**同じ枠に二人が同時に飛びついた**とき、
+//   先に書けた方だけがその枠を使い、負けた方は 409 を受けて次の枠を試す。
+//   ここを NX にしないと、後から来た人の answer が先客のものを黙って
+//   上書きし、先客の接続がホスト側で完成しなくなる。
 // ============================================================
 
 // Vercel KV / Upstash はインテグレーションによって環境変数名が違うので両方受ける。
@@ -20,13 +29,19 @@ async function redis(cmd) {
 
 const okCode = c => /^[A-Z2-9]{6}$/.test(c || '');
 const okKind = k => k === 'offer' || k === 'answer';
+const okSlot = s => s === '1' || s === '2' || s === '3';
 
 // レート制限。無いと第三者に叩かれて KV の無料枠と費用が飛ぶ。
 //   Redis の INCR + EX で「1分あたり何回」を数えるだけ。
 //   KV そのものが落ちている時に遊べなくなる方が損なので、
 //   数えられなかった場合は通す(fail-open)。
 const RATE_WINDOW = 60;      // 秒
-const RATE_MAX = 40;         // 1分あたり(2人で遊ぶ分には十分すぎる)
+// answer を待つ側は 1.3 秒に1回 GET する。60/1.3 ≈ 46 回/分で、
+//   これは **ふつうに2人で遊ぶだけでも** 旧設定の 40 を超えて弾かれていた
+//   (「2人なら十分」という見積もりが、実際のポーリング間隔と合っていなかった)。
+//   3〜4人でも合計の問い合わせ頻度は変えない設計(下記)なので、
+//   ここは人数によらず「1台が出す速さ」に少し余裕を持たせるだけでよい。
+const RATE_MAX = 60;
 function clientKey(req) {
   const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   const ip = fwd || req.headers['x-real-ip'] || 'unknown';
@@ -92,18 +107,27 @@ module.exports = async function handler(req, res) {
     if (req.method === 'GET') {
       const code = String(req.query.code || '').toUpperCase();
       const want = String(req.query.want || '');
-      if (!okCode(code) || !okKind(want)) return res.status(400).json({ error: 'bad_request' });
-      const sdp = await redis(['GET', `sig:${code}:${want}`]);
+      const slot = String(req.query.slot || '');
+      if (!okCode(code) || !okKind(want) || !okSlot(slot)) return res.status(400).json({ error: 'bad_request' });
+      const sdp = await redis(['GET', `sig:${code}:${slot}:${want}`]);
       return res.status(200).json({ sdp: sdp || null });
     }
     if (req.method === 'POST') {
       let b = req.body; if (typeof b === 'string') { try { b = JSON.parse(b); } catch { b = {}; } }
       b = b || {};
       const code = String(b.code || '').toUpperCase();
-      if (!okCode(code) || !okKind(b.kind) || typeof b.sdp !== 'string' || b.sdp.length > 20000) {
+      const slot = String(b.slot || '');
+      if (!okCode(code) || !okKind(b.kind) || !okSlot(slot) || typeof b.sdp !== 'string' || b.sdp.length > 20000) {
         return res.status(400).json({ error: 'bad_request' });
       }
-      await redis(['SET', `sig:${code}:${b.kind}`, b.sdp, 'EX', String(TTL)]);
+      const key = `sig:${code}:${slot}:${b.kind}`;
+      if (b.kind === 'answer') {
+        // 早い者勝ち(NX)。書けなければ、その枠は既に他の誰かのもの。
+        const ok = await redis(['SET', key, b.sdp, 'EX', String(TTL), 'NX']);
+        if (!ok) return res.status(409).json({ ok: false, taken: true });
+        return res.status(200).json({ ok: true });
+      }
+      await redis(['SET', key, b.sdp, 'EX', String(TTL)]);
       return res.status(200).json({ ok: true });
     }
     return res.status(405).json({ error: 'method_not_allowed' });

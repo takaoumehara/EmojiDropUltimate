@@ -2259,6 +2259,18 @@ Coop.onGameOver = () => {
   recordRunEnd({});
   Diag.runEnded(); markResumePoint(); game.state = 'over'; game.overT = 0; saveHi(); Snd.stopBGM();
 };
+// ホスト: 誰か(ゲストも自分も)がコンティニューを押した → 号令はここから1回だけ出す
+Coop.onReqContinue = () => { if (isHost()) doContinue(); };
+// ゲスト: ホストの号令。**自分の Save では再開位置を引き直さない** ——
+//   ホストが引いた場所(o.has/time/wave)をそのまま使うことで、同じ地点から
+//   同時に始まる(doContinue のコメント参照)。
+Coop.onContinue = o => {
+  if (!isGuest()) return;
+  // 自分の残り回数は見ない。**ホストの号令は無条件に従う** —— 号令のたびに
+  // 全員が同じ回数ぶん continueNow を1回ずつ通るので、残り回数はどのみち
+  // 揃ったまま減っていく。ここで足止めすると、その人だけ画面に取り残される。
+  continueNow(o && o.has ? { time: o.time || 0, wave: o.wave || 0 } : null);
+};
 
 function recordRunEnd({ daily = false } = {}) {
   const r = {
@@ -2311,14 +2323,36 @@ export function markResumePoint() {
                     : Math.max(0, game.stageTime - RESUME_REWIND);
   Save.setResumePoint(game.stageIndex, time, Math.max(0, game.waveIdx - 2));
 }
-export function doContinue() {
-  if (game.continues <= 0) return;
+/**
+ * コンティニューを実際に行う。**共闘では、これを号令された全員が
+ * まったく同じ引数で1回ずつ呼ぶ**ことで、寸分違わず同じ地点から
+ * 同時に再開する(下の doContinue のコメント参照)。
+ */
+function continueNow(resume) {
   game.continues--;
   Snd.continueJingle();
-  const r = Save.resumePoint();
-  if (r && r.stage === game.stageIndex) game.resumeAt = { time: r.time, wave: r.wave };
+  game.resumeAt = resume || null;
   startStage(game.stageIndex);
   game.lives = diffMods().lives; game.bombs = 1;
+}
+export function doContinue() {
+  if (game.continues <= 0) return;
+  // 共闘のゲストは自分では再開しない。ホストに頼み、号令を待つ。
+  //   ここで各自が勝手に startStage すると、片方だけ画面が動き出し、
+  //   もう片方は「ゲームオーバー」に取り残される —— 実際にそう起きていた。
+  //   号令を1か所(ホスト)からだけ出すことで、全員が同じ瞬間に始まる。
+  if (isGuest()) { Coop.send({ t: 'reqContinue' }); return; }
+  // 再開位置はこの端末の Save から引く(ソロ/ホストは自分の進行の続きなので、
+  //   自分の記録が正しい)。共闘のゲストは自分の Save に今回の記録が無いので、
+  //   この分岐には来ない —— ホストが計算したものを 'continue' で受け取る側。
+  const r = Save.resumePoint();
+  const resume = (r && r.stage === game.stageIndex) ? { time: r.time, wave: r.wave } : null;
+  continueNow(resume);
+  // 共闘なら、いま自分が引いた再開位置をそのまま号令として全員に配る。
+  //   **各自の Save から引き直させない。** ゲストの端末には今回の
+  //   markResumePoint が無い(ホストだけが呼ぶ)ので、そこだけ再計算すると
+  //   ステージの頭から始まってしまい、ホストとズレる。
+  if (isHost()) Coop.send({ t: 'continue', has: !!resume, time: resume ? resume.time : 0, wave: resume ? resume.wave : 0 });
 }
 export function togglePause() {
   if (game.state === 'play' || game.state === 'warn') {

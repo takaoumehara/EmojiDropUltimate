@@ -1435,6 +1435,8 @@ function drawCoopLobby() {
         ja ? '「もう一度つなぐ」で新しい部屋を作れます' : 'Reconnect to open a fresh room'],
       p2p_failed: [ja ? '直接つながれませんでした' : "Couldn't link the devices",
         ja ? '同じWi-Fiに繋ぐと成功しやすくなります' : 'Try putting both phones on the same Wi-Fi'],
+      room_full: [ja ? 'この部屋は満員です(4人)' : 'This room is full (4 players)',
+        ja ? '別のあいことばで新しい部屋を作ってください' : 'Open a new room with a different code'],
       closed: [ja ? '接続が切れました' : 'Connection lost', ja ? 'もう一度つないでください' : 'Please reconnect'],
     }[Coop.status] || [ja ? '接続できませんでした' : 'Connection failed', ja ? 'もう一度お試しください' : 'Please try again'];
     txt(S[0], W / 2, sy - 8 * UI, { size: 11.5 * UI, weight: 700, color: '#ffb37f', maxW: bw });
@@ -1480,9 +1482,9 @@ function drawCoopLobby() {
       : (ja ? `${n}人でスタート` : `START WITH ${n}`);
     drawBtn('coopStart', bx, by, bw, 52 * UI, btnLabel, '#ffffff', true, false, 18 * UI);
     by += 52 * UI + gap;
-    // 中継サーバー経由なら4人まで入れる。直結は2人まで。
+    // 直結(p2p)・中継(relay)どちらも4人まで入れる。
     //   まだ空きがあることを言わないと、3人目が「入れない」と思って諦める。
-    if (Coop.via() === 'relay' && n < 4) {
+    if ((Coop.via() === 'relay' || Coop.via() === 'p2p') && n < 4) {
       txt(ja ? `あと${4 - n}人まで、同じあいことばで入れます` : `${4 - n} more can join with the same code`,
         W / 2, by + 2 * UI, { size: 9.5 * UI, weight: 500, color: COL.gold, maxW: bw });
       by += 16 * UI;
