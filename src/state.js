@@ -22,6 +22,11 @@ export function newGame() {
     combo: 0, comboMul: 1, lastKill: 0,
     stages: STAGES, aiMode: false, endless: false, daily: false, coop: false,
     world: 1, pendingStage: null, lastResult: null, skinFlash: 0, finale: null, chapter: 0,
+    // エンドレス/共闘の「次の面」まわり
+    worldSeed: '',      // このランのテーマの並びを決める種。ランごとに変わる
+    aiNext: null,       // 遊んでいるあいだに先読みできた AI 製の面(未使用なら null)
+    aiFetching: false,  // その先読みが飛んでいる最中か
+    livesCap: 0,        // ワールド突破の残機回復の上限。0 なら回復しない
     stageIndex: 0, stageTime: 0, waveIdx: 0,
     nextWave: 0, nextBell: 0,
     bossActive: false, warnT: 0, clearT: 0, introT: 0, overT: 0,

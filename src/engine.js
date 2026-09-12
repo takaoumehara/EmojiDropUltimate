@@ -10,7 +10,7 @@ import { Weather } from './weather.js';
 import { Director } from './director.js';
 import { BossAI } from './bossai.js';
 import { t, getLang } from './i18n.js';
-import { generateStage, proceduralStage, scaleStage, chapterStages } from './aistage.js';
+import { generateStage, proceduralStage, scaleStage, chapterStages, themeForWorld } from './aistage.js';
 import { Save } from './save.js';
 import { SHARE_URL } from './sharecard.js';
 import { Leaderboard } from './leaderboard.js';
@@ -28,6 +28,18 @@ function shuffled(arr) {
   for (let i = a.length - 1; i > 0; i--) { const j = randInt(0, i); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
+
+// 0..n-1 を rng で並べ替える(袋引き用。同じ種なら誰が回しても同じ並び)
+function orderBy(rng, n) {
+  const a = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+// いま何回目のランか。**非同期で返ってくる AI 生成の返事を捨てる判断に使う。**
+//   タイトルに戻ると game ごと作り直されるので、古いランの fetch がそのまま
+//   新しい game に書き込むと、遊んでいないモードの面が紛れ込む。
+let runToken = 0;
 
 function trySetHi(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
@@ -1485,7 +1497,7 @@ function bossDefeated() {
   game.boss = null; game.bossActive = false;
   game.bossRevealT = 0;            // 相手が居ないのに見出しだけ残さない
   game.eBullets = []; game.enemies = [];
-  const bonus = Math.round((game.coop ? 8000 : game.endless ? 3000 * game.world : 5000 * (game.stageIndex + 1)) * Weather.mods.scoreMul);
+  const bonus = Math.round((game.coop ? 6000 + 2000 * game.world : game.endless ? 3000 * game.world : 5000 * (game.stageIndex + 1)) * Weather.mods.scoreMul);
   game.score += bonus; saveHi();
   // ストーリー(章モード)は制覇を記録。章を全制覇したら勝利演出 → 次章が開く。
   let chapterDone = false;
@@ -1498,13 +1510,14 @@ function bossDefeated() {
     game.newChars = CHARS.slice(before, Save.unlockedChars());
   } else game.newChars = [];
   let kind;
-  if (game.coop) { kind = 'coop'; recordRunEnd({}); }
-  else if (game.endless) { kind = 'world'; game.world++; game.pendingStage = scaleStage(proceduralStage(), game.world); }
+  // 共闘もエンドレスも、ボスを倒したら**終わりではなく次のワールド**。
+  //   共闘はここで勝利画面に出ていたので、4人で集まっても1ボスで解散だった。
+  if (game.coop || game.endless) { kind = 'world'; advanceWorld(); }
   else if (game.daily) { kind = 'victory'; recordRunEnd({ daily: true }); }
   else if (story) { kind = chapterDone ? 'victory' : 'stage'; if (chapterDone) recordRunEnd({}); }
   else if (game.stageIndex >= game.stages.length - 1) { kind = 'victory'; recordRunEnd({}); }
   else kind = 'stage';
-  const big = kind === 'victory' || kind === 'coop';
+  const big = kind === 'victory';
   // 章を制覇したら「次のショー」を予告する。ここが無いと、6面(+決着の1面)を
   //   終えても静かに次章へ入れ替わるだけで、区切りが起きたことに気づけない。
   if (story && chapterDone) { game.showChapter = Save.chapter(); game.showT = 5200; }
@@ -1965,7 +1978,9 @@ function saveHi() {
 }
 function freshGame() {
   const hi = game.hi; setGame(newGame()); game.hi = hi;
+  runToken++;                       // 前のランの AI 先読みが返ってきても、もう受け取らない
   game.lives = diffMods().lives;    // むずかしさで残機が変わる(やさしい=5、むずかしい=2)
+  game.livesCap = game.lives;       // ワールド突破の回復はここまで(既定。共闘で上書き)
   Director.reset(); Save.startRun();
 }
 
@@ -2044,12 +2059,87 @@ export function requestAIStage() {
 function startEndless(stageObj) {
   Snd.init(); freshGame();
   game.stages = [stageObj]; game.aiMode = true; game.endless = true; game.world = 1;
+  // このランのテーマの並び順を決める種。ラン内では固定、ランごとに変わる。
+  game.worldSeed = 'endless-' + Date.now() + '-' + Math.floor(Math.random() * 1e9);
   startStage(0);
+  prefetchNextAIStage();
 }
-function startEndlessNext() {
-  const st = game.pendingStage; game.pendingStage = null;
-  game.stages = [st]; game.aiMode = false;
+
+/**
+ * 次のワールドの面を用意する。**ここが「無限に続く」の本体。**
+ *
+ * ソロ … 遊んでいるあいだに先読みしておいた AI 製の面があればそれを使い、
+ *        無ければ端末内で作る。テーマは袋引きなので、7個を一巡するまで
+ *        同じ絵は出てこない。
+ * 共闘 … 必ず端末内で作る。**種とワールド番号だけから決まる**ので、全員が
+ *        別々に計算しても必ず同じ面になる。次の面を配るメッセージが無い =
+ *        取りこぼしで一人だけ違う世界に居る、が起こりえない。
+ *        (AI 製の面を共闘に配るには、届いたことの確認が要る。別の作業)
+ */
+function nextWorldStage(world) {
+  if (game.coop) {
+    const seedStr = 'coop-' + (Coop.seed || 0);
+    let st;
+    if (Coop.mode === 'story') {
+      // 手書きの面も、種ごとに違う順で一巡させる(一巡するまで同じ面は出ない)
+      const cyc = Math.floor((world - 1) / STAGES.length);
+      const order = orderBy(makeRng(hashStr(`${seedStr}-story-${cyc}`)), STAGES.length);
+      st = JSON.parse(JSON.stringify(STAGES[order[(world - 1) % STAGES.length]]));
+    } else {
+      st = proceduralStage(makeRng(hashStr(`${seedStr}-w${world}`)), themeForWorld(seedStr, world));
+    }
+    st.dur = 34000;   // 共闘は短め(ソロより早くボスへ)。startCoop と同じ値
+    return scaleStage(st, world);
+  }
+  const ai = game.aiNext; game.aiNext = null;
+  return scaleStage(ai || proceduralStage(Math.random, themeForWorld(game.worldSeed, world)), world);
+}
+
+// ボス撃破のたびに呼ぶ。次の面を決め、突破のごほうびを配る。
+function advanceWorld() {
+  game.world++;
+  game.pendingStage = nextWorldStage(game.world);
+  // ごほうびは残機。**終わらないモードで残機が減る一方なら、必ず終わる。**
+  //   ただし増えるのは始めた時の数まで —— 回復であって、貯金ではない。
+  //   **減らしはしない。** ベルや形見で上限を超えている人から取り上げると、
+  //   突破したのに損をしたことになる。
+  //   共闘の残機はホストが持っているので、ゲストは触らない(次の配信で揃う)。
+  if (!isGuest() && game.lives < game.livesCap) game.lives++;
+}
+
+function startNextWorld() {
+  // 用意できていなければ、その場で作る。**ここで return すると詰む** ——
+  //   決着演出は毎フレーム「終わったか」を見に来るので、抜け道が無いと
+  //   ボスを倒したまま永久に決着画面から出られなくなる。
+  const st = game.pendingStage || nextWorldStage(game.world);
+  game.pendingStage = null;
+  game.stages = [st];
+  // ここを false にすると、2ワールド目から見出しが「ステージ1」になる。
+  //   共闘は自前の見出しを持っているので触らない。
+  if (!game.coop) game.aiMode = true;
   startStage(0);
+  prefetchNextAIStage();
+}
+
+/**
+ * 次の面を、遊んでいるあいだに AI に作らせておく。
+ *
+ * これまで AI が動くのは起動直後の1回だけで、2ワールド目からはずっと端末内の
+ * 手続き生成だった。「AIが画面を作る」が売りなのに、実際に見えるのは最初の1面
+ * だけ、という状態だった。面が始まった時点で投げておけば、道中(30〜60秒)の
+ * あいだに返ってくる。**間に合わなければ黙って手続き生成に落とす** ——
+ * 面と面のあいだで待たせない。
+ */
+function prefetchNextAIStage() {
+  if (game.coop || !game.endless || game.aiNext || game.aiFetching) return;
+  const token = runToken;
+  game.aiFetching = true;
+  generateStage(Weather.summary()).then(res => {
+    if (token !== runToken) return;            // タイトルに戻った後の返事は捨てる
+    game.aiFetching = false;
+    // source が 'local' なら中身は手続き生成。それなら袋引きのほうが被らない。
+    if (res && res.source === 'ai') game.aiNext = res.stage;
+  }).catch(() => { if (token === runToken) game.aiFetching = false; });
 }
 // デイリー: 日付シードでローカル生成(全員同じステージ)。1画面クリアでスコア確定。
 export function startDaily() {
@@ -2084,7 +2174,10 @@ export function startCoop() {
   else st = proceduralStage(rng);
   st.dur = 34000; // 共闘は短めセッション(ソロより早くボスへ)
   game.coop = true; game.aiMode = Coop.mode !== 'story';
+  // 共闘もワールドを数える。ボスを倒したら終わりではなく、次の面がどんどん出る。
+  game.endless = true; game.world = 1;
   game.lives = coopLives(Coop.playerCount());
+  game.livesCap = game.lives;
   game.stages = [st];
   startStage(0);
 }
@@ -2163,7 +2256,8 @@ export function shareRun() {
     : game.endless ? (ja ? 'エンドレスAI' : 'ENDLESS AI')
       : game.daily ? (ja ? 'デイリー ' + todayKey() : 'DAILY ' + todayKey())
         : game.aiMode ? (ja ? 'AIステージ' : 'AI STAGE') : (ja ? 'ストーリー' : 'STORY');
-  const sub = game.coop ? (ja ? `${Coop.partyLabel(true)} と共闘クリア` : `Cleared with ${Coop.partyLabel(false)}`)
+  const sub = game.coop
+    ? (ja ? `${Coop.partyLabel(true)} と ワールド ${r.world} 到達` : `Reached World ${r.world} with ${Coop.partyLabel(false)}`)
     : game.endless ? (ja ? `ワールド ${r.world} 到達` : `Reached World ${r.world}`)
       : (ja ? `ステージ ${r.world}` : `Stage ${r.world}`);
   return openShare({
@@ -2291,10 +2385,10 @@ export function update(dt, keys) {
       if (Math.random() < dt * 9) explosion(F.bx + rand(-80, 80), F.by + rand(-80, 80), 8, pick(['#ffd700', '#ff8a3c', '#ff2a2a', '#8fd3ff']));
       updateParticles(dt); updateShake(dt);
       if (game.skinFlash > 0) game.skinFlash -= dt;
-      if (!F.snd && F.t > (F.kind === 'victory' || F.kind === 'coop' ? 700 : 450)) { F.snd = true; (F.kind === 'victory' || F.kind === 'coop' ? Snd.victory() : Snd.clear()); }
+      if (!F.snd && F.t > (F.kind === 'victory' ? 700 : 450)) { F.snd = true; (F.kind === 'victory' ? Snd.victory() : Snd.clear()); }
       if (F.t >= F.dur) {
-        if (F.kind === 'victory' || F.kind === 'coop') game.state = 'victory';
-        else if (F.kind === 'world') { if (game.pendingStage) startEndlessNext(); }
+        if (F.kind === 'victory') game.state = 'victory';
+        else if (F.kind === 'world') startNextWorld();
         else startStage(game.stageIndex + 1);
       }
       break;

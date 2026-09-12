@@ -577,7 +577,7 @@ function drawHUD() {
     + (p.rearT > 0 ? ` · ⬇︎${Math.ceil(p.rearT / 1000)}` : '')
     + (p.sideT > 0 ? ` · ↔︎${Math.ceil(p.sideT / 1000)}` : '');
   txt(st8, pad, H - 24 * UI - bot, { size: 10.5 * UI, weight: 600, color: COL.sub, align: 'left', baseline: 'top', shadow: 0.7 });
-  const slabel = game.coop ? '👥' : game.endless ? ('W' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('' + (game.stageIndex + 1));
+  const slabel = game.coop ? ('👥W' + game.world) : game.endless ? ('W' + game.world) : game.daily ? 'DAILY' : game.aiMode ? 'AI' : ('' + (game.stageIndex + 1));
   // 右下の表示。**絵文字を末尾に置くと画面の外へはみ出す** —— 絵文字は
   //   measureText の送り幅より広く描かれることがあり、右揃えの基準が
   //   実際の右端と合わない。文字を末尾にして、余白も指の届く幅まで広げる。
@@ -1891,8 +1891,11 @@ function drawIntro() {
   ctx.fillStyle = 'rgba(0,0,10,0.55)'; ctx.fillRect(0, 0, W, H);
   const slide = tt < 0.2 ? (0.2 - tt) * 5 * 60 : 0;
   const fin = !!st.finale;
+  // ワールドが繋がるモードでは、面の名前より先に**いま何ワールド目か**を出す。
+  //   ここが「STAGE 1」のままだと、5面遊んでも進んでいる実感が出ない。
   label(fin ? (ja ? '⚡ さいごの舞台 ⚡' : '⚡ FINAL STAGE ⚡')
-      : game.aiMode ? '✨ ENDLESS ✨' : (t('stage') + ' ' + (game.stageIndex + 1)),
+      : game.endless ? `${game.coop ? '👥' : '✨'} ${t('world')} ${game.world}`
+        : game.aiMode ? '✨ ENDLESS ✨' : (t('stage') + ' ' + (game.stageIndex + 1)),
     W / 2, vy(0.26) - slide, fin ? '#ff9de2' : '#8fd3ff', 14 * UI);
   emojiCentered(st.emoji, W / 2, vy(0.38) - slide, 56 * UI);
   label(st.name, W / 2, vy(0.48) - slide, '#ffffff', 22 * UI);
@@ -2086,7 +2089,7 @@ function drawFinale() {
   ctx.restore();
   if (F.t > 500) label(`+${F.bonus}`, W / 2, vy(0.40) + 42 * UI, '#ffe14d', 20 * UI);
   if (F.kind === 'victory' && F.t > 900) label(ja ? '✨ 全ステージ制覇 ✨' : '✨ ALL STAGES CLEAR ✨', W / 2, vy(0.40) + 72 * UI, '#b98cff', 14 * UI);
-  if (F.kind === 'coop' && F.t > 900) label(ja ? `👥 ${Coop.partyLabel(true)} と一緒に撃破!` : `👥 Beaten with ${Coop.partyLabel(false)}!`, W / 2, vy(0.40) + 72 * UI, '#4ad6a0', 14 * UI);
+  if (F.kind === 'world' && game.coop && F.t > 900) label(ja ? `👥 ${Coop.partyLabel(true)} と一緒に撃破! つぎへ` : `👥 Beaten with ${Coop.partyLabel(false)} — next!`, W / 2, vy(0.40) + 72 * UI, '#4ad6a0', 14 * UI);
   if (game.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(game.flash, 0, 0.85)})`; ctx.fillRect(0, 0, W, H); }
 }
 
