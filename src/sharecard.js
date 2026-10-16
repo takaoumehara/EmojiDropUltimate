@@ -10,7 +10,7 @@ import { getLang } from './i18n.js';
 
 export const SHARE_URL = location.origin + location.pathname;
 const URL_SHARE = SHARE_URL;
-const HASHTAG = '#EmojiDropUltimate';
+const HASHTAG = '#EmojiBlast';
 
 // ---- ユーティリティ -----------------------------------------------------
 
@@ -307,9 +307,8 @@ export function buildCanvas(d) {
   drawBackground(c, W, H);
 
   // ---- ヘッダー: ロゴ(唯一の金アクセントを効かせる) -------------------
-  drawText(c, 'EMOJI DROP', cx, 100, displayFont(56, 800), '#ffd23f',
+  drawText(c, 'EMOJI BLAST', cx, 100, displayFont(56, 800), '#ffd23f',
     { letterSpacing: 1, shadow: true, shadowColor: 'rgba(0,0,0,0.35)', shadowBlur: 14 });
-  drawText(c, 'U L T I M A T E', cx, 139, metaFont(17, 700), 'rgba(150,205,255,0.85)', { letterSpacing: 3 });
   drawDivider(c, cx, 166, 90);
 
   // ---- 大きな絵文字 + ソフトなグロー ------------------------------------
@@ -381,7 +380,7 @@ export function buildCanvas(d) {
 export function summaryText(d) {
   const ja = getLang() === 'ja';
   const parts = [];
-  parts.push(ja ? `EMOJI DROP ULTIMATE で ${d.score} 点!` : `Scored ${d.score} in EMOJI DROP ULTIMATE!`);
+  parts.push(ja ? `EMOJI BLAST で ${d.score} 点!` : `Scored ${d.score} in EMOJI BLAST!`);
   if (d.rank) parts.push(ja ? `ランク ${d.rank}` : `Rank ${d.rank}`);
   if (d.sub) parts.push(d.sub);
   parts.push(HASHTAG);
@@ -402,7 +401,7 @@ export async function shareCard(d) {
     try {
       const file = new File([blob], 'emoji-drop-score.png', { type: 'image/png' });
       if (navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], text: txt, title: 'EMOJI DROP ULTIMATE' });
+        await navigator.share({ files: [file], text: txt, title: 'EMOJI BLAST' });
         return 'shared';
       }
     } catch (e) { if (e && e.name === 'AbortError') return 'shared'; }
