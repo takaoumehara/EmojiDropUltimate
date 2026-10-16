@@ -96,7 +96,7 @@ export const Diag = {
     const kind = /iPhone|iPad/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android'
       : /Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'other';
     const lines = [
-      'EMOJI DROP ULTIMATE / 動作レポート',
+      'EMOJI BLAST / 動作レポート',
       // 盤面は窓と同じとは限らない(横に広い画面では中央の板になる)。
       //   レイアウトの相談を受けたとき、どちらの数字かで話が変わる。
       `端末: ${kind}  画面: ${innerWidth}x${innerHeight}  盤面: ${VIEW.w}x${VIEW.h}`,

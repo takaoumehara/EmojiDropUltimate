@@ -147,7 +147,7 @@ function downloadFallback() {
 function doSave() {
   if (!curBlob) { toast(ja() ? '画像を準備中…もう一度タップしてね' : 'Preparing image… tap again'); return; }
   if (canShareFiles && curFile) {
-    navigator.share({ files: [curFile], title: 'EMOJI DROP ULTIMATE', text: shareText })
+    navigator.share({ files: [curFile], title: 'EMOJI BLAST', text: shareText })
       .catch(e => { if (!e || e.name !== 'AbortError') downloadFallback(); });
   } else {
     downloadFallback();
@@ -160,10 +160,10 @@ function doCopy() {
 // ---- Instagram / TikTok / その他 : ネイティブ共有シートへ(Web版に共有インテントが無い) ----
 function shareViaSheet(appName) {
   if (canShareFiles && curFile) {
-    navigator.share({ files: [curFile], text: shareText, title: 'EMOJI DROP ULTIMATE' })
+    navigator.share({ files: [curFile], text: shareText, title: 'EMOJI BLAST' })
       .catch(e => { if (!e || e.name !== 'AbortError') fallbackShare(appName); });
   } else if (navigator.share) {
-    navigator.share({ text: shareText, url: curData.url, title: 'EMOJI DROP ULTIMATE' })
+    navigator.share({ text: shareText, url: curData.url, title: 'EMOJI BLAST' })
       .catch(e => { if (!e || e.name !== 'AbortError') fallbackShare(appName); });
   } else {
     fallbackShare(appName);
@@ -257,9 +257,9 @@ export function closeShare() { close(); }
 // 共闘の招待リンクを共有する。クリックハンドラから同期的に呼べる。
 // navigator.share が使えればアプリ選択(LINE/メッセージ等)、無ければリンクをコピー。
 export function shareInvite(url, code) {
-  const text = ja() ? `絵文字ドロップ ウルトラメイトで共闘しよう!あいことば: ${code}` : `Play EMOJI DROP ULTIMATE with me! Code: ${code}`;
+  const text = ja() ? `EMOJI BLAST で共闘しよう!あいことば: ${code}` : `Play EMOJI BLAST with me! Code: ${code}`;
   if (navigator.share) {
-    navigator.share({ title: 'EMOJI DROP ULTIMATE', text, url })
+    navigator.share({ title: 'EMOJI BLAST', text, url })
       .catch(e => { if (!e || e.name !== 'AbortError') copyText(text + ' ' + url, ja() ? 'コピーしました' : 'Copied'); });
   } else {
     copyText(text + ' ' + url, ja() ? 'コピーしました' : 'Copied');
