@@ -30,8 +30,8 @@ test('qrMatrix: deterministic for the same input', () => {
 });
 
 test('qrMatrix: different inputs generally produce different matrices', () => {
-  const a = qrMatrix('EMOJI DROP ULTIMATE - score 1000');
-  const b = qrMatrix('EMOJI DROP ULTIMATE - score 2000');
+  const a = qrMatrix('EMOJI BLAST - score 1000');
+  const b = qrMatrix('EMOJI BLAST - score 2000');
   assert.notDeepEqual(Array.from(a.modules), Array.from(b.modules), 'distinct payloads should not encode to the same matrix');
 });
 

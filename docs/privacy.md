@@ -1,6 +1,6 @@
 # プライバシーポリシー / Privacy Policy
 
-**EMOJI DROP ULTIMATE**
+**EMOJI BLAST**
 最終更新: 2026-07-29
 
 日本語のあとに English があります。
